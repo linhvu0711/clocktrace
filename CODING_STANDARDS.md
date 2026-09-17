@@ -6,7 +6,8 @@ One rule per line. A rule a tool checks names the tool in brackets. The how live
 
 - Files are `kebab-case`. [biome useFilenamingConvention]
 - Types, classes, services, and schemas are `PascalCase`. [biome useNamingConvention]
-- Functions and values are `camelCase`. [biome useNamingConvention]
+- Functions are `camelCase`. [biome useNamingConvention]
+- Values are `camelCase`, except schemas and layers, which are `PascalCase`.
 - Error classes end in `Error`.
 - Env vars are `CLOCKTRACE_UPPER_SNAKE`.
 - Domain words follow `CONTEXT.md`, including its `Avoid` lists.

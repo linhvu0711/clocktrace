@@ -28,7 +28,13 @@
           "level": "error",
           "options": {
             "strictCase": false,
-            "requireAscii": true
+            "requireAscii": true,
+            "conventions": [
+              {
+                "selector": { "kind": "function" },
+                "formats": ["camelCase"]
+              }
+            ]
           }
         }
       },
