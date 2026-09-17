@@ -74,6 +74,73 @@ final class PermissionsTests: XCTestCase {
     XCTAssertTrue(isImporterFile)
   }
 
+  func testRequestAccessibilityAsksThePromptOnce() {
+    // Given: a fake whose axPrompt appends to prompts
+    var prompts: [String] = []
+    let reads = reads(axPrompt: { prompts.append("prompt") })
+    // When
+    _ = requestAccessibility(reads: reads)
+    // Then
+    XCTAssertEqual(prompts.count, 1)
+  }
+
+  func testRequestAutomationProbesTheBrowserWithAsk() {
+    // Given: a fake whose automationStatus records (bundleId, ask) pairs
+    var probes: [[String]] = []
+    let reads = reads(automationStatus: { bundleId, ask in
+      probes.append([bundleId, String(ask)])
+      return 0
+    })
+    // When
+    _ = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(probes, [["com.apple.Safari", "true"]])
+  }
+
+  func testRequestAutomationExits3WhenNotRunning() {
+    // Given: a fake whose automationStatus returns -600
+    let reads = reads(automationStatus: { _, _ in -600 })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 3)
+  }
+
+  func testRequestAutomationPrintsTheRetryLineWhenNotRunning() {
+    // Given: a fake whose automationStatus returns -600; emitError records
+    var lines: [String] = []
+    let reads = reads(automationStatus: { _, _ in -600 })
+    // When
+    _ = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { lines.append($0) })
+    // Then
+    XCTAssertEqual(lines, ["com.apple.Safari is not running, open it and retry"])
+  }
+
+  func testRequestAutomationExits0WhenTheBrowserAnswered() {
+    // Given: a fake whose automationStatus returns -1743 (user denied)
+    let reads = reads(automationStatus: { _, _ in -1743 })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 0)
+  }
+
+  func testRequestFullDiskAccessOpensThePane() {
+    // Given: a fake whose openSettings records the URL strings
+    var urls: [String] = []
+    let reads = reads(openSettings: { urls.append($0) })
+    // When
+    _ = requestFullDiskAccess(reads: reads)
+    // Then
+    XCTAssertEqual(
+      urls,
+      ["x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"])
+  }
+
   func testFullDiskAccessGrantedWhenTheSyncDbOpens() {
     // Given: the same reads, but sync.db opens
     let reads = reads(canOpenBiomeSyncDb: { true })
