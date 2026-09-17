@@ -66,6 +66,14 @@ final class PermissionsTests: XCTestCase {
     XCTAssertEqual(state, .denied)
   }
 
+  func testBiomeSyncDbPathIsTheImporterFile() {
+    // Given: nothing
+    // When
+    let isImporterFile = biomeSyncDbPath.hasSuffix("/Library/Biome/sync/sync.db")
+    // Then
+    XCTAssertTrue(isImporterFile)
+  }
+
   func testFullDiskAccessGrantedWhenTheSyncDbOpens() {
     // Given: the same reads, but sync.db opens
     let reads = reads(canOpenBiomeSyncDb: { true })

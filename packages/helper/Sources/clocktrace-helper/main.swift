@@ -6,8 +6,10 @@ case .version:
   print(version)
 case .watch:
   runWatch()
-case .permissions, .requestAccessibility, .requestAutomation,
-  .requestFullDiskAccess, .usage:
+case .permissions:
+  emit(checkPermissions().json())
+case .requestAccessibility, .requestAutomation, .requestFullDiskAccess,
+  .usage:
   FileHandle.standardError.write(usageText.data(using: .utf8)!)
   exit(2)
 }

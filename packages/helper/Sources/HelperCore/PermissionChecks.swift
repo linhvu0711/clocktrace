@@ -1,4 +1,4 @@
-public func checkPermissions(reads: PermissionReads) -> Permissions {
+public func checkPermissions(reads: PermissionReads = .live) -> Permissions {
   var automation: [String: GrantState] = [:]
   for bundleId in supportedBrowsers {
     guard reads.installed(bundleId) else {
