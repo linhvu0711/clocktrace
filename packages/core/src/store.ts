@@ -1,4 +1,4 @@
-import { type DateTime, Effect } from "effect";
+import { type DateTime, Effect, type Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import type { Activity, NewActivity } from "./activity.js";
@@ -41,6 +41,13 @@ export interface StoreShape {
   ) => Effect.Effect<Rule, ParseError | StoreError>;
   readonly listRules: () => Effect.Effect<ReadonlyArray<Rule>, StoreError>;
   readonly deleteRule: (id: string) => Effect.Effect<boolean, StoreError>;
+  readonly getSetting: (
+    key: string,
+  ) => Effect.Effect<Option.Option<string>, StoreError>;
+  readonly setSetting: (
+    key: string,
+    value: string,
+  ) => Effect.Effect<void, StoreError>;
 }
 
 export class Store extends Effect.Service<Store>()("Store", {

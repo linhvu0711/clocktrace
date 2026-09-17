@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { DateTime, Effect, Either } from "effect";
+import { DateTime, Effect, Either, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DatabaseNewerError, StoreShape } from "../src/index.js";
@@ -476,6 +476,23 @@ describe("store", () => {
     expect(second).toBe(false);
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.target).toBe(c.id);
+  });
+
+  it("setSetting and getSetting", async () => {
+    // Given: an open store
+    const { before, after } = await useStore((store) =>
+      Effect.gen(function* () {
+        // When
+        const before = yield* store.getSetting("starterSet");
+        yield* store.setSetting("starterSet", "1");
+        yield* store.setSetting("starterSet", "2");
+        const after = yield* store.getSetting("starterSet");
+        return { before, after };
+      }),
+    );
+    // Then
+    expect(Option.isNone(before)).toBe(true);
+    expect(after).toEqual(Option.some("2"));
   });
 
   it("Store.Test provides an in-memory store", async () => {

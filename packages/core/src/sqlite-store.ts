@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { DateTime, Effect, Schema, type Scope } from "effect";
+import { DateTime, Effect, Option, Schema, type Scope } from "effect";
 
 import type { Activity } from "./activity.js";
 import { NewActivity as NewActivitySchema } from "./activity.js";
@@ -83,6 +83,12 @@ export const openStore = (
       "SELECT id, position, field, compare, value, effect, target FROM rules ORDER BY position",
     );
     const deleteRuleStatement = db.prepare("DELETE FROM rules WHERE id = @id");
+    const upsertSetting = db.prepare(
+      "INSERT INTO settings (key, value) VALUES (@key, @value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    );
+    const selectSetting = db.prepare(
+      "SELECT value FROM settings WHERE key = @key",
+    );
     const selectActivities = db.prepare(
       "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
     );
@@ -240,6 +246,25 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const getSetting: StoreShape["getSetting"] = (key) =>
+      Effect.try({
+        try: () => {
+          const row = selectSetting.get({ key }) as
+            | { value: string }
+            | undefined;
+          return Option.fromNullable(row?.value);
+        },
+        catch: (cause) => new StoreError({ cause }),
+      });
+
+    const setSetting: StoreShape["setSetting"] = (key, value) =>
+      Effect.try({
+        try: () => {
+          upsertSetting.run({ key, value });
+        },
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     return {
       getOrInsertDevice,
       listDevices,
@@ -252,5 +277,7 @@ export const openStore = (
       insertRule,
       listRules,
       deleteRule,
+      getSetting,
+      setSetting,
     };
   });
