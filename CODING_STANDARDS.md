@@ -71,7 +71,6 @@ One rule per line. A rule a tool checks names the tool in brackets. The how live
 ## Stack-specific
 
 - `tsconfig.base.json` is strict, with `exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`, and `verbatimModuleSyntax`. [tsc]
-- Every export states its type. [tsc isolatedDeclarations]
 - A service is `Effect.Service<Self>()` with a static `Test` layer. `docs/idioms/effect-services.md` shows the shape.
 - A domain shape is one `Schema`, and the TypeScript type comes from it. No side `interface`. `docs/idioms/effect-schema.md` shows the shape.
 - Plain TypeScript is used only at the edges where the MCP SDK or a native binding wants it (ADR 0003).
