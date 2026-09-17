@@ -6,6 +6,8 @@ import { DateTime, Effect, Schema, type Scope } from "effect";
 
 import type { Activity } from "./activity.js";
 import { NewActivity as NewActivitySchema } from "./activity.js";
+import type { Category } from "./category.js";
+import { NewCategory as NewCategorySchema } from "./category.js";
 import type { Device } from "./device.js";
 import { NewDevice as NewDeviceSchema } from "./device.js";
 import { DatabaseNewerError, StoreError } from "./errors.js";
@@ -57,6 +59,12 @@ export const openStore = (
     );
     const insertActivityStatement = db.prepare(
       "INSERT INTO activities (id, device_id, bundle_id, app_name, title, url, started_at, ended_at) VALUES (@id, @deviceId, @bundleId, @appName, @title, @url, @startedAt, @endedAt)",
+    );
+    const insertCategoryStatement = db.prepare(
+      "INSERT INTO categories (id, name, productive) VALUES (@id, @name, @productive)",
+    );
+    const selectCategories = db.prepare(
+      "SELECT id, name, productive FROM categories ORDER BY name",
     );
     const selectActivities = db.prepare(
       "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
@@ -136,10 +144,47 @@ export const openStore = (
       });
     };
 
+    const insertCategory: StoreShape["insertCategory"] = (input) =>
+      Effect.gen(function* () {
+        const category = yield* Schema.validate(NewCategorySchema)(input);
+        return yield* Effect.try({
+          try: () => {
+            const id = randomUUID();
+            insertCategoryStatement.run({
+              id,
+              name: category.name,
+              productive: category.productive ? 1 : 0,
+            });
+            return { id, ...category };
+          },
+          catch: (cause) => new StoreError({ cause }),
+        });
+      });
+
+    const listCategories: StoreShape["listCategories"] = () =>
+      Effect.try({
+        try: () =>
+          (
+            selectCategories.all() as ReadonlyArray<{
+              id: string;
+              name: string;
+              productive: number;
+            }>
+          ).map(
+            (row): Category => ({
+              ...row,
+              productive: row.productive === 1,
+            }),
+          ),
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     return {
       getOrInsertDevice,
       listDevices,
       insertActivity,
       readActivities,
+      insertCategory,
+      listCategories,
     };
   });

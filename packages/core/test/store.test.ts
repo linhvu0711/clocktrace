@@ -388,6 +388,32 @@ describe("store", () => {
     }
   });
 
+  it("insertCategory and listCategories", async () => {
+    // Given: an open store
+    const { inserted, categories } = await useStore((store) =>
+      Effect.gen(function* () {
+        // When
+        const inserted = yield* store.insertCategory({
+          name: "Social",
+          productive: false,
+        });
+        yield* store.insertCategory({ name: "Coding", productive: true });
+        const categories = yield* store.listCategories();
+        return { inserted, categories };
+      }),
+    );
+    // Then
+    expect(inserted.id).toHaveLength(36);
+    expect(inserted.name).toBe("Social");
+    expect(inserted.productive).toBe(false);
+    expect(
+      categories.map((c) => ({ name: c.name, productive: c.productive })),
+    ).toEqual([
+      { name: "Coding", productive: true },
+      { name: "Social", productive: false },
+    ]);
+  });
+
   it("Store.Test provides an in-memory store", async () => {
     // Given: nothing on disk
     // When

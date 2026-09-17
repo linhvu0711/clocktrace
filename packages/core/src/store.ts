@@ -2,6 +2,7 @@ import { type DateTime, Effect } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import type { Activity, NewActivity } from "./activity.js";
+import type { Category, NewCategory } from "./category.js";
 import type { Device, NewDevice } from "./device.js";
 import type { StoreError } from "./errors.js";
 import { openStore } from "./sqlite-store.js";
@@ -19,6 +20,13 @@ export interface StoreShape {
     readonly from: DateTime.Utc;
     readonly to: DateTime.Utc;
   }) => Effect.Effect<ReadonlyArray<Activity>, StoreError>;
+  readonly insertCategory: (
+    input: NewCategory,
+  ) => Effect.Effect<Category, ParseError | StoreError>;
+  readonly listCategories: () => Effect.Effect<
+    ReadonlyArray<Category>,
+    StoreError
+  >;
 }
 
 export class Store extends Effect.Service<Store>()("Store", {
