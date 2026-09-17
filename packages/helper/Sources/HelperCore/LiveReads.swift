@@ -1,0 +1,61 @@
+import AppKit
+import ApplicationServices
+import CoreGraphics
+import Foundation
+
+extension Reads {
+  public static let live = Reads(
+    frontmost: {
+      guard let app = NSWorkspace.shared.frontmostApplication else {
+        return nil
+      }
+      return FrontApp(
+        name: app.localizedName,
+        bundleId: app.bundleIdentifier,
+        pid: app.processIdentifier
+      )
+    },
+    axTrusted: {
+      AXIsProcessTrusted()
+    },
+    focusedTitle: { pid in
+      let app = AXUIElementCreateApplication(pid)
+      var windowRef: AnyObject?
+      guard
+        AXUIElementCopyAttributeValue(
+          app, kAXFocusedWindowAttribute as CFString, &windowRef) == .success,
+        let windowRef
+      else { return nil }
+      var titleRef: AnyObject?
+      guard
+        AXUIElementCopyAttributeValue(
+          windowRef as! AXUIElement, kAXTitleAttribute as CFString, &titleRef)
+          == .success
+      else { return nil }
+      return titleRef as? String
+    },
+    automationGranted: { bundleId in
+      var addr = AEAddressDesc()
+      let createStatus = bundleId.utf8CString.withUnsafeBufferPointer {
+        buffer in
+        AECreateDesc(
+          DescType(typeApplicationBundleID), buffer.baseAddress,
+          bundleId.utf8.count, &addr)
+      }
+      guard createStatus == noErr else { return false }
+      defer { AEDisposeDesc(&addr) }
+      return AEDeterminePermissionToAutomateTarget(
+        &addr, AEEventClass(typeWildCard), AEEventID(typeWildCard), false)
+        == noErr
+    },
+    runScript: { source in
+      var error: NSDictionary?
+      let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+      return result?.stringValue
+    },
+    idleSeconds: {
+      CGEventSource.secondsSinceLastEventType(
+        .combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    }
+  )
+}
