@@ -16,7 +16,14 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
 
 - `clocktrace-helper --version` — print the package version.
 - `clocktrace-helper watch` — print JSON lines on stdout forever.
-- Anything else — print usage to stderr and exit 2.
+- `clocktrace-helper permissions` — print one JSON line with the state of every
+  grant.
+- `clocktrace-helper permissions request (accessibility | automation <bundleId> | fulldiskaccess)`
+  — raise that grant's prompt, or open its System Settings pane. Browser not
+  running: `<bundleId> is not running, open it and retry`, exit 3.
+- Anything else — print
+  `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess))`
+  to stderr and exit 2.
 
 ## Lines
 
@@ -44,8 +51,25 @@ seconds as a heartbeat. `idleSeconds` and `ts` alone never trigger a line.
 A helper started from a terminal uses that terminal's Accessibility and
 Automation grants — macOS attributes the requests to the responsible terminal
 process, never to the binary. `watch` never prompts on its own; when a grant is
-missing it marks the line in `missing` and moves on. Prompting and the
-`permissions` subcommand are owned by a later change.
+missing it marks the line in `missing` and moves on.
+
+## Permissions
+
+`permissions` prints one JSON object per line:
+
+```json
+{"accessibility":"granted","automation":{"com.apple.Safari":"notRunning","com.brave.Browser":"granted","com.google.Chrome":"notAsked","com.microsoft.edgemac":"notInstalled","com.operasoftware.Opera":"notInstalled","com.vivaldi.Vivaldi":"notInstalled","org.chromium.Chromium":"notInstalled"},"fullDiskAccess":"denied"}
+```
+
+| field | source | states |
+| --- | --- | --- |
+| `accessibility` | `AXIsProcessTrusted` | `granted`, `denied` |
+| `automation.<bundleId>` | `AEDeterminePermissionToAutomateTarget` without asking | `granted`, `denied`, `notAsked`, `notRunning` (browser closed), `notInstalled` |
+| `fullDiskAccess` | opening `~/Library/Biome/sync/sync.db` | `granted`, `denied` |
+
+macOS cannot tell a denied Accessibility grant from one never asked, and Full
+Disk Access has no prompt — `request fulldiskaccess` opens the System Settings
+pane instead.
 
 ## Live checks
 
@@ -53,7 +77,8 @@ Run these by hand from a terminal at `packages/helper`, with
 `BIN="$(swift build -c release --show-bin-path)/clocktrace-helper"`:
 
 1. `"$BIN" --version` prints `0.0.0`; `"$BIN" bogus` prints
-   `usage: clocktrace-helper (--version | watch)` to stderr and exits 2.
+   `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess))`
+   to stderr and exits 2.
 2. With Accessibility off for the terminal: `"$BIN" watch` prints a first line
    for the terminal with `"title":null,"missing":["accessibility"]`, repeats a
    heartbeat at least every 10 seconds, and follows the frontmost app as you
@@ -64,3 +89,16 @@ Run these by hand from a terminal at `packages/helper`, with
    `"url":"https://example.com/"` appears and follows navigation; with the
    Automation grant off the same line shows `"url":null` and
    `"missing":["automation:com.apple.Safari"]`.
+5. `"$BIN" permissions` prints one JSON line with `accessibility`, an
+   `automation` entry per supported browser (`notInstalled` when absent,
+   `notRunning` when installed but closed), and `fullDiskAccess`.
+6. With Safari closed: `"$BIN" permissions request automation com.apple.Safari`
+   prints `com.apple.Safari is not running, open it and retry` to stderr and
+   exits 3. With Safari open it raises the macOS Automation prompt; after
+   `Allow`, `"$BIN" permissions` shows `"com.apple.Safari":"granted"`.
+7. `"$BIN" permissions request accessibility` raises the macOS Accessibility
+   prompt naming the terminal.
+8. `"$BIN" permissions request fulldiskaccess` opens System Settings at
+   Privacy & Security → Full Disk Access.
+9. With the terminal enabled in Full Disk Access: `"$BIN" permissions` ends
+   `"fullDiskAccess":"granted"}`.
