@@ -16,15 +16,13 @@ pnpm test
 
 ## Layout
 
-Things a person or an AI app starts go in `apps`. Things our own code imports go in `packages`.
-
 | Path | What it is |
 | --- | --- |
 | `packages/core` | Activities, categories, projects, rules, queries, storage. Imported by every app. |
 | `apps/cli` | The `clocktrace` command. |
 | `apps/mcp` | The MCP server a Host starts. |
 
-Every package extends `tsconfig.base.json`, is linted by the root `biome.json`, and has its own `build` and `test` scripts. Adding a package needs no root change: create it under `apps` or `packages` and pnpm picks it up.
+Where code goes, and the rest of the rules, are in `CODING_STANDARDS.md`.
 
 The root lists `@clocktrace/cli` as a dev dependency only so the `clocktrace` bin is linked at the workspace root. After `pnpm build`, `pnpm --filter cli exec clocktrace --version` prints the CLI version.
 
