@@ -21,6 +21,60 @@ final class CommandTests: XCTestCase {
     XCTAssertEqual(command, .watch)
   }
 
+  func testParsesPermissions() {
+    // Given: args ["permissions"]
+    let args = ["permissions"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .permissions)
+  }
+
+  func testParsesRequestAccessibility() {
+    // Given: args ["permissions", "request", "accessibility"]
+    let args = ["permissions", "request", "accessibility"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .requestAccessibility)
+  }
+
+  func testParsesRequestAutomationWithABundleId() {
+    // Given: args ["permissions", "request", "automation", "com.apple.Safari"]
+    let args = ["permissions", "request", "automation", "com.apple.Safari"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .requestAutomation("com.apple.Safari"))
+  }
+
+  func testParsesRequestFullDiskAccess() {
+    // Given: args ["permissions", "request", "fulldiskaccess"]
+    let args = ["permissions", "request", "fulldiskaccess"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .requestFullDiskAccess)
+  }
+
+  func testReturnsUsageForAnUnknownRequestName() {
+    // Given: args ["permissions", "request", "bogus"]
+    let args = ["permissions", "request", "bogus"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .usage)
+  }
+
+  func testReturnsUsageForAutomationWithoutABundleId() {
+    // Given: args ["permissions", "request", "automation"]
+    let args = ["permissions", "request", "automation"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .usage)
+  }
+
   func testReturnsUsageForAnUnknownSubcommand() {
     // Given: args ["bogus"]
     let args = ["bogus"]
