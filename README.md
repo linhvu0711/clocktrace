@@ -4,7 +4,7 @@ Automatic time tracking for a Mac, queried through an AI agent instead of a UI.
 
 ## Develop
 
-Requires Node 22+ and pnpm 9.
+Requires Node 22.12+, 24.x, or 26+ and pnpm 9.
 
 ```sh
 pnpm install
