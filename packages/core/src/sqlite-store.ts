@@ -12,6 +12,8 @@ import type { Device } from "./device.js";
 import { NewDevice as NewDeviceSchema } from "./device.js";
 import { DatabaseNewerError, StoreError } from "./errors.js";
 import { migrations } from "./migrations.js";
+import type { Project } from "./project.js";
+import { NewProject as NewProjectSchema } from "./project.js";
 import type { StoreShape } from "./store.js";
 
 export const openStore = (
@@ -65,6 +67,12 @@ export const openStore = (
     );
     const selectCategories = db.prepare(
       "SELECT id, name, productive FROM categories ORDER BY name",
+    );
+    const insertProjectStatement = db.prepare(
+      "INSERT INTO projects (id, name) VALUES (@id, @name)",
+    );
+    const selectProjects = db.prepare(
+      "SELECT id, name FROM projects ORDER BY name",
     );
     const selectActivities = db.prepare(
       "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
@@ -179,6 +187,25 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const insertProject: StoreShape["insertProject"] = (input) =>
+      Effect.gen(function* () {
+        const project = yield* Schema.validate(NewProjectSchema)(input);
+        return yield* Effect.try({
+          try: () => {
+            const id = randomUUID();
+            insertProjectStatement.run({ id, name: project.name });
+            return { id, ...project };
+          },
+          catch: (cause) => new StoreError({ cause }),
+        });
+      });
+
+    const listProjects: StoreShape["listProjects"] = () =>
+      Effect.try({
+        try: () => selectProjects.all() as ReadonlyArray<Project>,
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     return {
       getOrInsertDevice,
       listDevices,
@@ -186,5 +213,7 @@ export const openStore = (
       readActivities,
       insertCategory,
       listCategories,
+      insertProject,
+      listProjects,
     };
   });

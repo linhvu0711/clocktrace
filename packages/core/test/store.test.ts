@@ -414,6 +414,23 @@ describe("store", () => {
     ]);
   });
 
+  it("insertProject and listProjects", async () => {
+    // Given: an open store
+    const { inserted, projects } = await useStore((store) =>
+      Effect.gen(function* () {
+        // When
+        const inserted = yield* store.insertProject({ name: "Thesis" });
+        yield* store.insertProject({ name: "Clocktrace" });
+        const projects = yield* store.listProjects();
+        return { inserted, projects };
+      }),
+    );
+    // Then
+    expect(inserted.id).toHaveLength(36);
+    expect(inserted.name).toBe("Thesis");
+    expect(projects.map((p) => p.name)).toEqual(["Clocktrace", "Thesis"]);
+  });
+
   it("Store.Test provides an in-memory store", async () => {
     // Given: nothing on disk
     // When

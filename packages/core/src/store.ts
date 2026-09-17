@@ -5,6 +5,7 @@ import type { Activity, NewActivity } from "./activity.js";
 import type { Category, NewCategory } from "./category.js";
 import type { Device, NewDevice } from "./device.js";
 import type { StoreError } from "./errors.js";
+import type { NewProject, Project } from "./project.js";
 import { openStore } from "./sqlite-store.js";
 
 export interface StoreShape {
@@ -25,6 +26,13 @@ export interface StoreShape {
   ) => Effect.Effect<Category, ParseError | StoreError>;
   readonly listCategories: () => Effect.Effect<
     ReadonlyArray<Category>,
+    StoreError
+  >;
+  readonly insertProject: (
+    input: NewProject,
+  ) => Effect.Effect<Project, ParseError | StoreError>;
+  readonly listProjects: () => Effect.Effect<
+    ReadonlyArray<Project>,
     StoreError
   >;
 }
