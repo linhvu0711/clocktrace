@@ -431,6 +431,53 @@ describe("store", () => {
     expect(projects.map((p) => p.name)).toEqual(["Clocktrace", "Thesis"]);
   });
 
+  it("insertRule, listRules, deleteRule", async () => {
+    // Given: an open store and a category
+    const { c, r0, positions, first, second, remaining } = await useStore(
+      (store) =>
+        Effect.gen(function* () {
+          const c = yield* store.insertCategory({
+            name: "Coding",
+            productive: true,
+          });
+          // When
+          const r1 = yield* store.insertRule({
+            position: 1,
+            field: "title",
+            compare: "ends with",
+            value: "(Incognito)",
+            effect: "private",
+            target: null,
+          });
+          const r0 = yield* store.insertRule({
+            position: 0,
+            field: "app",
+            compare: "is",
+            value: "com.apple.Terminal",
+            effect: "category",
+            target: c.id,
+          });
+          const positions = (yield* store.listRules()).map((r) => r.position);
+          const first = yield* store.deleteRule(r1.id);
+          const second = yield* store.deleteRule(r1.id);
+          const remaining = yield* store.listRules();
+          return { c, r0, positions, first, second, remaining };
+        }),
+    );
+    // Then
+    expect(r0.id).toHaveLength(36);
+    expect(r0.position).toBe(0);
+    expect(r0.field).toBe("app");
+    expect(r0.compare).toBe("is");
+    expect(r0.value).toBe("com.apple.Terminal");
+    expect(r0.effect).toBe("category");
+    expect(positions).toEqual([0, 1]);
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.target).toBe(c.id);
+  });
+
   it("Store.Test provides an in-memory store", async () => {
     // Given: nothing on disk
     // When

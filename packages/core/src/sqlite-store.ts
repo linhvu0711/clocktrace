@@ -14,6 +14,8 @@ import { DatabaseNewerError, StoreError } from "./errors.js";
 import { migrations } from "./migrations.js";
 import type { Project } from "./project.js";
 import { NewProject as NewProjectSchema } from "./project.js";
+import type { Rule } from "./rule.js";
+import { NewRule as NewRuleSchema } from "./rule.js";
 import type { StoreShape } from "./store.js";
 
 export const openStore = (
@@ -74,6 +76,13 @@ export const openStore = (
     const selectProjects = db.prepare(
       "SELECT id, name FROM projects ORDER BY name",
     );
+    const insertRuleStatement = db.prepare(
+      "INSERT INTO rules (id, position, field, compare, value, effect, target) VALUES (@id, @position, @field, @compare, @value, @effect, @target)",
+    );
+    const selectRules = db.prepare(
+      "SELECT id, position, field, compare, value, effect, target FROM rules ORDER BY position",
+    );
+    const deleteRuleStatement = db.prepare("DELETE FROM rules WHERE id = @id");
     const selectActivities = db.prepare(
       "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
     );
@@ -206,6 +215,31 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const insertRule: StoreShape["insertRule"] = (input) =>
+      Effect.gen(function* () {
+        const rule = yield* Schema.validate(NewRuleSchema)(input);
+        return yield* Effect.try({
+          try: () => {
+            const id = randomUUID();
+            insertRuleStatement.run({ id, ...rule });
+            return { id, ...rule };
+          },
+          catch: (cause) => new StoreError({ cause }),
+        });
+      });
+
+    const listRules: StoreShape["listRules"] = () =>
+      Effect.try({
+        try: () => selectRules.all() as ReadonlyArray<Rule>,
+        catch: (cause) => new StoreError({ cause }),
+      });
+
+    const deleteRule: StoreShape["deleteRule"] = (id) =>
+      Effect.try({
+        try: () => deleteRuleStatement.run({ id }).changes === 1,
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     return {
       getOrInsertDevice,
       listDevices,
@@ -215,5 +249,8 @@ export const openStore = (
       listCategories,
       insertProject,
       listProjects,
+      insertRule,
+      listRules,
+      deleteRule,
     };
   });

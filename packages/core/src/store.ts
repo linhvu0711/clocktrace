@@ -6,6 +6,7 @@ import type { Category, NewCategory } from "./category.js";
 import type { Device, NewDevice } from "./device.js";
 import type { StoreError } from "./errors.js";
 import type { NewProject, Project } from "./project.js";
+import type { NewRule, Rule } from "./rule.js";
 import { openStore } from "./sqlite-store.js";
 
 export interface StoreShape {
@@ -35,6 +36,11 @@ export interface StoreShape {
     ReadonlyArray<Project>,
     StoreError
   >;
+  readonly insertRule: (
+    input: NewRule,
+  ) => Effect.Effect<Rule, ParseError | StoreError>;
+  readonly listRules: () => Effect.Effect<ReadonlyArray<Rule>, StoreError>;
+  readonly deleteRule: (id: string) => Effect.Effect<boolean, StoreError>;
 }
 
 export class Store extends Effect.Service<Store>()("Store", {
