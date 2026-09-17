@@ -53,8 +53,8 @@ One test on an Activity with one effect: set its Category, set its Project, or m
 _Avoid_: Filter, mapping, classifier, blacklist
 
 **Private**:
-A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk.
-_Avoid_: Ignore, exclude, hidden
+A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead.
+_Avoid_: Ignore, exclude, hidden, public
 
 **Uncategorized**:
 The Category an Activity falls into when no Rule matches. Not a stored Category, a result.
