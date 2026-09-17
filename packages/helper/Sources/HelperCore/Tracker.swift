@@ -59,7 +59,8 @@ public struct Tracker {
 
     let heartbeatDue: Bool
     if let lastAt {
-      heartbeatDue = now.timeIntervalSince(lastAt) >= Self.heartbeatInterval
+      let elapsed = now.timeIntervalSince(lastAt)
+      heartbeatDue = elapsed < 0 || elapsed >= Self.heartbeatInterval
     } else {
       heartbeatDue = true
     }

@@ -161,6 +161,21 @@ final class TrackerTests: XCTestCase {
     XCTAssertEqual(line?.missing, [])
   }
 
+  func testBackwardClockStillEmitsAHeartbeat() {
+    // Given: the tracker emitted at t0 and stayed quiet 5s later; then the
+    // clock steps back 30s
+    var tracker = Tracker()
+    _ = tracker.observe(finderSample, at: t0)
+    _ = tracker.observe(finderSample, at: t0.addingTimeInterval(5))
+    let backward = t0.addingTimeInterval(-30)
+    // When
+    let line = tracker.observe(finderSample, at: backward)
+    // Then
+    XCTAssertEqual(line?.ts, "2025-12-31T23:59:30.000Z")
+    // And nothing emits 5s after the backward step while nothing changed
+    XCTAssertNil(tracker.observe(finderSample, at: backward.addingTimeInterval(5)))
+  }
+
   func testPassesIdleSecondsThrough() {
     // Given: a fresh tracker; sample with idleSeconds 42.5
     var tracker = Tracker()
