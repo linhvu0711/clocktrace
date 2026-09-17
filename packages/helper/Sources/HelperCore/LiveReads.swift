@@ -35,18 +35,7 @@ extension Reads {
       return titleRef as? String
     },
     automationGranted: { bundleId in
-      var addr = AEAddressDesc()
-      let createStatus = bundleId.utf8CString.withUnsafeBufferPointer {
-        buffer in
-        AECreateDesc(
-          DescType(typeApplicationBundleID), buffer.baseAddress,
-          bundleId.utf8.count, &addr)
-      }
-      guard createStatus == noErr else { return false }
-      defer { AEDisposeDesc(&addr) }
-      return AEDeterminePermissionToAutomateTarget(
-        &addr, AEEventClass(typeWildCard), AEEventID(typeWildCard), false)
-        == noErr
+      automationStatus(bundleId: bundleId, askUser: false) == noErr
     },
     runScript: { source in
       var error: NSDictionary?
@@ -58,4 +47,17 @@ extension Reads {
         .combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
     }
   )
+}
+
+func automationStatus(bundleId: String, askUser: Bool) -> OSStatus {
+  var addr = AEAddressDesc()
+  let createStatus = bundleId.utf8CString.withUnsafeBufferPointer { buffer in
+    AECreateDesc(
+      DescType(typeApplicationBundleID), buffer.baseAddress,
+      bundleId.utf8.count, &addr)
+  }
+  guard createStatus == noErr else { return OSStatus(createStatus) }
+  defer { AEDisposeDesc(&addr) }
+  return AEDeterminePermissionToAutomateTarget(
+    &addr, AEEventClass(typeWildCard), AEEventID(typeWildCard), askUser)
 }

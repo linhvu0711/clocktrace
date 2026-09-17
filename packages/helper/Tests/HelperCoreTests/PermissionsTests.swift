@@ -1,0 +1,152 @@
+import XCTest
+
+@testable import HelperCore
+
+final class PermissionsTests: XCTestCase {
+  private func reads(
+    axTrusted: @escaping () -> Bool = { true },
+    axPrompt: @escaping () -> Void = {},
+    installed: @escaping (String) -> Bool = {
+      ["com.apple.Safari", "com.google.Chrome", "com.brave.Browser"].contains($0)
+    },
+    automationStatus: @escaping (String, Bool) -> OSStatus = { bundleId, _ in
+      switch bundleId {
+      case "com.apple.Safari": return -600
+      case "com.google.Chrome": return -1744
+      default: return 0
+      }
+    },
+    canOpenBiomeSyncDb: @escaping () -> Bool = { false },
+    openSettings: @escaping (String) -> Void = { _ in }
+  ) -> PermissionReads {
+    PermissionReads(
+      axTrusted: axTrusted,
+      axPrompt: axPrompt,
+      installed: installed,
+      automationStatus: automationStatus,
+      canOpenBiomeSyncDb: canOpenBiomeSyncDb,
+      openSettings: openSettings
+    )
+  }
+
+  func testPrintsAllThreeGrantsInKeyOrder() {
+    // Given: Accessibility granted; Safari not running, Chrome never asked,
+    // Brave granted, the rest not installed; sync.db does not open
+    let reads = reads()
+    // When
+    let json = checkPermissions(reads: reads).json()
+    // Then
+    XCTAssertEqual(
+      json,
+      "{\"accessibility\":\"granted\",\"automation\":{\"com.apple.Safari\":\"notRunning\",\"com.brave.Browser\":\"granted\",\"com.google.Chrome\":\"notAsked\",\"com.microsoft.edgemac\":\"notInstalled\",\"com.operasoftware.Opera\":\"notInstalled\",\"com.vivaldi.Vivaldi\":\"notInstalled\",\"org.chromium.Chromium\":\"notInstalled\"},\"fullDiskAccess\":\"denied\"}"
+    )
+  }
+
+  func testAutomationDeniedWhenTheProbeSaysNotPermitted() {
+    // Given: the same reads, but Chrome's probe answers -1743
+    let reads = reads(automationStatus: { bundleId, _ in
+      switch bundleId {
+      case "com.apple.Safari": return -600
+      case "com.google.Chrome": return -1743
+      default: return 0
+      }
+    })
+    // When
+    let state = checkPermissions(reads: reads).automation["com.google.Chrome"]
+    // Then
+    XCTAssertEqual(state, .denied)
+  }
+
+  func testAccessibilityDeniedWhenNotTrusted() {
+    // Given: the same reads, but Accessibility is not granted
+    let reads = reads(axTrusted: { false })
+    // When
+    let state = checkPermissions(reads: reads).accessibility
+    // Then
+    XCTAssertEqual(state, .denied)
+  }
+
+  func testBiomeSyncDbPathIsTheImporterFile() {
+    // Given: nothing
+    // When
+    let isImporterFile = biomeSyncDbPath.hasSuffix("/Library/Biome/sync/sync.db")
+    // Then
+    XCTAssertTrue(isImporterFile)
+  }
+
+  func testRequestAccessibilityAsksThePromptOnce() {
+    // Given: a fake whose axPrompt appends to prompts
+    var prompts: [String] = []
+    let reads = reads(axPrompt: { prompts.append("prompt") })
+    // When
+    _ = requestAccessibility(reads: reads)
+    // Then
+    XCTAssertEqual(prompts.count, 1)
+  }
+
+  func testRequestAutomationProbesTheBrowserWithAsk() {
+    // Given: a fake whose automationStatus records (bundleId, ask) pairs
+    var probes: [[String]] = []
+    let reads = reads(automationStatus: { bundleId, ask in
+      probes.append([bundleId, String(ask)])
+      return 0
+    })
+    // When
+    _ = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(probes, [["com.apple.Safari", "true"]])
+  }
+
+  func testRequestAutomationExits3WhenNotRunning() {
+    // Given: a fake whose automationStatus returns -600
+    let reads = reads(automationStatus: { _, _ in -600 })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 3)
+  }
+
+  func testRequestAutomationPrintsTheRetryLineWhenNotRunning() {
+    // Given: a fake whose automationStatus returns -600; emitError records
+    var lines: [String] = []
+    let reads = reads(automationStatus: { _, _ in -600 })
+    // When
+    _ = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { lines.append($0) })
+    // Then
+    XCTAssertEqual(lines, ["com.apple.Safari is not running, open it and retry"])
+  }
+
+  func testRequestAutomationExits0WhenTheBrowserAnswered() {
+    // Given: a fake whose automationStatus returns -1743 (user denied)
+    let reads = reads(automationStatus: { _, _ in -1743 })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 0)
+  }
+
+  func testRequestFullDiskAccessOpensThePane() {
+    // Given: a fake whose openSettings records the URL strings
+    var urls: [String] = []
+    let reads = reads(openSettings: { urls.append($0) })
+    // When
+    _ = requestFullDiskAccess(reads: reads)
+    // Then
+    XCTAssertEqual(
+      urls,
+      ["x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"])
+  }
+
+  func testFullDiskAccessGrantedWhenTheSyncDbOpens() {
+    // Given: the same reads, but sync.db opens
+    let reads = reads(canOpenBiomeSyncDb: { true })
+    // When
+    let state = checkPermissions(reads: reads).fullDiskAccess
+    // Then
+    XCTAssertEqual(state, .granted)
+  }
+}

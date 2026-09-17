@@ -54,6 +54,24 @@ final class BrowserScriptTests: XCTestCase {
     )
   }
 
+  func testListsSafariAndTheChromeFamily() {
+    // Given: nothing
+    // When
+    let browsers = supportedBrowsers
+    // Then
+    XCTAssertEqual(
+      browsers,
+      [
+        "com.apple.Safari",
+        "com.brave.Browser",
+        "com.google.Chrome",
+        "com.microsoft.edgemac",
+        "com.operasoftware.Opera",
+        "com.vivaldi.Vivaldi",
+        "org.chromium.Chromium",
+      ])
+  }
+
   func testReturnsNilForAnyOtherApp() {
     // Given: a non-browser bundle id
     // When / Then

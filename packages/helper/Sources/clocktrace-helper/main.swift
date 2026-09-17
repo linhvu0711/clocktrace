@@ -6,6 +6,14 @@ case .version:
   print(version)
 case .watch:
   runWatch()
+case .permissions:
+  emit(checkPermissions().json())
+case .requestAccessibility:
+  exit(requestAccessibility())
+case .requestAutomation(let bundleId):
+  exit(requestAutomation(bundleId: bundleId))
+case .requestFullDiskAccess:
+  exit(requestFullDiskAccess())
 case .usage:
   FileHandle.standardError.write(usageText.data(using: .utf8)!)
   exit(2)

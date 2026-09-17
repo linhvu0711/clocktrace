@@ -7,6 +7,8 @@ private let chromeFamily: Set<String> = [
   "com.operasoftware.Opera",
 ]
 
+public let supportedBrowsers: [String] = ["com.apple.Safari"] + chromeFamily.sorted()
+
 public func browserScript(bundleId: String) -> String? {
   if bundleId == "com.apple.Safari" {
     return "tell application \"Safari\" to get URL of current tab of front window"
