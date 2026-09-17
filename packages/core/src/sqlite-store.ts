@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { Effect, Schema, type Scope } from "effect";
+import { DateTime, Effect, Schema, type Scope } from "effect";
 
+import type { Activity } from "./activity.js";
+import { NewActivity as NewActivitySchema } from "./activity.js";
 import type { Device } from "./device.js";
 import { NewDevice as NewDeviceSchema } from "./device.js";
 import { DatabaseNewerError, StoreError } from "./errors.js";
@@ -53,6 +55,12 @@ export const openStore = (
     const selectDevices = db.prepare(
       "SELECT id, kind, name, external_id AS externalId FROM devices ORDER BY name",
     );
+    const insertActivityStatement = db.prepare(
+      "INSERT INTO activities (id, device_id, bundle_id, app_name, title, url, started_at, ended_at) VALUES (@id, @deviceId, @bundleId, @appName, @title, @url, @startedAt, @endedAt)",
+    );
+    const selectActivities = db.prepare(
+      "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
+    );
 
     const getOrInsertDevice: StoreShape["getOrInsertDevice"] = (input) =>
       Effect.gen(function* () {
@@ -74,5 +82,64 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
-    return { getOrInsertDevice, listDevices };
+    const insertActivity: StoreShape["insertActivity"] = (input) =>
+      Effect.gen(function* () {
+        const activity = yield* Schema.validate(NewActivitySchema)(input);
+        return yield* Effect.try({
+          try: () => {
+            const id = randomUUID();
+            insertActivityStatement.run({
+              id,
+              deviceId: activity.deviceId,
+              bundleId: activity.bundleId,
+              appName: activity.appName,
+              title: activity.title,
+              url: activity.url,
+              startedAt: DateTime.formatIso(activity.startedAt),
+              endedAt: DateTime.formatIso(activity.endedAt),
+            });
+            return { id, ...activity };
+          },
+          catch: (cause) => new StoreError({ cause }),
+        });
+      });
+
+    const readActivities: StoreShape["readActivities"] = (query) => {
+      if (query.to.epochMillis <= query.from.epochMillis) {
+        return Effect.succeed([]);
+      }
+      return Effect.try({
+        try: () => {
+          const rows = selectActivities.all({
+            from: DateTime.formatIso(query.from),
+            to: DateTime.formatIso(query.to),
+            deviceId: query.deviceId ?? null,
+          }) as ReadonlyArray<{
+            id: string;
+            deviceId: string;
+            bundleId: string;
+            appName: string;
+            title: string | null;
+            url: string | null;
+            startedAt: string;
+            endedAt: string;
+          }>;
+          return rows.map(
+            (row): Activity => ({
+              ...row,
+              startedAt: DateTime.unsafeMake(row.startedAt),
+              endedAt: DateTime.unsafeMake(row.endedAt),
+            }),
+          );
+        },
+        catch: (cause) => new StoreError({ cause }),
+      });
+    };
+
+    return {
+      getOrInsertDevice,
+      listDevices,
+      insertActivity,
+      readActivities,
+    };
   });

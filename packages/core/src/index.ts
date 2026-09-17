@@ -2,6 +2,7 @@ import { Effect } from "effect";
 
 export const ready: Effect.Effect<string> = Effect.succeed("core ready");
 
+export * from "./activity.js";
 export * from "./device.js";
 export * from "./errors.js";
 export * from "./migrations.js";

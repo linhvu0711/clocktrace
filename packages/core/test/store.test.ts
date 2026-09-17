@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { Effect, Either } from "effect";
+import { DateTime, Effect, Either } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DatabaseNewerError, StoreShape } from "../src/index.js";
@@ -163,6 +163,229 @@ describe("store", () => {
     );
     // Then
     expect(devices).toEqual([]);
+  });
+
+  const t = (s: string) => DateTime.unsafeMake(s);
+
+  const seedDevice = (store: StoreShape) =>
+    store.getOrInsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+
+  const seedActivities = (store: StoreShape, deviceId: string) =>
+    Effect.gen(function* () {
+      yield* store.insertActivity({
+        deviceId,
+        bundleId: "com.google.Chrome",
+        appName: "Chrome",
+        title: "GitHub",
+        url: "https://github.com",
+        startedAt: t("2026-09-17T10:30:00.000Z"),
+        endedAt: t("2026-09-17T11:00:00.000Z"),
+      });
+      yield* store.insertActivity({
+        deviceId,
+        bundleId: "com.apple.Terminal",
+        appName: "Terminal",
+        title: "zsh",
+        url: null,
+        startedAt: t("2026-09-17T10:00:00.000Z"),
+        endedAt: t("2026-09-17T10:30:00.000Z"),
+      });
+      yield* store.insertActivity({
+        deviceId,
+        bundleId: "com.apple.mail",
+        appName: "Mail",
+        title: null,
+        url: null,
+        startedAt: t("2026-09-17T11:00:00.000Z"),
+        endedAt: t("2026-09-17T11:30:00.000Z"),
+      });
+    });
+
+  it("insertActivity returns the row with a UUID id", async () => {
+    // Given: an open store and a device
+    const activity = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        // When
+        return yield* store.insertActivity({
+          deviceId: d.id,
+          bundleId: "com.apple.Terminal",
+          appName: "Terminal",
+          title: "zsh",
+          url: null,
+          startedAt: t("2026-09-17T10:00:00.000Z"),
+          endedAt: t("2026-09-17T10:30:00.000Z"),
+        });
+      }),
+    );
+    // Then
+    expect(activity.id).toHaveLength(36);
+    expect(activity.title).toBe("zsh");
+    expect(activity.url).toBeNull();
+    expect(DateTime.formatIso(activity.startedAt)).toBe(
+      "2026-09-17T10:00:00.000Z",
+    );
+    expect(DateTime.formatIso(activity.endedAt)).toBe(
+      "2026-09-17T10:30:00.000Z",
+    );
+  });
+
+  it("the activity interface has insert and read only", async () => {
+    // Given: an open store
+    const keys = await useStore((store) =>
+      Effect.succeed(
+        Object.keys(store)
+          .filter((k) => /activit/i.test(k))
+          .sort(),
+      ),
+    );
+    // Then
+    expect(keys).toEqual(["insertActivity", "readActivities"]);
+  });
+
+  it("readActivities returns overlapping rows in start order", async () => {
+    // Given: three activities on one device, inserted out of order
+    const rows = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* seedActivities(store, d.id);
+        // When
+        return yield* store.readActivities({
+          from: t("2026-09-17T10:15:00.000Z"),
+          to: t("2026-09-17T10:45:00.000Z"),
+        });
+      }),
+    );
+    // Then
+    expect(rows.map((a) => a.appName)).toEqual(["Terminal", "Chrome"]);
+    expect(rows[0]?.url).toBeNull();
+    expect(rows[1]?.url).toBe("https://github.com");
+  });
+
+  it("readActivities filters by deviceId", async () => {
+    // Given: the three rows on d plus one Safari row on a second device
+    const rows = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* seedActivities(store, d.id);
+        const e = yield* store.getOrInsertDevice({
+          kind: "iphone",
+          name: "Fone",
+          externalId: "iphone-1",
+        });
+        yield* store.insertActivity({
+          deviceId: e.id,
+          bundleId: "com.apple.mobilesafari",
+          appName: "Safari",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-17T10:00:00.000Z"),
+          endedAt: t("2026-09-17T11:00:00.000Z"),
+        });
+        // When
+        return yield* store.readActivities({
+          deviceId: e.id,
+          from: t("2026-09-17T10:00:00.000Z"),
+          to: t("2026-09-17T12:00:00.000Z"),
+        });
+      }),
+    );
+    // Then
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.appName).toBe("Safari");
+  });
+
+  it("readActivities returns [] when nothing overlaps", async () => {
+    // Given: the three rows on d
+    const rows = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* seedActivities(store, d.id);
+        // When
+        return yield* store.readActivities({
+          from: t("2026-09-17T12:00:00.000Z"),
+          to: t("2026-09-17T13:00:00.000Z"),
+        });
+      }),
+    );
+    // Then
+    expect(rows).toEqual([]);
+  });
+
+  it("readActivities returns [] for a zero-length range", async () => {
+    // Given: the three rows on d
+    const rows = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* seedActivities(store, d.id);
+        // When
+        return yield* store.readActivities({
+          from: t("2026-09-17T10:15:00.000Z"),
+          to: t("2026-09-17T10:15:00.000Z"),
+        });
+      }),
+    );
+    // Then
+    expect(rows).toEqual([]);
+  });
+
+  it("insertActivity rejects endedAt before startedAt", async () => {
+    // Given: an open store and a device
+    const { result, rows } = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        // When
+        const result = yield* Effect.either(
+          store.insertActivity({
+            deviceId: d.id,
+            bundleId: "com.apple.Terminal",
+            appName: "Terminal",
+            title: null,
+            url: null,
+            startedAt: t("2026-09-17T10:30:00.000Z"),
+            endedAt: t("2026-09-17T10:00:00.000Z"),
+          }),
+        );
+        const rows = yield* store.readActivities({
+          from: t("2026-09-17T00:00:00.000Z"),
+          to: t("2026-09-18T00:00:00.000Z"),
+        });
+        return { result, rows };
+      }),
+    );
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("ParseError");
+      expect(result.left.message).toContain('["endedAt"]');
+    }
+    expect(rows).toEqual([]);
+  });
+
+  it("insertActivity rejects an unknown deviceId", async () => {
+    // Given: an open store, no devices
+    const result = await useStore((store) =>
+      Effect.either(
+        store.insertActivity({
+          deviceId: "00000000-0000-4000-8000-000000000000",
+          bundleId: "com.apple.Terminal",
+          appName: "Terminal",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-17T10:00:00.000Z"),
+          endedAt: t("2026-09-17T10:30:00.000Z"),
+        }),
+      ),
+    );
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("StoreError");
+    }
   });
 
   it("Store.Test provides an in-memory store", async () => {
