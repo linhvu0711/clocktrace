@@ -1,0 +1,21 @@
+{
+  "name": "@clocktrace/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "clocktrace": "./bin/clocktrace.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@clocktrace/core": "workspace:*",
+    "effect": "^3.22.2"
+  }
+}
