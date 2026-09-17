@@ -10,7 +10,8 @@
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "lint:fix": "biome check --write .",
+    "postinstall": "bash scripts/sync-repos.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
