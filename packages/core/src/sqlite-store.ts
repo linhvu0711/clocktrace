@@ -22,75 +22,114 @@ export const openStore = (
   path: string,
 ): Effect.Effect<StoreShape, StoreError | DatabaseNewerError, Scope.Scope> =>
   Effect.gen(function* () {
-    if (path !== ":memory:") {
-      mkdirSync(dirname(path), { recursive: true });
-    }
+    const toStoreError = (cause: unknown) => new StoreError({ cause });
+    yield* Effect.try({
+      try: () => {
+        if (path !== ":memory:") {
+          mkdirSync(dirname(path), { recursive: true });
+        }
+      },
+      catch: toStoreError,
+    });
     const db = yield* Effect.acquireRelease(
       Effect.try({
         try: () => new Database(path),
-        catch: (cause) => new StoreError({ cause }),
+        catch: toStoreError,
       }),
       (db) => Effect.sync(() => db.close()),
     );
-    db.pragma("journal_mode = WAL");
-    db.pragma("foreign_keys = ON");
-    const fileVersion = db.pragma("user_version", { simple: true }) as number;
+    yield* Effect.try({
+      try: () => {
+        db.pragma("journal_mode = WAL");
+        db.pragma("foreign_keys = ON");
+        db.pragma("busy_timeout = 5000");
+      },
+      catch: toStoreError,
+    });
+    const fileVersion = yield* Effect.try({
+      try: () =>
+        db
+          .transaction(() => {
+            const v = db.pragma("user_version", { simple: true }) as number;
+            if (v <= migrations.length) {
+              for (const sql of migrations.slice(v)) {
+                db.exec(sql);
+              }
+              db.pragma(`user_version = ${migrations.length}`);
+            }
+            return v;
+          })
+          .immediate(),
+      catch: toStoreError,
+    });
     if (fileVersion > migrations.length) {
       yield* new DatabaseNewerError({
         fileVersion,
         codeVersion: migrations.length,
       });
     }
-    yield* Effect.try({
-      try: () =>
-        db.transaction(() => {
-          for (const sql of migrations.slice(fileVersion)) {
-            db.exec(sql);
-          }
-          db.pragma(`user_version = ${migrations.length}`);
-        })(),
-      catch: (cause) => new StoreError({ cause }),
-    });
+    const prepare = <T>(f: () => T) =>
+      Effect.try({ try: f, catch: toStoreError });
 
-    const insertDevice = db.prepare(
-      "INSERT OR IGNORE INTO devices (id, kind, name, external_id) VALUES (@id, @kind, @name, @externalId)",
+    const insertDevice = yield* prepare(() =>
+      db.prepare(
+        "INSERT OR IGNORE INTO devices (id, kind, name, external_id) VALUES (@id, @kind, @name, @externalId)",
+      ),
     );
-    const selectDeviceByExternalId = db.prepare(
-      "SELECT id, kind, name, external_id AS externalId FROM devices WHERE external_id = @externalId",
+    const selectDeviceByExternalId = yield* prepare(() =>
+      db.prepare(
+        "SELECT id, kind, name, external_id AS externalId FROM devices WHERE external_id = @externalId",
+      ),
     );
-    const selectDevices = db.prepare(
-      "SELECT id, kind, name, external_id AS externalId FROM devices ORDER BY name",
+    const selectDevices = yield* prepare(() =>
+      db.prepare(
+        "SELECT id, kind, name, external_id AS externalId FROM devices ORDER BY name",
+      ),
     );
-    const insertActivityStatement = db.prepare(
-      "INSERT INTO activities (id, device_id, bundle_id, app_name, title, url, started_at, ended_at) VALUES (@id, @deviceId, @bundleId, @appName, @title, @url, @startedAt, @endedAt)",
+    const insertActivityStatement = yield* prepare(() =>
+      db.prepare(
+        "INSERT INTO activities (id, device_id, bundle_id, app_name, title, url, started_at, ended_at) VALUES (@id, @deviceId, @bundleId, @appName, @title, @url, @startedAt, @endedAt)",
+      ),
     );
-    const insertCategoryStatement = db.prepare(
-      "INSERT INTO categories (id, name, productive) VALUES (@id, @name, @productive)",
+    const insertCategoryStatement = yield* prepare(() =>
+      db.prepare(
+        "INSERT INTO categories (id, name, productive) VALUES (@id, @name, @productive)",
+      ),
     );
-    const selectCategories = db.prepare(
-      "SELECT id, name, productive FROM categories ORDER BY name",
+    const selectCategories = yield* prepare(() =>
+      db.prepare("SELECT id, name, productive FROM categories ORDER BY name"),
     );
-    const insertProjectStatement = db.prepare(
-      "INSERT INTO projects (id, name) VALUES (@id, @name)",
+    const insertProjectStatement = yield* prepare(() =>
+      db.prepare("INSERT INTO projects (id, name) VALUES (@id, @name)"),
     );
-    const selectProjects = db.prepare(
-      "SELECT id, name FROM projects ORDER BY name",
+    const selectProjects = yield* prepare(() =>
+      db.prepare("SELECT id, name FROM projects ORDER BY name"),
     );
-    const insertRuleStatement = db.prepare(
-      "INSERT INTO rules (id, position, field, compare, value, effect, target) VALUES (@id, @position, @field, @compare, @value, @effect, @target)",
+    const insertRuleStatement = yield* prepare(() =>
+      db.prepare(
+        "INSERT INTO rules (id, position, field, compare, value, effect, target) VALUES (@id, @position, @field, @compare, @value, @effect, @target)",
+      ),
     );
-    const selectRules = db.prepare(
-      "SELECT id, position, field, compare, value, effect, target FROM rules ORDER BY position",
+    const selectRules = yield* prepare(() =>
+      db.prepare(
+        "SELECT id, position, field, compare, value, effect, target FROM rules ORDER BY position",
+      ),
     );
-    const deleteRuleStatement = db.prepare("DELETE FROM rules WHERE id = @id");
-    const upsertSetting = db.prepare(
-      "INSERT INTO settings (key, value) VALUES (@key, @value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    const deleteRuleStatement = yield* prepare(() =>
+      db.prepare("DELETE FROM rules WHERE id = @id"),
     );
-    const selectSetting = db.prepare(
-      "SELECT value FROM settings WHERE key = @key",
+    const upsertSetting = yield* prepare(() =>
+      db.prepare(
+        "INSERT INTO settings (key, value) VALUES (@key, @value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      ),
     );
-    const selectActivities = db.prepare(
-      "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
+    const selectSetting = yield* prepare(() =>
+      db.prepare("SELECT value FROM settings WHERE key = @key"),
+    );
+    const selectActivities = yield* prepare(() =>
+      db.prepare(
+        "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
+      ),
     );
 
     const getOrInsertDevice: StoreShape["getOrInsertDevice"] = (input) =>
