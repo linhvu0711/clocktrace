@@ -19,6 +19,7 @@ pnpm test
 | Path | What it is |
 | --- | --- |
 | `packages/core` | Activities, categories, projects, rules, queries, storage. Imported by every app. |
+| `packages/helper` | The Swift `clocktrace-helper` binary the Collector runs: `watch` prints app, title, URL, idle as JSON lines. |
 | `apps/cli` | The `clocktrace` command. |
 | `apps/mcp` | The MCP server a Host starts. |
 
