@@ -295,6 +295,132 @@ describe("server", () => {
     expect(listed.structuredContent).toEqual({ rules: [] });
   });
 
+  it("set_category creates, then updates by id", async () => {
+    // Given: a server over an empty store
+    const { client, close } = await connect(EmptyStore);
+    // When
+    const created = await callTool(client, {
+      name: "set_category",
+      arguments: { name: "Research", productive: true },
+    });
+    const id = (created.structuredContent as { id: string }).id;
+    const updated = await callTool(client, {
+      name: "set_category",
+      arguments: { id, name: "Reading", productive: false },
+    });
+    const listed = await callTool(client, {
+      name: "list_categories",
+      arguments: {},
+    });
+    await close();
+    // Then
+    expect(created.isError).toBeUndefined();
+    const first = created.structuredContent as Record<string, unknown>;
+    expect(first.name).toBe("Research");
+    expect(first.productive).toBe(true);
+    expect(id).toHaveLength(36);
+    expect(updated.structuredContent).toEqual({
+      id,
+      name: "Reading",
+      productive: false,
+    });
+    expect(listed.structuredContent).toEqual({
+      categories: [{ id, name: "Reading", productive: false }],
+    });
+  });
+
+  it("set_category with an unknown id names the id", async () => {
+    // Given: the same
+    const { client, close } = await connect(EmptyStore);
+    // When
+    const result = await callTool(client, {
+      name: "set_category",
+      arguments: {
+        id: "00000000-0000-4000-8000-000000000077",
+        name: "X",
+        productive: true,
+      },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "category 00000000-0000-4000-8000-000000000077 not found",
+    );
+  });
+
+  it("set_project creates, then renames by id", async () => {
+    // Given: the same
+    const { client, close } = await connect(EmptyStore);
+    // When
+    const created = await callTool(client, {
+      name: "set_project",
+      arguments: { name: "Thesis" },
+    });
+    const id = (created.structuredContent as { id: string }).id;
+    const renamed = await callTool(client, {
+      name: "set_project",
+      arguments: { id, name: "PhD thesis" },
+    });
+    const listed = await callTool(client, {
+      name: "list_projects",
+      arguments: {},
+    });
+    await close();
+    // Then
+    expect(created.isError).toBeUndefined();
+    const first = created.structuredContent as Record<string, unknown>;
+    expect(first.name).toBe("Thesis");
+    expect(id).toHaveLength(36);
+    expect(renamed.structuredContent).toEqual({ id, name: "PhD thesis" });
+    expect(listed.structuredContent).toEqual({
+      projects: [{ id, name: "PhD thesis" }],
+    });
+  });
+
+  it("set_project with an unknown id names the id", async () => {
+    // Given: the same
+    const { client, close } = await connect(EmptyStore);
+    // When
+    const result = await callTool(client, {
+      name: "set_project",
+      arguments: { id: "00000000-0000-4000-8000-000000000077", name: "X" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "project 00000000-0000-4000-8000-000000000077 not found",
+    );
+  });
+
+  it("add_rule accepts a Category made by set_category as target", async () => {
+    // Given: the same, plus a Category made through set_category
+    const { client, close } = await connect(EmptyStore);
+    const created = await callTool(client, {
+      name: "set_category",
+      arguments: { name: "Coding", productive: true },
+    });
+    const id = (created.structuredContent as { id: string }).id;
+    // When
+    const result = await callTool(client, {
+      name: "add_rule",
+      arguments: {
+        field: "app",
+        compare: "is",
+        value: "com.apple.Terminal",
+        effect: "category",
+        target: id,
+      },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBeUndefined();
+    const rule = result.structuredContent as Record<string, unknown>;
+    expect(rule.target).toBe(id);
+    expect(rule.position).toBe(0);
+  });
+
   it("remove_rule of an unknown id names the id", async () => {
     // Given: the same
     const { client, close } = await connect(EmptyStore);

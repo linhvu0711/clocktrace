@@ -1,7 +1,9 @@
 import {
   addRule,
+  type CategoryNotFoundError,
   type DatabaseNewerError,
   type InvalidRuleError,
+  type ProjectNotFoundError,
   RuleCompare,
   RuleEffect,
   RuleField,
@@ -9,6 +11,8 @@ import {
   removeRule,
   Store,
   type StoreError,
+  setCategory,
+  setProject,
 } from "@clocktrace/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -30,6 +34,8 @@ export type StoreLayerError = StoreError | DatabaseNewerError;
 type ToolError =
   | InvalidRuleError
   | RuleNotFoundError
+  | CategoryNotFoundError
+  | ProjectNotFoundError
   | StoreLayerError
   | ParseError;
 
@@ -162,6 +168,38 @@ export const makeServer = async (
       outputSchema: { removed: z.string() },
     },
     ({ id }) => run(Effect.as(removeRule(id), { removed: id })),
+  );
+
+  server.registerTool(
+    "set_category",
+    {
+      description:
+        "Create a Category (no id) or update its name and productive flag (with id).",
+      inputSchema: {
+        id: z.string().optional(),
+        name: z.string(),
+        productive: z.boolean(),
+      },
+      outputSchema: CategoryOut.shape,
+    },
+    (input) =>
+      run(
+        setCategory({
+          id: input.id ?? null,
+          name: input.name,
+          productive: input.productive,
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "set_project",
+    {
+      description: "Create a Project (no id) or rename it (with id).",
+      inputSchema: { id: z.string().optional(), name: z.string() },
+      outputSchema: ProjectOut.shape,
+    },
+    (input) => run(setProject({ id: input.id ?? null, name: input.name })),
   );
 
   return { server, dispose };
