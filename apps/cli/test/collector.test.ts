@@ -304,6 +304,61 @@ describe("collector", () => {
     ]);
   });
 
+  it("a Private rule blanks title and url before the write", async () => {
+    // Given: the Starter set's `(Incognito)` rule is Private
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        title: "Example Domain - Google Chrome (Incognito)",
+        url: "https://example.com/",
+      }),
+      line({
+        ts: "2026-01-01T00:00:10.000Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        title: "Example Domain - Google Chrome (Incognito)",
+        url: "https://example.com/",
+      }),
+    ];
+    // When
+    const rows = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        const result = yield* store.readActivities({
+          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
+          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
+        });
+        return result.map((a) => ({
+          appName: a.appName,
+          bundleId: a.bundleId,
+          title: a.title,
+          url: a.url,
+          startedAt: DateTime.formatIso(a.startedAt),
+          endedAt: DateTime.formatIso(a.endedAt),
+        }));
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:00:10.000Z",
+      },
+    ]);
+  });
+
   it("a line that is not a helper line is skipped", async () => {
     // Given: one undecodable line between two heartbeats
     const lines = [
