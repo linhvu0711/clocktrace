@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openStore, Store } from "@clocktrace/core";
@@ -8,6 +8,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { Effect, Layer, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { InstalledStore } from "../src/installed-store.js";
 import { makeServer, type StoreLayerError } from "../src/server.js";
 
 const connect = async (layer: Layer.Layer<Store, StoreLayerError>) => {
@@ -136,6 +137,49 @@ describe("server", () => {
     // Then
     expect(instructions).toContain("Onboarding is done.");
     expect(instructions).not.toContain("Offer it once");
+  });
+
+  it("every tool returns not installed without a database", async () => {
+    // Given: a server over a path whose file does not exist
+    const { client, close } = await connect(InstalledStore(path));
+    // When
+    const results = [
+      await callTool(client, { name: "list_categories", arguments: {} }),
+      await callTool(client, { name: "list_projects", arguments: {} }),
+      await callTool(client, { name: "list_rules", arguments: {} }),
+      await callTool(client, {
+        name: "add_rule",
+        arguments: {
+          field: "app",
+          compare: "is",
+          value: "x",
+          effect: "private",
+        },
+      }),
+      await callTool(client, { name: "remove_rule", arguments: { id: "x" } }),
+      await callTool(client, {
+        name: "set_category",
+        arguments: { name: "X", productive: true },
+      }),
+      await callTool(client, {
+        name: "set_project",
+        arguments: { name: "X" },
+      }),
+      await callTool(client, { name: "finish_onboarding", arguments: {} }),
+    ];
+    const instructions = client.getInstructions();
+    await close();
+    // Then
+    for (const result of results) {
+      expect(result.isError).toBe(true);
+      expect(text(result)).toBe(
+        "clocktrace is not installed, run clocktrace install",
+      );
+    }
+    expect(existsSync(path)).toBe(false);
+    expect(instructions).toContain(
+      "clocktrace is not installed, run clocktrace install",
+    );
   });
 
   it("list_projects returns [] on a fresh database", async () => {

@@ -29,9 +29,13 @@ import {
 import type { ParseError } from "effect/ParseResult";
 import { z } from "zod";
 
+import type { NotInstalledError } from "./installed-store.js";
 import { version } from "./version.js";
 
-export type StoreLayerError = StoreError | DatabaseNewerError;
+export type StoreLayerError =
+  | StoreError
+  | DatabaseNewerError
+  | NotInstalledError;
 
 type ToolError =
   | InvalidRuleError
