@@ -1,8 +1,12 @@
 import {
+  addRule,
   type DatabaseNewerError,
+  type InvalidRuleError,
   RuleCompare,
   RuleEffect,
   RuleField,
+  type RuleNotFoundError,
+  removeRule,
   Store,
   type StoreError,
 } from "@clocktrace/core";
@@ -23,7 +27,11 @@ import { version } from "./version.js";
 
 export type StoreLayerError = StoreError | DatabaseNewerError;
 
-type ToolError = StoreLayerError | ParseError;
+type ToolError =
+  | InvalidRuleError
+  | RuleNotFoundError
+  | StoreLayerError
+  | ParseError;
 
 const CategoryOut = z.object({
   id: z.string(),
@@ -127,6 +135,33 @@ export const makeServer = async (
           }),
         ),
       ),
+  );
+
+  server.registerTool(
+    "add_rule",
+    {
+      description:
+        "Append a Rule. field: app, title, url, domain, device. compare: is, contains, starts with, ends with, matches (regex). effect: category or project needs target, the Category or Project id; private needs no target.",
+      inputSchema: {
+        field: z.enum(RuleField.literals),
+        compare: z.enum(RuleCompare.literals),
+        value: z.string(),
+        effect: z.enum(RuleEffect.literals),
+        target: z.string().nullable().optional(),
+      },
+      outputSchema: RuleOut.shape,
+    },
+    (input) => run(addRule({ ...input, target: input.target ?? null })),
+  );
+
+  server.registerTool(
+    "remove_rule",
+    {
+      description: "Remove a Rule by id.",
+      inputSchema: { id: z.string() },
+      outputSchema: { removed: z.string() },
+    },
+    ({ id }) => run(Effect.as(removeRule(id), { removed: id })),
   );
 
   return { server, dispose };
