@@ -1,4 +1,5 @@
 export * from "./activity.js";
+export * from "./categories.js";
 export * from "./category.js";
 export * from "./device.js";
 export * from "./errors.js";
