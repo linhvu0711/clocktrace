@@ -359,6 +359,72 @@ describe("collector", () => {
     ]);
   });
 
+  it("an Activity under 1 second is dropped", async () => {
+    // Given: a 400ms TextEdit blip inside a Safari stretch
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:00:05.000Z",
+        app: "TextEdit",
+        bundleId: "com.apple.TextEdit",
+      }),
+      line({
+        ts: "2026-01-01T00:00:05.400Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:00:10.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:00:05.000Z",
+      },
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:05.400Z",
+        endedAt: "2026-01-01T00:00:10.000Z",
+      },
+    ]);
+  });
+
+  it("an idle end before the start writes nothing", async () => {
+    // Given: the only line after the open reports 320 idle seconds
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:00:10.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 320,
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([]);
+  });
+
   it("a line that is not a helper line is skipped", async () => {
     // Given: one undecodable line between two heartbeats
     const lines = [
