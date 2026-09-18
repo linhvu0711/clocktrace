@@ -18,6 +18,14 @@ _Avoid_: Tracker, daemon, watcher, recorder
 The small native Swift binary the Collector runs for every read that needs a macOS permission: frontmost app, window title, browser URL, idle seconds, and the Biome stream files.
 _Avoid_: Native module, bridge, agent
 
+**Tracker**:
+The part of the Helper that decides when a reading is worth writing. It emits one JSON line when the app, title, or URL changes, or on a heartbeat. Never the Collector.
+_Avoid_: Detector, differ, emitter
+
+**Watcher**:
+The Helper's `watch` loop. It reads the Mac every second and on app activation, and hands each reading to the Tracker. Never the Collector.
+_Avoid_: Poller, run loop, daemon
+
 **Idle**:
 The state after 5 minutes with no keyboard or mouse input. The current Activity ends at the last input. Idle time is not stored, it shows as a gap.
 _Avoid_: AFK, away, break
