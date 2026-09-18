@@ -2,7 +2,9 @@ import {
   addRule,
   type CategoryNotFoundError,
   type DatabaseNewerError,
+  finishOnboarding,
   type InvalidRuleError,
+  isOnboardingDone,
   type ProjectNotFoundError,
   RuleCompare,
   RuleEffect,
@@ -57,6 +59,17 @@ const RuleOut = z.object({
 
 const instructionsBase =
   "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, set_category, set_project, finish_onboarding.";
+const onboardingOfferText =
+  "Onboarding is not done. Offer it once: ask what the user does and which apps and sites they use, add Rules on top of the Starter set with add_rule, then call finish_onboarding. Never block on it: answer any question first, and never require Onboarding before another tool.";
+const onboardingDoneText = "Onboarding is done.";
+
+const failureText = (cause: Cause.Cause<ToolError>): string =>
+  Option.match(Cause.failureOption(cause), {
+    onSome: (e) => e.message,
+    onNone: () => {
+      throw Cause.squash(cause);
+    },
+  });
 
 export const makeServer = async (
   store: Layer.Layer<Store, StoreLayerError>,
@@ -73,22 +86,22 @@ export const makeServer = async (
         content: [{ type: "text" as const, text: JSON.stringify(value) }],
         structuredContent: value,
       }),
-      onFailure: (cause) =>
-        Option.match(Cause.failureOption(cause), {
-          onSome: (e) => ({
-            content: [{ type: "text" as const, text: e.message }],
-            isError: true,
-          }),
-          onNone: () => {
-            throw Cause.squash(cause);
-          },
-        }),
+      onFailure: (cause) => ({
+        content: [{ type: "text" as const, text: failureText(cause) }],
+        isError: true,
+      }),
     });
   };
 
+  const state = await runtime.runPromiseExit(isOnboardingDone());
+  const instructions = `${instructionsBase}\n\n${Exit.match(state, {
+    onSuccess: (done) => (done ? onboardingDoneText : onboardingOfferText),
+    onFailure: failureText,
+  })}`;
+
   const server = new McpServer(
     { name: "clocktrace", version: version() },
-    { instructions: instructionsBase },
+    { instructions },
   );
 
   server.registerTool(
@@ -200,6 +213,17 @@ export const makeServer = async (
       outputSchema: ProjectOut.shape,
     },
     (input) => run(setProject({ id: input.id ?? null, name: input.name })),
+  );
+
+  server.registerTool(
+    "finish_onboarding",
+    {
+      description:
+        "Mark Onboarding done. Call it once, after adding the user's Rules.",
+      inputSchema: {},
+      outputSchema: { onboarding: z.literal("done") },
+    },
+    () => run(Effect.as(finishOnboarding(), { onboarding: "done" as const })),
   );
 
   return { server, dispose };
