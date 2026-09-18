@@ -118,6 +118,14 @@ export const openStore = (
     const deleteRuleStatement = yield* prepare(() =>
       db.prepare("DELETE FROM rules WHERE id = @id"),
     );
+    const selectRulePosition = yield* prepare(() =>
+      db.prepare("SELECT position FROM rules WHERE id = @id"),
+    );
+    const shiftRulesDown = yield* prepare(() =>
+      db.prepare(
+        "UPDATE rules SET position = position - 1 WHERE position > @position",
+      ),
+    );
     const upsertSetting = yield* prepare(() =>
       db.prepare(
         "INSERT INTO settings (key, value) VALUES (@key, @value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -281,7 +289,20 @@ export const openStore = (
 
     const deleteRule: StoreShape["deleteRule"] = (id) =>
       Effect.try({
-        try: () => deleteRuleStatement.run({ id }).changes === 1,
+        try: () =>
+          db
+            .transaction(() => {
+              const row = selectRulePosition.get({ id }) as
+                | { position: number }
+                | undefined;
+              if (row === undefined) {
+                return false;
+              }
+              deleteRuleStatement.run({ id });
+              shiftRulesDown.run({ position: row.position });
+              return true;
+            })
+            .immediate(),
         catch: (cause) => new StoreError({ cause }),
       });
 

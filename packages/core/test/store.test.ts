@@ -478,6 +478,34 @@ describe("store", () => {
     expect(remaining[0]?.target).toBe(c.id);
   });
 
+  it("deleteRule shifts later positions down", async () => {
+    // Given: three private rules at positions 0, 1, 2
+    const remaining = await useStore((store) =>
+      Effect.gen(function* () {
+        const insert = (value: string, position: number) =>
+          store.insertRule({
+            position,
+            field: "title",
+            compare: "ends with",
+            value,
+            effect: "private",
+            target: null,
+          });
+        yield* insert("a", 0);
+        const b = yield* insert("b", 1);
+        yield* insert("c", 2);
+        // When
+        yield* store.deleteRule(b.id);
+        return yield* store.listRules();
+      }),
+    );
+    // Then
+    expect(remaining.map((r) => [r.position, r.value])).toEqual([
+      [0, "a"],
+      [1, "c"],
+    ]);
+  });
+
   it("setSetting and getSetting", async () => {
     // Given: an open store
     const { before, after } = await useStore((store) =>
