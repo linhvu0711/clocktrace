@@ -206,4 +206,22 @@ describe("starter set", () => {
     expect(privateWindow.private).toBe(true);
     expect(normalWindow.private).toBe(false);
   });
+
+  it("a title mentioning Private Browsing stays visible", async () => {
+    // Given: a fresh open and a title that contains but does not end with the phrase
+    const rules = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return yield* store.listRules();
+      }),
+    );
+    // When
+    const result = resolve(
+      { ...chrome, title: "How Private Browsing Works" },
+      rules,
+      device,
+    );
+    // Then
+    expect(result.private).toBe(false);
+  });
 });

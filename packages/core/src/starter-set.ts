@@ -55,7 +55,7 @@ export const starterRules: ReadonlyArray<StarterRule> = [
   },
   {
     field: "title",
-    compare: "contains",
+    compare: "ends with",
     value: "Private Browsing",
     effect: "private",
     category: null,
