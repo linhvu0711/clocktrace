@@ -31,7 +31,11 @@ export const runCollector = (): Effect.Effect<
       Effect.annotateLogs("deviceId", device.id),
     );
     yield* collect(helper.lines(helperPath), device.id).pipe(
-      Effect.tapError(() => Effect.logWarning("helper exited, restarting")),
+      Effect.tapError((e) =>
+        e._tag === "HelperExitedError"
+          ? Effect.logWarning("helper exited, restarting")
+          : Effect.void,
+      ),
       Effect.retry({
         schedule: restartSchedule,
         while: (e) => e._tag === "HelperExitedError",
