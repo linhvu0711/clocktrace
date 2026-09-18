@@ -1,10 +1,7 @@
-import { Effect, Option, Schema } from "effect";
-import type { ParseError } from "effect/ParseResult";
+import { Schema } from "effect";
 
 import type { NewCategory } from "./category.js";
-import type { StoreError } from "./errors.js";
 import { RuleCompare, RuleEffect, RuleField } from "./rule.js";
-import type { StoreShape } from "./store.js";
 
 export const starterSetKey = "starterSet";
 
@@ -25,13 +22,9 @@ export const StarterRule = Schema.Struct({
   category: Schema.NullOr(Schema.String),
 });
 
-const site = (
-  value: string,
-  category: string,
-  compare: "is" | "ends with" = "ends with",
-): StarterRule => ({
+const site = (value: string, category: string): StarterRule => ({
   field: "domain",
-  compare,
+  compare: "ends with",
   value,
   effect: "category",
   category,
@@ -76,7 +69,7 @@ export const starterRules: ReadonlyArray<StarterRule> = [
   site("discord.com", "Communication"),
   site("zoom.us", "Communication"),
   site("figma.com", "Design"),
-  site("x.com", "Social", "is"),
+  site("x.com", "Social"),
   site("twitter.com", "Social"),
   site("facebook.com", "Social"),
   site("instagram.com", "Social"),
@@ -128,40 +121,5 @@ export const starterRules: ReadonlyArray<StarterRule> = [
   app("com.colliderli.iina", "Entertainment"),
   app("org.videolan.vlc", "Entertainment"),
 ];
-
-export const seedStarterSet = (
-  store: StoreShape,
-): Effect.Effect<void, ParseError | StoreError> =>
-  Effect.gen(function* () {
-    const seeded = yield* store.getSetting(starterSetKey);
-    if (Option.isSome(seeded)) {
-      return;
-    }
-    const categories = yield* store.listCategories();
-    const rules = yield* store.listRules();
-    if (categories.length > 0 || rules.length > 0) {
-      yield* store.setSetting(starterSetKey, "1");
-      return;
-    }
-    const ids = new Map<string, string>();
-    for (const category of starterCategories) {
-      const row = yield* store.insertCategory(category);
-      ids.set(row.name, row.id);
-    }
-    for (const [position, starter] of starterRules.entries()) {
-      yield* store.insertRule({
-        position,
-        field: starter.field,
-        compare: starter.compare,
-        value: starter.value,
-        effect: starter.effect,
-        target:
-          starter.category === null
-            ? null
-            : (ids.get(starter.category) ?? null),
-      });
-    }
-    yield* store.setSetting(starterSetKey, "1");
-  });
 
 export type StarterRule = Schema.Schema.Type<typeof StarterRule>;

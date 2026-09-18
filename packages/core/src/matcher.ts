@@ -10,6 +10,18 @@ export const Resolution = Schema.Struct({
   private: Schema.Boolean,
 });
 
+// A domain compare stops at a dot: `ends with github.com` covers
+// `github.com` and `api.github.com`, never `evilgithub.com` (ADR 0005).
+const endsWithLabel = (host: string, value: string): boolean => {
+  const suffix = value.startsWith(".") ? value.slice(1) : value;
+  return host === suffix || host.endsWith(`.${suffix}`);
+};
+
+const startsWithLabel = (host: string, value: string): boolean => {
+  const prefix = value.endsWith(".") ? value.slice(0, -1) : value;
+  return host === prefix || host.startsWith(`${prefix}.`);
+};
+
 const compare = (rule: Rule, candidate: string): boolean => {
   const value = rule.value.toLowerCase();
   const c = candidate.toLowerCase();
@@ -19,9 +31,13 @@ const compare = (rule: Rule, candidate: string): boolean => {
     case "contains":
       return c.includes(value);
     case "starts with":
-      return c.startsWith(value);
+      return rule.field === "domain"
+        ? startsWithLabel(c, value)
+        : c.startsWith(value);
     case "ends with":
-      return c.endsWith(value);
+      return rule.field === "domain"
+        ? endsWithLabel(c, value)
+        : c.endsWith(value);
     case "matches":
       try {
         return new RegExp(rule.value, "i").test(candidate);

@@ -200,6 +200,96 @@ describe("matcher", () => {
     });
   });
 
+  it("domain ends with covers the domain and its subdomains only", () => {
+    // Given: a domain rule on github.com and three hosts
+    const rules = [
+      rule(0, "domain", "ends with", "github.com", "category", "cat-coding"),
+    ];
+    const host = (url: string) => resolve({ ...chrome, url }, rules, device);
+    // When
+    const root = host("https://github.com/x");
+    const sub = host("https://api.github.com/x");
+    const sibling = host("https://evilgithub.com/x");
+    // Then
+    expect(root.categoryId).toBe("cat-coding");
+    expect(sub.categoryId).toBe("cat-coding");
+    expect(sibling.categoryId).toBeNull();
+  });
+
+  it("domain starts with covers a leading label only", () => {
+    // Given: a domain rule on docs and two hosts
+    const rules = [
+      rule(0, "domain", "starts with", "docs", "category", "cat-writing"),
+    ];
+    const host = (url: string) => resolve({ ...chrome, url }, rules, device);
+    // When
+    const label = host("https://docs.google.com/x");
+    const sibling = host("https://docsevil.com/x");
+    // Then
+    expect(label.categoryId).toBe("cat-writing");
+    expect(sibling.categoryId).toBeNull();
+  });
+
+  it("domain ends with a leading dot behaves like no dot", () => {
+    // Given: a domain rule whose value is .github.com
+    const rules = [
+      rule(0, "domain", "ends with", ".github.com", "category", "cat-coding"),
+    ];
+    const host = (url: string) => resolve({ ...chrome, url }, rules, device);
+    // When
+    const root = host("https://github.com/x");
+    const sub = host("https://api.github.com/x");
+    const sibling = host("https://evilgithub.com/x");
+    // Then
+    expect(root.categoryId).toBe("cat-coding");
+    expect(sub.categoryId).toBe("cat-coding");
+    expect(sibling.categoryId).toBeNull();
+  });
+
+  it("domain starts with a trailing dot behaves like no dot", () => {
+    // Given: a domain rule whose value is docs.
+    const rules = [
+      rule(0, "domain", "starts with", "docs.", "category", "cat-writing"),
+    ];
+    // When
+    const resolution = resolve(
+      { ...chrome, url: "https://docs.google.com/x" },
+      rules,
+      device,
+    );
+    // Then
+    expect(resolution.categoryId).toBe("cat-writing");
+  });
+
+  it("domain is with a leading dot never matches", () => {
+    // Given: a domain rule with is and a leading dot
+    const rules = [
+      rule(0, "domain", "is", ".github.com", "category", "cat-coding"),
+    ];
+    // When
+    const resolution = resolve(chrome, rules, device);
+    // Then
+    expect(resolution.categoryId).toBeNull();
+  });
+
+  it("title and url keep the plain text check", () => {
+    // Given: title and url rules whose values do not sit at a dot
+    const rules = [
+      rule(0, "title", "ends with", "(Incognito)", "private", null),
+      rule(1, "url", "ends with", "clocktrace", "category", "cat-coding"),
+      rule(2, "url", "starts with", "https://git", "project", "proj-x"),
+    ];
+    const activity = { ...chrome, title: "Example - Chrome (Incognito)" };
+    // When
+    const resolution = resolve(activity, rules, device);
+    // Then
+    expect(resolution).toEqual({
+      categoryId: "cat-coding",
+      projectId: "proj-x",
+      private: true,
+    });
+  });
+
   it("device matches the kind or the name", () => {
     // Given: one rule on the device kind and one on the device name
     const rules = [
