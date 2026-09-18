@@ -137,6 +137,12 @@ export const seedStarterSet = (
     if (Option.isSome(seeded)) {
       return;
     }
+    const categories = yield* store.listCategories();
+    const rules = yield* store.listRules();
+    if (categories.length > 0 || rules.length > 0) {
+      yield* store.setSetting(starterSetKey, "1");
+      return;
+    }
     const ids = new Map<string, string>();
     for (const category of starterCategories) {
       const row = yield* store.insertCategory(category);

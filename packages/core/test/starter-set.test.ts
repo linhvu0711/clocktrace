@@ -5,7 +5,7 @@ import { DateTime, Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { Device, NewActivity } from "../src/index.js";
-import { resolve, Store, starterRules } from "../src/index.js";
+import { openStore, resolve, Store, starterRules } from "../src/index.js";
 
 const deviceId = "00000000-0000-4000-8000-000000000001";
 const device: Device = {
@@ -116,6 +116,44 @@ describe("starter set", () => {
     expect(rules).toHaveLength(68);
     expect(rules[0]?.position).toBe(0);
     expect(rules.some((r) => r.value === "(Incognito)")).toBe(false);
+  });
+
+  it("a database that already has rows is not reseeded", async () => {
+    // Given: a path with a database holding a user Category and Rule
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          const c = yield* store.insertCategory({
+            name: "Mine",
+            productive: true,
+          });
+          yield* store.insertRule({
+            position: 0,
+            field: "app",
+            compare: "is",
+            value: "com.example.App",
+            effect: "category",
+            target: c.id,
+          });
+        }),
+      ),
+    );
+    // When: the store opens
+    const { categories, rules, flag } = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return {
+          categories: yield* store.listCategories(),
+          rules: yield* store.listRules(),
+          flag: yield* store.getSetting("starterSet"),
+        };
+      }),
+    );
+    // Then
+    expect(categories.map((c) => c.name)).toEqual(["Mine"]);
+    expect(rules).toHaveLength(1);
+    expect(flag).toEqual(Option.some("1"));
   });
 
   it("the Starter set covers 30 apps and 20 sites", () => {
