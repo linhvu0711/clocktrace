@@ -39,7 +39,6 @@ One rule per line. A rule a tool checks names the tool in brackets. The how live
 
 - Tests run with Vitest and live in `test/<module>.test.ts` next to `src/`.
 - Every exported function in `packages/core` has a test.
-- Every exported `Schema` in `packages/core` has a decode test: one value it accepts, one it rejects.
 - `test/` is type-checked. `pnpm typecheck` runs `tsc -p tsconfig.json` over `src` and `test` in every package. `build` uses `tsconfig.build.json`, which emits `src` only. [tsc]
 - Each Importer has a golden test on one real sample file (ADR 0004).
 - Effect code runs in a test with `Effect.runSync` or `Effect.runPromise`.
