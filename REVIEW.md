@@ -99,7 +99,7 @@ cites a rule or names a smell.
 - A write of an Activity runs Private rules first, so a matching title and URL are blank before they reach disk (`CONTEXT.md`, Private rule).
 - A diff that logs or prints a value taken from an Activity is read twice for a window title or URL. The helper's JSON lines on stdout are its output, not a log.
 - Activities are never updated or deleted after they are written. An `UPDATE` or `DELETE` on the activities table is a finding (`CONTEXT.md`, Activity).
-- Category and Project are computed at query time and never stored on the Activity. A day summary is never read as the source of truth (`CONTEXT.md`, Rule and Day summary).
+- Category and Project are computed at query time and never stored on the Activity. A Rollup is never read as the source of truth (`CONTEXT.md`, Rule and Rollup).
 - Domain code in `packages/core` reaches storage only through the `Store` service. `better-sqlite3` is imported only in `packages/core/src/sqlite-store.ts` and its test (ADR 0001).
 - No data leaves the machine. A diff that adds a network call names the reason in the PR (ADR 0001).
 - A change to the Swift helper in `packages/helper` keeps its permission footprint at Accessibility and Automation. Nothing adds Screen Recording (ADR 0002).
