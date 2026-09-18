@@ -1,0 +1,161 @@
+import { Effect, Option, Schema } from "effect";
+import type { ParseError } from "effect/ParseResult";
+
+import type { NewCategory } from "./category.js";
+import type { StoreError } from "./errors.js";
+import { RuleCompare, RuleEffect, RuleField } from "./rule.js";
+import type { StoreShape } from "./store.js";
+
+export const starterSetKey = "starterSet";
+
+export const starterCategories: ReadonlyArray<NewCategory> = [
+  { name: "Coding", productive: true },
+  { name: "Writing", productive: true },
+  { name: "Communication", productive: true },
+  { name: "Design", productive: true },
+  { name: "Social", productive: false },
+  { name: "Entertainment", productive: false },
+];
+
+export const StarterRule = Schema.Struct({
+  field: RuleField,
+  compare: RuleCompare,
+  value: Schema.String,
+  effect: RuleEffect,
+  category: Schema.NullOr(Schema.String),
+});
+
+const site = (
+  value: string,
+  category: string,
+  compare: "is" | "ends with" = "ends with",
+): StarterRule => ({
+  field: "domain",
+  compare,
+  value,
+  effect: "category",
+  category,
+});
+
+const app = (value: string, category: string): StarterRule => ({
+  field: "app",
+  compare: "is",
+  value,
+  effect: "category",
+  category,
+});
+
+export const starterRules: ReadonlyArray<StarterRule> = [
+  {
+    field: "title",
+    compare: "ends with",
+    value: "(Incognito)",
+    effect: "private",
+    category: null,
+  },
+  {
+    field: "title",
+    compare: "contains",
+    value: "Private Browsing",
+    effect: "private",
+    category: null,
+  },
+  site("github.com", "Coding"),
+  site("gitlab.com", "Coding"),
+  site("stackoverflow.com", "Coding"),
+  site("developer.mozilla.org", "Coding"),
+  site("linear.app", "Coding"),
+  site("docs.google.com", "Writing"),
+  site("notion.com", "Writing"),
+  site("notion.so", "Writing"),
+  site("medium.com", "Writing"),
+  site("substack.com", "Writing"),
+  site("slack.com", "Communication"),
+  site("mail.google.com", "Communication"),
+  site("calendar.google.com", "Communication"),
+  site("discord.com", "Communication"),
+  site("zoom.us", "Communication"),
+  site("figma.com", "Design"),
+  site("x.com", "Social", "is"),
+  site("twitter.com", "Social"),
+  site("facebook.com", "Social"),
+  site("instagram.com", "Social"),
+  site("reddit.com", "Social"),
+  site("linkedin.com", "Social"),
+  site("tiktok.com", "Social"),
+  site("youtube.com", "Entertainment"),
+  site("netflix.com", "Entertainment"),
+  site("twitch.tv", "Entertainment"),
+  site("spotify.com", "Entertainment"),
+  app("com.microsoft.VSCode", "Coding"),
+  app("com.todesktop.230313mzl4w4u92", "Coding"),
+  app("com.apple.dt.Xcode", "Coding"),
+  app("com.googlecode.iterm2", "Coding"),
+  app("com.apple.Terminal", "Coding"),
+  app("dev.warp.Warp-Stable", "Coding"),
+  app("com.mitchellh.ghostty", "Coding"),
+  app("com.jetbrains.intellij", "Coding"),
+  app("com.jetbrains.WebStorm", "Coding"),
+  app("dev.zed.Zed", "Coding"),
+  app("com.sublimetext.4", "Coding"),
+  app("com.google.android.studio", "Coding"),
+  app("com.github.GitHubClient", "Coding"),
+  app("com.fournova.Tower3", "Coding"),
+  app("com.postmanlabs.mac", "Coding"),
+  app("com.tinyapp.TablePlus", "Coding"),
+  app("com.docker.docker", "Coding"),
+  app("notion.id", "Writing"),
+  app("md.obsidian", "Writing"),
+  app("com.apple.iWork.Pages", "Writing"),
+  app("com.microsoft.Word", "Writing"),
+  app("com.apple.Notes", "Writing"),
+  app("com.apple.TextEdit", "Writing"),
+  app("com.tinyspeck.slackmacgap", "Communication"),
+  app("com.hnc.Discord", "Communication"),
+  app("us.zoom.xos", "Communication"),
+  app("com.microsoft.teams2", "Communication"),
+  app("com.apple.MobileSMS", "Communication"),
+  app("com.apple.mail", "Communication"),
+  app("ru.keepcoder.Telegram", "Communication"),
+  app("net.whatsapp.WhatsApp", "Communication"),
+  app("com.figma.Desktop", "Design"),
+  app("com.bohemiancoding.sketch3", "Design"),
+  app("com.seriflabs.affinitydesigner2", "Design"),
+  app("com.spotify.client", "Entertainment"),
+  app("com.apple.Music", "Entertainment"),
+  app("com.apple.TV", "Entertainment"),
+  app("com.apple.QuickTimePlayerX", "Entertainment"),
+  app("com.colliderli.iina", "Entertainment"),
+  app("org.videolan.vlc", "Entertainment"),
+];
+
+export const seedStarterSet = (
+  store: StoreShape,
+): Effect.Effect<void, ParseError | StoreError> =>
+  Effect.gen(function* () {
+    const seeded = yield* store.getSetting(starterSetKey);
+    if (Option.isSome(seeded)) {
+      return;
+    }
+    const ids = new Map<string, string>();
+    for (const category of starterCategories) {
+      const row = yield* store.insertCategory(category);
+      ids.set(row.name, row.id);
+    }
+    for (const [position, starter] of starterRules.entries()) {
+      yield* store.insertRule({
+        position,
+        field: starter.field,
+        compare: starter.compare,
+        value: starter.value,
+        effect: starter.effect,
+        target:
+          starter.category === null
+            ? null
+            : (ids.get(starter.category) ?? null),
+      });
+    }
+    yield* store.setSetting(starterSetKey, "1");
+  });
+
+export type StarterRule = Schema.Schema.Type<typeof StarterRule>;
