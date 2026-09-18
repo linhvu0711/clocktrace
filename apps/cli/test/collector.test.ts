@@ -217,6 +217,93 @@ describe("collector", () => {
     ]);
   });
 
+  it("idle ends the open Activity at now minus idleSeconds and the next input starts a fresh one", async () => {
+    // Given: five idle minutes pass inside a Safari stretch
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:01:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:06:10.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 310,
+      }),
+      line({
+        ts: "2026-01-01T00:06:20.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 2,
+      }),
+      line({
+        ts: "2026-01-01T00:06:30.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:01:00.000Z",
+      },
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:06:20.000Z",
+        endedAt: "2026-01-01T00:06:30.000Z",
+      },
+    ]);
+  });
+
+  it("idle with no open Activity writes nothing", async () => {
+    // Given: idle resolves before any focus line
+    const lines = [
+      line({
+        ts: "2026-01-01T00:06:10.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 310,
+      }),
+      line({
+        ts: "2026-01-01T00:06:20.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 2,
+      }),
+      line({
+        ts: "2026-01-01T00:06:30.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:06:20.000Z",
+        endedAt: "2026-01-01T00:06:30.000Z",
+      },
+    ]);
+  });
+
   it("a line that is not a helper line is skipped", async () => {
     // Given: one undecodable line between two heartbeats
     const lines = [
