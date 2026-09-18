@@ -1,8 +1,17 @@
-import { DateTime, Effect, Layer, TestClock, TestContext } from "effect";
+import {
+  DateTime,
+  Effect,
+  Either,
+  Layer,
+  Schema,
+  TestClock,
+  TestContext,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { StoreShape, TimelineBlock } from "../src/index.js";
 import {
+  ActivitiesInput,
   activities,
   addRule,
   openStore,
@@ -283,6 +292,48 @@ describe("summary", () => {
     expect(result).toEqual({ rows: [], total: 0 });
   });
 
+  it("summary rounds each group once, not each Activity", async () => {
+    // Given: one Device, no Rules, two Code rows of 500 ms each
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.microsoft.VSCode",
+          appName: "Code",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T10:00:00.000Z"),
+          endedAt: t("2026-09-18T10:00:00.500Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.microsoft.VSCode",
+          appName: "Code",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T10:00:00.500Z"),
+          endedAt: t("2026-09-18T10:00:01.000Z"),
+        });
+        // When
+        return yield* summary({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          groupBy: "app",
+        });
+      }),
+    );
+    // Then: 1000 ms is one second, not two rounded halves
+    expect(result).toEqual({
+      rows: [{ key: "com.microsoft.VSCode", name: "Code", seconds: 1 }],
+      total: 1,
+    });
+  });
+
   it("summary over one year of 100 000 Activities finishes under 2 seconds", async () => {
     // Given: the Starter set and a year of synthetic Activities
     const { elapsed, total } = await Effect.runPromise(
@@ -464,6 +515,75 @@ describe("timeline", () => {
     ]);
   });
 
+  it("timeline splits a block when the Project changes", async () => {
+    // Given: one Device, two domain Project rules, two adjacent Chrome rows
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        const shop = yield* store.insertProject({ name: "Shop" });
+        const site = yield* store.insertProject({ name: "Site" });
+        yield* addRule({
+          field: "domain",
+          compare: "ends with",
+          value: "github.com",
+          effect: "project",
+          target: shop.id,
+        });
+        yield* addRule({
+          field: "domain",
+          compare: "ends with",
+          value: "example.com",
+          effect: "project",
+          target: site.id,
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.google.Chrome",
+          appName: "Google Chrome",
+          title: "a",
+          url: "https://github.com/acme/shop",
+          startedAt: t("2026-09-18T10:00:00.000Z"),
+          endedAt: t("2026-09-18T10:10:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.google.Chrome",
+          appName: "Google Chrome",
+          title: "b",
+          url: "https://www.example.com/",
+          startedAt: t("2026-09-18T10:10:00.000Z"),
+          endedAt: t("2026-09-18T10:20:00.000Z"),
+        });
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then: same app and Category, but each block keeps its own Project
+    expect(isoBlocks(result)).toEqual([
+      {
+        start: "2026-09-18T10:00:00.000Z",
+        end: "2026-09-18T10:10:00.000Z",
+        app: "Google Chrome",
+        categoryName: "Uncategorized",
+        projectName: "Shop",
+      },
+      {
+        start: "2026-09-18T10:10:00.000Z",
+        end: "2026-09-18T10:20:00.000Z",
+        app: "Google Chrome",
+        categoryName: "Uncategorized",
+        projectName: "Site",
+      },
+    ]);
+  });
+
   it("timeline keeps a gap over 60 seconds as two blocks", async () => {
     // Given: one Device, no Rules, three Code rows with a 30 s and a 61 s gap
     const result = await run(
@@ -623,6 +743,33 @@ describe("activities", () => {
     expect(small.total).toBe(205);
     expect(small.hasMore).toBe(true);
     expect(large.rows).toHaveLength(200);
+  });
+
+  it("activities clamps a limit under 1 and its Schema rejects it", async () => {
+    // Given: the 205-row seed
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedMany(store, 205);
+        // When
+        return yield* activities({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          limit: -1,
+        });
+      }),
+    );
+    // Then: no rows, never a slice from the end
+    expect(result.rows).toHaveLength(0);
+    expect(result.total).toBe(205);
+    expect(result.hasMore).toBe(true);
+    const decoded = Schema.decodeUnknownEither(ActivitiesInput)({
+      range: "today",
+      limit: 0,
+    });
+    expect(Either.isLeft(decoded)).toBe(true);
+    if (Either.isLeft(decoded)) {
+      expect(decoded.left.message).toContain('["limit"]');
+    }
   });
 
   it("activities filters by app case folded", async () => {

@@ -2,6 +2,11 @@ import { DateTime, Effect, Option, Schema } from "effect";
 
 import { InvalidRangeError } from "./errors.js";
 
+/**
+ * A keyword (`today`, `yesterday`, `this week`, `last week`) or two
+ * `YYYY-MM-DD` dates in the current zone. Both dates are whole days and
+ * `to` is inclusive: `{ from: "2026-09-18", to: "2026-09-18" }` is one day.
+ */
 export const Range = Schema.Union(
   Schema.String,
   Schema.Struct({ from: Schema.String, to: Schema.String }),

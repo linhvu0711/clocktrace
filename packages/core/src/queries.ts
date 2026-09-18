@@ -46,7 +46,7 @@ export const ActivitiesInput = Schema.Struct({
   range: Range,
   deviceId: Schema.optional(Schema.UUID),
   app: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Int),
+  limit: Schema.optional(Schema.Int.pipe(Schema.positive())),
 });
 
 export const ActivitiesPage = Schema.Struct({
@@ -120,9 +120,8 @@ export const summary = (
     const categoryById = new Map(categories.map((c) => [c.id, c]));
     const projectById = new Map(projects.map((p) => [p.id, p]));
     const deviceById = new Map(devices.map((d) => [d.id, d]));
-    const groups = new Map<string, SummaryRow>();
+    const groups = new Map<string, { row: SummaryRow; ms: number }>();
     for (const { activity, resolution, ms } of rows) {
-      const seconds = Math.round(ms / 1000);
       let row: SummaryRow;
       switch (input.groupBy) {
         case "category": {
@@ -171,13 +170,14 @@ export const summary = (
       }
       const existing = groups.get(row.key);
       groups.set(row.key, {
-        ...(existing ?? row),
-        seconds: (existing?.seconds ?? 0) + seconds,
+        row: existing?.row ?? row,
+        ms: (existing?.ms ?? 0) + ms,
       });
     }
-    const sorted = [...groups.values()].sort(
-      (a, b) => b.seconds - a.seconds || a.name.localeCompare(b.name),
-    );
+    // Each group rounds once, so two 500 ms rows count as one second.
+    const sorted = [...groups.values()]
+      .map(({ row, ms }) => ({ ...row, seconds: Math.round(ms / 1000) }))
+      .sort((a, b) => b.seconds - a.seconds || a.name.localeCompare(b.name));
     return {
       rows: sorted,
       total: sorted.reduce((sum, row) => sum + row.seconds, 0),
@@ -200,6 +200,7 @@ export const timeline = (
       endMs: number;
       bundleId: string;
       categoryId: string | null;
+      projectId: string | null;
       app: string;
       categoryName: string;
       projectName: string | null;
@@ -224,6 +225,7 @@ export const timeline = (
         last !== undefined &&
         last.bundleId === activity.bundleId &&
         last.categoryId === (category?.id ?? null) &&
+        last.projectId === (project?.id ?? null) &&
         activity.startedAt.epochMillis - last.endMs <= 60_000
       ) {
         last.endMs = Math.max(last.endMs, endMs);
@@ -233,6 +235,7 @@ export const timeline = (
           endMs,
           bundleId: activity.bundleId,
           categoryId: category?.id ?? null,
+          projectId: project?.id ?? null,
           app: activity.appName,
           categoryName: category?.name ?? "Uncategorized",
           projectName: project?.name ?? null,
@@ -266,7 +269,7 @@ export const activities = (
               row.activity.bundleId.toLowerCase() === app ||
               row.activity.appName.toLowerCase() === app,
           );
-    const limit = Math.min(input.limit ?? 200, 200);
+    const limit = Math.max(0, Math.min(input.limit ?? 200, 200));
     const page = filtered.slice(0, limit);
     return {
       rows: page.map((row) => row.activity),
