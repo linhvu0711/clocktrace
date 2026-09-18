@@ -16,6 +16,11 @@ import type { Project } from "./project.js";
 import { NewProject as NewProjectSchema } from "./project.js";
 import type { Rule } from "./rule.js";
 import { NewRule as NewRuleSchema } from "./rule.js";
+import {
+  starterCategories,
+  starterRules,
+  starterSetKey,
+} from "./starter-set.js";
 import type { StoreShape } from "./store.js";
 
 export const openStore = (
@@ -325,6 +330,44 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const seedStarterSet: StoreShape["seedStarterSet"] = () =>
+      Effect.try({
+        try: () =>
+          db
+            .transaction(() => {
+              if (selectSetting.get({ key: starterSetKey }) !== undefined) {
+                return;
+              }
+              const ids = new Map<string, string>();
+              for (const category of starterCategories) {
+                const id = randomUUID();
+                insertCategoryStatement.run({
+                  id,
+                  name: category.name,
+                  productive: category.productive ? 1 : 0,
+                });
+                ids.set(category.name, id);
+              }
+              for (const [position, starter] of starterRules.entries()) {
+                insertRuleStatement.run({
+                  id: randomUUID(),
+                  position,
+                  field: starter.field,
+                  compare: starter.compare,
+                  value: starter.value,
+                  effect: starter.effect,
+                  target:
+                    starter.category === null
+                      ? null
+                      : (ids.get(starter.category) ?? null),
+                });
+              }
+              upsertSetting.run({ key: starterSetKey, value: "1" });
+            })
+            .immediate(),
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     return {
       getOrInsertDevice,
       listDevices,
@@ -339,5 +382,6 @@ export const openStore = (
       deleteRule,
       getSetting,
       setSetting,
+      seedStarterSet,
     };
   });

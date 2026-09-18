@@ -1,7 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DateTime, Effect, Option } from "effect";
+import Database from "better-sqlite3";
+import { DateTime, Effect, Either, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { Device, NewActivity } from "../src/index.js";
@@ -71,9 +72,9 @@ describe("starter set", () => {
       { name: "Social", productive: false },
       { name: "Writing", productive: true },
     ]);
-    expect(rules).toHaveLength(69);
+    expect(rules).toHaveLength(starterRules.length);
     expect(rules[0]?.position).toBe(0);
-    expect(rules[68]?.position).toBe(68);
+    expect(rules.at(-1)?.position).toBe(starterRules.length - 1);
     expect(flag).toEqual(Option.some("1"));
   });
 
@@ -90,7 +91,7 @@ describe("starter set", () => {
       }),
     );
     // Then
-    expect(counts).toEqual([6, 69]);
+    expect(counts).toEqual([6, starterRules.length]);
   });
 
   it("a deleted rule stays deleted after a reopen", async () => {
@@ -113,33 +114,47 @@ describe("starter set", () => {
       }),
     );
     // Then
-    expect(rules).toHaveLength(68);
+    expect(rules).toHaveLength(starterRules.length - 1);
     expect(rules[0]?.position).toBe(0);
     expect(rules.some((r) => r.value === "(Incognito)")).toBe(false);
   });
 
-  it("a database that already has rows is not reseeded", async () => {
-    // Given: a path with a database holding a user Category and Rule
-    await Effect.runPromise(
+  it("a seed whose write fails leaves nothing and the next open seeds", async () => {
+    // Given: a migrated, empty database whose rules table rejects a third row
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const db = new Database(path);
+    db.exec(
+      "CREATE TRIGGER fail_third_rule BEFORE INSERT ON rules WHEN (SELECT count(*) FROM rules) >= 2 BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+    );
+    db.close();
+    // When: the store opens, and the seed dies on the third Rule
+    const failed = await Effect.runPromise(
+      Effect.either(Effect.void.pipe(Effect.provide(Store.Default(path)))),
+    );
+    const partial = await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const store = yield* openStore(path);
-          const c = yield* store.insertCategory({
-            name: "Mine",
-            productive: true,
-          });
-          yield* store.insertRule({
-            position: 0,
-            field: "app",
-            compare: "is",
-            value: "com.example.App",
-            effect: "category",
-            target: c.id,
-          });
+          return {
+            categories: yield* store.listCategories(),
+            rules: yield* store.listRules(),
+            flag: yield* store.getSetting("starterSet"),
+          };
         }),
       ),
     );
-    // When: the store opens
+    // Then: the open failed and the database holds no trace of the seed
+    expect(Either.isLeft(failed)).toBe(true);
+    if (Either.isLeft(failed)) {
+      expect(failed.left._tag).toBe("StoreError");
+    }
+    expect(partial.categories).toHaveLength(0);
+    expect(partial.rules).toHaveLength(0);
+    expect(partial.flag).toEqual(Option.none());
+    // When: the fault is gone and the store opens again
+    const fixed = new Database(path);
+    fixed.exec("DROP TRIGGER fail_third_rule");
+    fixed.close();
     const { categories, rules, flag } = await open(
       Effect.gen(function* () {
         const store = yield* Store;
@@ -150,10 +165,60 @@ describe("starter set", () => {
         };
       }),
     );
-    // Then
-    expect(categories.map((c) => c.name)).toEqual(["Mine"]);
-    expect(rules).toHaveLength(1);
+    // Then: the full Starter set is there
+    expect(categories).toHaveLength(6);
+    expect(rules).toHaveLength(starterRules.length);
     expect(flag).toEqual(Option.some("1"));
+  });
+
+  it("a database with the flag set is never seeded again", async () => {
+    // Given: the path opened once; every Starter Rule deleted
+    await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const rules = yield* store.listRules();
+        for (const rule of rules) {
+          yield* store.deleteRule(rule.id);
+        }
+      }),
+    );
+    // When: the store opens again
+    const { rules, flag } = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return {
+          rules: yield* store.listRules(),
+          flag: yield* store.getSetting("starterSet"),
+        };
+      }),
+    );
+    // Then
+    expect(rules).toHaveLength(0);
+    expect(flag).toEqual(Option.some("1"));
+  });
+
+  it("the Starter set puts netflix.com in Entertainment and x.com in Social", async () => {
+    // Given: a fresh open, and x.com seeded as ends with, no is exception
+    const { categories, rules } = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return {
+          categories: yield* store.listCategories(),
+          rules: yield* store.listRules(),
+        };
+      }),
+    );
+    const name = (id: string | null) =>
+      categories.find((c) => c.id === id)?.name ?? null;
+    const site = (url: string) =>
+      name(resolve({ ...chrome, url }, rules, device).categoryId);
+    // When
+    const xRule = starterRules.find((r) => r.value === "x.com");
+    // Then
+    expect(xRule?.compare).toBe("ends with");
+    expect(site("https://www.netflix.com/browse")).toBe("Entertainment");
+    expect(site("https://x.com/home")).toBe("Social");
+    expect(site("https://api.x.com/2/tweets")).toBe("Social");
   });
 
   it("the Starter set covers 30 apps and 20 sites", () => {

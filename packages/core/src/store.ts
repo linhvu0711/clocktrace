@@ -8,7 +8,6 @@ import type { StoreError } from "./errors.js";
 import type { NewProject, Project } from "./project.js";
 import type { NewRule, Rule } from "./rule.js";
 import { openStore } from "./sqlite-store.js";
-import { seedStarterSet } from "./starter-set.js";
 
 export interface StoreShape {
   readonly getOrInsertDevice: (
@@ -49,10 +48,16 @@ export interface StoreShape {
     key: string,
     value: string,
   ) => Effect.Effect<void, StoreError>;
+  /**
+   * Writes the Starter set and its flag in one transaction. Does nothing
+   * when the flag is already set. A write that fails leaves nothing behind.
+   */
+  readonly seedStarterSet: () => Effect.Effect<void, StoreError>;
 }
 
 export class Store extends Effect.Service<Store>()("Store", {
-  scoped: (path: string) => Effect.tap(openStore(path), seedStarterSet),
+  scoped: (path: string) =>
+    Effect.tap(openStore(path), (store) => store.seedStarterSet()),
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
   static Test = this.Default(":memory:");
