@@ -15,3 +15,5 @@ Full source of some dependencies lives under `repos/`. Read the real implementat
 - Missing `repos/effect`? Run `bash scripts/sync-repos.sh`.
 - Update with `/embed-source update effect` after bumping the package. Check drift with `/embed-source check`.
 <!-- embed-source:end -->
+
+Read `REVIEW.md` before you review a pull request.
