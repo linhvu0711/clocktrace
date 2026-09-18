@@ -1,6 +1,6 @@
 import { DateTime, Effect, Schema } from "effect";
 
-import type { Activity } from "./activity.js";
+import { Activity } from "./activity.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";
 import type { InvalidRangeError, StoreError } from "./errors.js";
@@ -42,6 +42,19 @@ export const TimelineInput = Schema.Struct({
   deviceId: Schema.optional(Schema.UUID),
 });
 
+export const ActivitiesInput = Schema.Struct({
+  range: Range,
+  deviceId: Schema.optional(Schema.UUID),
+  app: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.Int),
+});
+
+export const ActivitiesPage = Schema.Struct({
+  rows: Schema.Array(Activity),
+  total: Schema.Int,
+  hasMore: Schema.Boolean,
+});
+
 interface RangeRows {
   readonly rows: ReadonlyArray<{
     readonly activity: Activity;
@@ -67,7 +80,7 @@ const loadRange = (input: {
     const store = yield* Store;
     const now = yield* DateTime.nowInCurrentZone;
     const { from, to } = yield* resolveRange(input.range, now);
-    const activities = yield* store.readActivities({
+    const stored = yield* store.readActivities({
       deviceId: input.deviceId,
       from,
       to,
@@ -76,7 +89,7 @@ const loadRange = (input: {
     const devices = yield* store.listDevices();
     const deviceById = new Map(devices.map((d) => [d.id, d]));
     return {
-      rows: activities.map((activity) => ({
+      rows: stored.map((activity) => ({
         activity,
         resolution: resolve(
           activity,
@@ -235,9 +248,38 @@ export const timeline = (
     }));
   });
 
+export const activities = (
+  input: ActivitiesInput,
+): Effect.Effect<
+  ActivitiesPage,
+  InvalidRangeError | StoreError,
+  Store | DateTime.CurrentTimeZone
+> =>
+  Effect.gen(function* () {
+    const { rows } = yield* loadRange(input);
+    const app = input.app?.toLowerCase();
+    const filtered =
+      app === undefined
+        ? rows
+        : rows.filter(
+            (row) =>
+              row.activity.bundleId.toLowerCase() === app ||
+              row.activity.appName.toLowerCase() === app,
+          );
+    const limit = Math.min(input.limit ?? 200, 200);
+    const page = filtered.slice(0, limit);
+    return {
+      rows: page.map((row) => row.activity),
+      total: filtered.length,
+      hasMore: filtered.length > page.length,
+    };
+  });
+
 export type GroupBy = Schema.Schema.Type<typeof GroupBy>;
 export type SummaryRow = Schema.Schema.Type<typeof SummaryRow>;
 export type Summary = Schema.Schema.Type<typeof Summary>;
 export type SummaryInput = Schema.Schema.Type<typeof SummaryInput>;
 export type TimelineBlock = Schema.Schema.Type<typeof TimelineBlock>;
 export type TimelineInput = Schema.Schema.Type<typeof TimelineInput>;
+export type ActivitiesInput = Schema.Schema.Type<typeof ActivitiesInput>;
+export type ActivitiesPage = Schema.Schema.Type<typeof ActivitiesPage>;

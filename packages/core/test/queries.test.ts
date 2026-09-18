@@ -2,7 +2,14 @@ import { DateTime, Effect, Layer, TestClock, TestContext } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { StoreShape, TimelineBlock } from "../src/index.js";
-import { addRule, openStore, Store, summary, timeline } from "../src/index.js";
+import {
+  activities,
+  addRule,
+  openStore,
+  Store,
+  summary,
+  timeline,
+} from "../src/index.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -547,5 +554,122 @@ describe("timeline", () => {
     );
     // Then
     expect(result).toEqual([]);
+  });
+});
+
+const seedMany = (store: StoreShape, count: number) =>
+  Effect.gen(function* () {
+    const studio = yield* store.getOrInsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+    for (let i = 0; i < count; i++) {
+      const startedAt = Date.UTC(2026, 8, 18, 8) + i * 60_000;
+      yield* store.insertActivity({
+        deviceId: studio.id,
+        bundleId: "com.microsoft.VSCode",
+        appName: "Code",
+        title: null,
+        url: null,
+        startedAt: DateTime.unsafeMake(startedAt),
+        endedAt: DateTime.unsafeMake(startedAt + 60_000),
+      });
+    }
+  });
+
+describe("activities", () => {
+  it("activities returns at most 200 rows with total and hasMore", async () => {
+    // Given: 205 one-minute Code Activities from 08:00Z
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedMany(store, 205);
+        // When
+        return yield* activities({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(result.rows).toHaveLength(200);
+    expect(result.total).toBe(205);
+    expect(result.hasMore).toBe(true);
+    expect(DateTime.formatIso(result.rows[0]?.startedAt as DateTime.Utc)).toBe(
+      "2026-09-18T08:00:00.000Z",
+    );
+  });
+
+  it("activities honours a smaller limit and caps a larger one", async () => {
+    // Given: the 205-row seed
+    const { small, large } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedMany(store, 205);
+        // When
+        const small = yield* activities({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          limit: 10,
+        });
+        const large = yield* activities({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          limit: 500,
+        });
+        return { small, large };
+      }),
+    );
+    // Then
+    expect(small.rows).toHaveLength(10);
+    expect(small.total).toBe(205);
+    expect(small.hasMore).toBe(true);
+    expect(large.rows).toHaveLength(200);
+  });
+
+  it("activities filters by app case folded", async () => {
+    // Given: seedDay
+    const { byName, byBundleId } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        const byName = yield* activities({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          app: "code",
+        });
+        const byBundleId = yield* activities({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          app: "COM.GOOGLE.CHROME",
+        });
+        return { byName, byBundleId };
+      }),
+    );
+    // Then
+    expect(byName.total).toBe(2);
+    expect(byName.hasMore).toBe(false);
+    expect(byName.rows.map((r) => r.bundleId)).toEqual([
+      "com.microsoft.VSCode",
+      "com.microsoft.VSCode",
+    ]);
+    expect(byBundleId.total).toBe(2);
+    expect(byBundleId.rows.map((r) => r.appName)).toEqual([
+      "Google Chrome",
+      "Google Chrome",
+    ]);
+  });
+
+  it("activities of a range with no Activities gives no rows, total 0, hasMore false", async () => {
+    // Given: seedDay
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        return yield* activities({
+          range: { from: "2026-09-01", to: "2026-09-01" },
+        });
+      }),
+    );
+    // Then
+    expect(result).toEqual({ rows: [], total: 0, hasMore: false });
   });
 });
