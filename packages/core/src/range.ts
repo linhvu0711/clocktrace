@@ -18,7 +18,8 @@ const pad = (n: number): string => String(n).padStart(2, "0");
 
 const isoDay = (zoned: DateTime.Zoned): string => {
   const parts = DateTime.toParts(zoned);
-  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+  const year = String(parts.year).padStart(4, "0");
+  return `${year}-${pad(parts.month)}-${pad(parts.day)}`;
 };
 
 export const resolveRange = (
