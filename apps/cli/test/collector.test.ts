@@ -309,6 +309,59 @@ describe("collector", () => {
     ]);
   });
 
+  it("a no-app line after an idle close stops the resume backdate", async () => {
+    // Given: idle closes Safari, a login-window line intervenes, Safari returns
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:00:10.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:05:15.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 305,
+      }),
+      line({ ts: "2026-01-01T00:05:20.000Z" }),
+      line({
+        ts: "2026-01-01T00:05:30.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 5,
+      }),
+      line({
+        ts: "2026-01-01T00:05:40.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then: the resumed span starts at the line, not backdated over the gap
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:00:10.000Z",
+      },
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:05:30.000Z",
+        endedAt: "2026-01-01T00:05:40.000Z",
+      },
+    ]);
+  });
+
   it("idle with no open Activity writes nothing", async () => {
     // Given: idle resolves before any focus line
     const lines = [

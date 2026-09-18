@@ -69,12 +69,12 @@ export const collect = <E, R>(
           return;
         }
         if (line.bundleId === null || line.app === null) {
+          yield* Ref.set(state, {
+            open: null,
+            lastTs: line.ts,
+            idleClosed: false,
+          });
           if (s.open !== null) {
-            yield* Ref.set(state, {
-              open: null,
-              lastTs: line.ts,
-              idleClosed: false,
-            });
             yield* close(s.open, line.ts);
           }
           return;
