@@ -1,8 +1,8 @@
 import { DateTime, Effect, Layer, TestClock, TestContext } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { StoreShape } from "../src/index.js";
-import { addRule, openStore, Store, summary } from "../src/index.js";
+import type { StoreShape, TimelineBlock } from "../src/index.js";
+import { addRule, openStore, Store, summary, timeline } from "../src/index.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -343,4 +343,209 @@ describe("summary", () => {
     expect(elapsed).toBeLessThan(2000);
     expect(total).toBeGreaterThan(0);
   }, 60_000);
+});
+
+const isoBlocks = (blocks: ReadonlyArray<TimelineBlock>) =>
+  blocks.map((b) => ({
+    start: DateTime.formatIso(b.start),
+    end: DateTime.formatIso(b.end),
+    app: b.app,
+    categoryName: b.categoryName,
+    projectName: b.projectName,
+  }));
+
+describe("timeline", () => {
+  it("timeline merges adjacent Activities with the same app and Category", async () => {
+    // Given: seedDay
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then: A4 clips to the range start, A2 and A3 merge into one block
+    expect(isoBlocks(result)).toEqual([
+      {
+        start: "2026-09-18T07:00:00.000Z",
+        end: "2026-09-18T07:30:00.000Z",
+        app: "Code",
+        categoryName: "Coding",
+        projectName: null,
+      },
+      {
+        start: "2026-09-18T08:00:00.000Z",
+        end: "2026-09-18T09:30:00.000Z",
+        app: "Code",
+        categoryName: "Coding",
+        projectName: null,
+      },
+      {
+        start: "2026-09-18T09:30:00.000Z",
+        end: "2026-09-18T09:45:00.000Z",
+        app: "Google Chrome",
+        categoryName: "Uncategorized",
+        projectName: null,
+      },
+    ]);
+  });
+
+  it("timeline splits a block when the Category changes", async () => {
+    // Given: one Device, a github.com Category rule, two adjacent Chrome rows
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        const coding = yield* store.insertCategory({
+          name: "Coding",
+          productive: true,
+        });
+        yield* addRule({
+          field: "domain",
+          compare: "ends with",
+          value: "github.com",
+          effect: "category",
+          target: coding.id,
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.google.Chrome",
+          appName: "Google Chrome",
+          title: "a",
+          url: "https://github.com/acme/shop",
+          startedAt: t("2026-09-18T10:00:00.000Z"),
+          endedAt: t("2026-09-18T10:10:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.google.Chrome",
+          appName: "Google Chrome",
+          title: "b",
+          url: "https://www.youtube.com/watch?v=1",
+          startedAt: t("2026-09-18T10:10:00.000Z"),
+          endedAt: t("2026-09-18T10:20:00.000Z"),
+        });
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(isoBlocks(result)).toEqual([
+      {
+        start: "2026-09-18T10:00:00.000Z",
+        end: "2026-09-18T10:10:00.000Z",
+        app: "Google Chrome",
+        categoryName: "Coding",
+        projectName: null,
+      },
+      {
+        start: "2026-09-18T10:10:00.000Z",
+        end: "2026-09-18T10:20:00.000Z",
+        app: "Google Chrome",
+        categoryName: "Uncategorized",
+        projectName: null,
+      },
+    ]);
+  });
+
+  it("timeline keeps a gap over 60 seconds as two blocks", async () => {
+    // Given: one Device, no Rules, three Code rows with a 30 s and a 61 s gap
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        const insert = (from: string, to: string) =>
+          store.insertActivity({
+            deviceId: studio.id,
+            bundleId: "com.microsoft.VSCode",
+            appName: "Code",
+            title: null,
+            url: null,
+            startedAt: t(from),
+            endedAt: t(to),
+          });
+        yield* insert("2026-09-18T10:00:00.000Z", "2026-09-18T10:10:00.000Z");
+        yield* insert("2026-09-18T10:10:30.000Z", "2026-09-18T10:20:00.000Z");
+        yield* insert("2026-09-18T10:21:01.000Z", "2026-09-18T10:30:00.000Z");
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(isoBlocks(result)).toEqual([
+      {
+        start: "2026-09-18T10:00:00.000Z",
+        end: "2026-09-18T10:20:00.000Z",
+        app: "Code",
+        categoryName: "Uncategorized",
+        projectName: null,
+      },
+      {
+        start: "2026-09-18T10:21:01.000Z",
+        end: "2026-09-18T10:30:00.000Z",
+        app: "Code",
+        categoryName: "Uncategorized",
+        projectName: null,
+      },
+    ]);
+  });
+
+  it("timeline names the Project", async () => {
+    // Given: seedDay plus a Shop project and a github.com project rule
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        const shop = yield* store.insertProject({ name: "Shop" });
+        yield* addRule({
+          field: "domain",
+          compare: "ends with",
+          value: "github.com",
+          effect: "project",
+          target: shop.id,
+        });
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(isoBlocks(result).map((b) => b.projectName)).toEqual([
+      null,
+      null,
+      "Shop",
+    ]);
+  });
+
+  it("timeline of a range with no Activities gives no blocks", async () => {
+    // Given: seedDay
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-01", to: "2026-09-01" },
+        });
+      }),
+    );
+    // Then
+    expect(result).toEqual([]);
+  });
 });

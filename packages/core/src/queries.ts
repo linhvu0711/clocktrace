@@ -29,6 +29,19 @@ export const SummaryInput = Schema.Struct({
   deviceId: Schema.optional(Schema.UUID),
 });
 
+export const TimelineBlock = Schema.Struct({
+  start: Schema.DateTimeUtc,
+  end: Schema.DateTimeUtc,
+  app: Schema.String,
+  categoryName: Schema.String,
+  projectName: Schema.NullOr(Schema.String),
+});
+
+export const TimelineInput = Schema.Struct({
+  range: Range,
+  deviceId: Schema.optional(Schema.UUID),
+});
+
 interface RangeRows {
   readonly rows: ReadonlyArray<{
     readonly activity: Activity;
@@ -158,7 +171,73 @@ export const summary = (
     };
   });
 
+export const timeline = (
+  input: TimelineInput,
+): Effect.Effect<
+  ReadonlyArray<TimelineBlock>,
+  InvalidRangeError | StoreError,
+  Store | DateTime.CurrentTimeZone
+> =>
+  Effect.gen(function* () {
+    const { rows, categories, projects, from, to } = yield* loadRange(input);
+    const categoryById = new Map(categories.map((c) => [c.id, c]));
+    const projectById = new Map(projects.map((p) => [p.id, p]));
+    interface Block {
+      startMs: number;
+      endMs: number;
+      bundleId: string;
+      categoryId: string | null;
+      app: string;
+      categoryName: string;
+      projectName: string | null;
+    }
+    const blocks: Array<Block> = [];
+    for (const { activity, resolution } of rows) {
+      const startMs = Math.max(
+        activity.startedAt.epochMillis,
+        from.epochMillis,
+      );
+      const endMs = Math.min(activity.endedAt.epochMillis, to.epochMillis);
+      const category =
+        resolution.categoryId === null
+          ? null
+          : (categoryById.get(resolution.categoryId) ?? null);
+      const project =
+        resolution.projectId === null
+          ? null
+          : (projectById.get(resolution.projectId) ?? null);
+      const last = blocks[blocks.length - 1];
+      if (
+        last !== undefined &&
+        last.bundleId === activity.bundleId &&
+        last.categoryId === (category?.id ?? null) &&
+        activity.startedAt.epochMillis - last.endMs <= 60_000
+      ) {
+        last.endMs = Math.max(last.endMs, endMs);
+      } else {
+        blocks.push({
+          startMs,
+          endMs,
+          bundleId: activity.bundleId,
+          categoryId: category?.id ?? null,
+          app: activity.appName,
+          categoryName: category?.name ?? "Uncategorized",
+          projectName: project?.name ?? null,
+        });
+      }
+    }
+    return blocks.map((block) => ({
+      start: DateTime.unsafeMake(block.startMs),
+      end: DateTime.unsafeMake(block.endMs),
+      app: block.app,
+      categoryName: block.categoryName,
+      projectName: block.projectName,
+    }));
+  });
+
 export type GroupBy = Schema.Schema.Type<typeof GroupBy>;
 export type SummaryRow = Schema.Schema.Type<typeof SummaryRow>;
 export type Summary = Schema.Schema.Type<typeof Summary>;
 export type SummaryInput = Schema.Schema.Type<typeof SummaryInput>;
+export type TimelineBlock = Schema.Schema.Type<typeof TimelineBlock>;
+export type TimelineInput = Schema.Schema.Type<typeof TimelineInput>;
