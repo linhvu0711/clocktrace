@@ -8,6 +8,8 @@ export * from "./migrations.js";
 export * from "./onboarding.js";
 export * from "./project.js";
 export * from "./projects.js";
+export * from "./queries.js";
+export * from "./range.js";
 export * from "./regex-budget.js";
 export * from "./rule.js";
 export * from "./rules.js";
