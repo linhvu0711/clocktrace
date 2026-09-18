@@ -21,6 +21,15 @@ export class RuleNotFoundError extends Data.TaggedError("RuleNotFoundError")<{
   }
 }
 
+export class InvalidRangeError extends Data.TaggedError("InvalidRangeError")<{
+  readonly field: "range";
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return `${this.field}: ${this.reason}`;
+  }
+}
+
 export class DatabaseNewerError extends Data.TaggedError("DatabaseNewerError")<{
   readonly fileVersion: number;
   readonly codeVersion: number;

@@ -5,6 +5,8 @@ export * from "./errors.js";
 export * from "./matcher.js";
 export * from "./migrations.js";
 export * from "./project.js";
+export * from "./queries.js";
+export * from "./range.js";
 export * from "./rule.js";
 export * from "./rules.js";
 export * from "./sqlite-store.js";
