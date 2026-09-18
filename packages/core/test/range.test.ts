@@ -8,7 +8,10 @@ const friday = DateTime.unsafeMakeZoned("2026-09-18T17:00:00Z", {
   timeZone: "America/Los_Angeles",
 });
 
-const iso = (r: { readonly from: DateTime.Utc; readonly to: DateTime.Utc }) => ({
+const iso = (r: {
+  readonly from: DateTime.Utc;
+  readonly to: DateTime.Utc;
+}) => ({
   from: DateTime.formatIso(r.from),
   to: DateTime.formatIso(r.to),
 });
