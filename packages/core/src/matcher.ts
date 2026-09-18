@@ -11,11 +11,23 @@ export const Resolution = Schema.Struct({
 });
 
 const compare = (rule: Rule, candidate: string): boolean => {
+  const value = rule.value.toLowerCase();
+  const c = candidate.toLowerCase();
   switch (rule.compare) {
     case "is":
-      return candidate.toLowerCase() === rule.value.toLowerCase();
-    default:
-      return false;
+      return c === value;
+    case "contains":
+      return c.includes(value);
+    case "starts with":
+      return c.startsWith(value);
+    case "ends with":
+      return c.endsWith(value);
+    case "matches":
+      try {
+        return new RegExp(rule.value, "i").test(candidate);
+      } catch {
+        return false;
+      }
   }
 };
 
@@ -27,8 +39,22 @@ const candidates = (
   switch (rule.field) {
     case "app":
       return [activity.bundleId, activity.appName];
-    default:
-      return [];
+    case "title":
+      return activity.title === null ? [] : [activity.title];
+    case "url":
+      return activity.url === null ? [] : [activity.url];
+    case "domain": {
+      if (activity.url === null) {
+        return [];
+      }
+      try {
+        return [new URL(activity.url).hostname];
+      } catch {
+        return [];
+      }
+    }
+    case "device":
+      return device === null ? [] : [device.kind, device.name];
   }
 };
 
