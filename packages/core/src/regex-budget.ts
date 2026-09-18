@@ -7,7 +7,9 @@ export const budgetMs = 10;
  * A bound, not a proof: a probe that never matches is what triggers the
  * exponential path, so each probe ends in a tail the pattern cannot match
  * (Node.js, "Don't block the event loop"). The pattern's own letters are
- * probed because e.g. `(x+x+)+y` is fast on `a` probes.
+ * probed because e.g. `(x+x+)+y` is fast on `a` probes. V8 runs a regex's
+ * first execution in its interpreter, about five times slower than the
+ * native code it tiers up to, so one warm-up run precedes the timed probes.
  */
 export const exceedsBacktrackBudget = (pattern: string): boolean => {
   let re: RegExp;
@@ -16,6 +18,7 @@ export const exceedsBacktrackBudget = (pattern: string): boolean => {
   } catch {
     return false;
   }
+  re.test("");
   const letters = pattern
     .toLowerCase()
     .split("")
