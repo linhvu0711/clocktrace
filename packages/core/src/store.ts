@@ -29,6 +29,10 @@ export interface StoreShape {
     ReadonlyArray<Category>,
     StoreError
   >;
+  readonly updateCategory: (
+    id: string,
+    input: NewCategory,
+  ) => Effect.Effect<Option.Option<Category>, ParseError | StoreError>;
   readonly insertProject: (
     input: NewProject,
   ) => Effect.Effect<Project, ParseError | StoreError>;
@@ -36,6 +40,10 @@ export interface StoreShape {
     ReadonlyArray<Project>,
     StoreError
   >;
+  readonly updateProject: (
+    id: string,
+    input: NewProject,
+  ) => Effect.Effect<Option.Option<Project>, ParseError | StoreError>;
   readonly insertRule: (
     input: NewRule,
   ) => Effect.Effect<Rule, ParseError | StoreError>;

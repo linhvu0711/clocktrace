@@ -414,6 +414,81 @@ describe("store", () => {
     ]);
   });
 
+  it("updateCategory changes name and flag", async () => {
+    // Given: an open store with one category
+    const { inserted, result, categories } = await useStore((store) =>
+      Effect.gen(function* () {
+        const inserted = yield* store.insertCategory({
+          name: "Social",
+          productive: false,
+        });
+        // When
+        const result = yield* store.updateCategory(inserted.id, {
+          name: "Social media",
+          productive: true,
+        });
+        const categories = yield* store.listCategories();
+        return { inserted, result, categories };
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Option.some({
+        id: inserted.id,
+        name: "Social media",
+        productive: true,
+      }),
+    );
+    expect(categories).toEqual([
+      { id: inserted.id, name: "Social media", productive: true },
+    ]);
+  });
+
+  it("updateCategory of an unknown id is none", async () => {
+    // Given: an open store, no categories
+    // When
+    const result = await useStore((store) =>
+      store.updateCategory("00000000-0000-4000-8000-000000000077", {
+        name: "X",
+        productive: true,
+      }),
+    );
+    // Then
+    expect(Option.isNone(result)).toBe(true);
+  });
+
+  it("updateProject renames", async () => {
+    // Given: an open store with one project
+    const { inserted, result, projects } = await useStore((store) =>
+      Effect.gen(function* () {
+        const inserted = yield* store.insertProject({ name: "Thesis" });
+        // When
+        const result = yield* store.updateProject(inserted.id, {
+          name: "PhD thesis",
+        });
+        const projects = yield* store.listProjects();
+        return { inserted, result, projects };
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Option.some({ id: inserted.id, name: "PhD thesis" }),
+    );
+    expect(projects).toEqual([{ id: inserted.id, name: "PhD thesis" }]);
+  });
+
+  it("updateProject of an unknown id is none", async () => {
+    // Given: an open store, no projects
+    // When
+    const result = await useStore((store) =>
+      store.updateProject("00000000-0000-4000-8000-000000000077", {
+        name: "X",
+      }),
+    );
+    // Then
+    expect(Option.isNone(result)).toBe(true);
+  });
+
   it("insertProject and listProjects", async () => {
     // Given: an open store
     const { inserted, projects } = await useStore((store) =>
