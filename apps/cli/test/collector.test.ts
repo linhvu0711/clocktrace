@@ -84,6 +84,46 @@ describe("collector", () => {
     ]);
   });
 
+  it("an app-name change alone closes and reopens the Activity", async () => {
+    // Given: the front app renames under the same bundle
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:00:05.000Z",
+        app: "Safari 2",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:00:12.000Z",
+        app: "Safari 2",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:00:05.000Z",
+      },
+      {
+        appName: "Safari 2",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:05.000Z",
+        endedAt: "2026-01-01T00:00:12.000Z",
+      },
+    ]);
+  });
+
   it("a title under a missing Accessibility grant is written null", async () => {
     // Given: the helper reports accessibility missing; title stays null
     const lines = [
@@ -217,7 +257,7 @@ describe("collector", () => {
     ]);
   });
 
-  it("idle ends the open Activity at now minus idleSeconds and the next input starts a fresh one", async () => {
+  it("idle ends the open Activity at now minus idleSeconds and the return starts a fresh one at the return time", async () => {
     // Given: five idle minutes pass inside a Safari stretch
     const lines = [
       line({
@@ -263,7 +303,7 @@ describe("collector", () => {
         appName: "Safari",
         title: null,
         url: null,
-        startedAt: "2026-01-01T00:06:20.000Z",
+        startedAt: "2026-01-01T00:06:18.000Z",
         endedAt: "2026-01-01T00:06:30.000Z",
       },
     ]);

@@ -18,6 +18,7 @@ interface Open {
 interface State {
   readonly open: Open | null;
   readonly lastTs: DateTime.Utc | null;
+  readonly idleClosed: boolean;
 }
 
 export const collect = <E, R>(
@@ -26,7 +27,11 @@ export const collect = <E, R>(
 ): Effect.Effect<void, E | ParseError | StoreError, Store | R> =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const state = yield* Ref.make<State>({ open: null, lastTs: null });
+    const state = yield* Ref.make<State>({
+      open: null,
+      lastTs: null,
+      idleClosed: false,
+    });
 
     const close = (
       open: Open,
@@ -51,7 +56,11 @@ export const collect = <E, R>(
         yield* Ref.set(state, { ...s, lastTs: line.ts });
         if (line.idleSeconds >= idleAfterSeconds) {
           if (s.open !== null) {
-            yield* Ref.set(state, { open: null, lastTs: line.ts });
+            yield* Ref.set(state, {
+              open: null,
+              lastTs: line.ts,
+              idleClosed: true,
+            });
             yield* close(
               s.open,
               DateTime.subtract(line.ts, { seconds: line.idleSeconds }),
@@ -61,7 +70,11 @@ export const collect = <E, R>(
         }
         if (line.bundleId === null || line.app === null) {
           if (s.open !== null) {
-            yield* Ref.set(state, { open: null, lastTs: line.ts });
+            yield* Ref.set(state, {
+              open: null,
+              lastTs: line.ts,
+              idleClosed: false,
+            });
             yield* close(s.open, line.ts);
           }
           return;
@@ -73,14 +86,18 @@ export const collect = <E, R>(
               appName: line.app,
               title: line.title,
               url: line.url,
-              startedAt: line.ts,
+              startedAt: s.idleClosed
+                ? DateTime.subtract(line.ts, { seconds: line.idleSeconds })
+                : line.ts,
             },
             lastTs: line.ts,
+            idleClosed: false,
           });
           return;
         }
         if (
           s.open.bundleId !== line.bundleId ||
+          s.open.appName !== line.app ||
           s.open.title !== line.title ||
           s.open.url !== line.url
         ) {
@@ -93,6 +110,7 @@ export const collect = <E, R>(
               startedAt: line.ts,
             },
             lastTs: line.ts,
+            idleClosed: false,
           });
           yield* close(s.open, line.ts);
         }
