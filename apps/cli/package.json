@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@clocktrace/core": "workspace:*",
+    "@clocktrace/mcp": "workspace:*",
     "effect": "^3.22.2"
   }
 }
