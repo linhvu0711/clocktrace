@@ -147,6 +147,36 @@ describe("rules", () => {
     expect(rules).toEqual([]);
   });
 
+  it("rejects a regex that can backtrack catastrophically naming value", async () => {
+    // Given: an empty store
+    // When
+    const { result, rules } = await useEmpty(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const result = yield* Effect.either(
+          addRule({
+            field: "title",
+            compare: "matches",
+            value: "(a+)+$",
+            effect: "private",
+            target: null,
+          }),
+        );
+        const rules = yield* store.listRules();
+        return { result, rules };
+      }),
+    );
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left as InvalidRuleError;
+      expect(error._tag).toBe("InvalidRuleError");
+      expect(error.field).toBe("value");
+      expect(error.message).toBe("value: regex can backtrack catastrophically");
+    }
+    expect(rules).toEqual([]);
+  });
+
   it("rejects an unknown category target naming target", async () => {
     // Given: an empty store with no categories
     // When

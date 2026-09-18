@@ -8,6 +8,7 @@ import {
   type StoreError,
 } from "./errors.js";
 import { resolve } from "./matcher.js";
+import { exceedsBacktrackBudget } from "./regex-budget.js";
 import { NewRule, type Rule } from "./rule.js";
 import { Store } from "./store.js";
 
@@ -25,6 +26,12 @@ export const addRule = (
         return yield* new InvalidRuleError({
           field: "value",
           reason: "not a valid regex",
+        });
+      }
+      if (exceedsBacktrackBudget(input.value)) {
+        return yield* new InvalidRuleError({
+          field: "value",
+          reason: "regex can backtrack catastrophically",
         });
       }
     }
