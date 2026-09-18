@@ -1,11 +1,13 @@
 import { Effect, type Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import type { NewActivity } from "./activity.js";
 import {
   InvalidRuleError,
   RuleNotFoundError,
   type StoreError,
 } from "./errors.js";
+import { resolve } from "./matcher.js";
 import { NewRule, type Rule } from "./rule.js";
 import { Store } from "./store.js";
 
@@ -65,6 +67,19 @@ export const removeRule = (
     if (!removed) {
       return yield* new RuleNotFoundError({ id });
     }
+  });
+
+export const applyPrivate = <A extends NewActivity>(
+  activity: A,
+): Effect.Effect<A, StoreError, Store> =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    const rules = yield* store.listRules();
+    const devices = yield* store.listDevices();
+    const device = devices.find((d) => d.id === activity.deviceId) ?? null;
+    return resolve(activity, rules, device).private
+      ? { ...activity, title: null, url: null }
+      : activity;
   });
 
 export type RuleInput = Schema.Schema.Type<typeof RuleInput>;

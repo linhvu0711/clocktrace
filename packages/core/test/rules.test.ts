@@ -1,8 +1,18 @@
-import { Effect, Either, Layer } from "effect";
+import { DateTime, Effect, Either, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { InvalidRuleError, RuleNotFoundError } from "../src/index.js";
-import { addRule, openStore, removeRule, Store } from "../src/index.js";
+import type {
+  InvalidRuleError,
+  NewActivity,
+  RuleNotFoundError,
+} from "../src/index.js";
+import {
+  addRule,
+  applyPrivate,
+  openStore,
+  removeRule,
+  Store,
+} from "../src/index.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -11,6 +21,20 @@ const EmptyStore = Layer.scoped(
 
 const useEmpty = <A, E>(effect: Effect.Effect<A, E, Store>): Promise<A> =>
   Effect.runPromise(effect.pipe(Effect.provide(EmptyStore)));
+
+const useTest = <A, E>(effect: Effect.Effect<A, E, Store>): Promise<A> =>
+  Effect.runPromise(effect.pipe(Effect.provide(Store.Test)));
+
+const deviceId = "00000000-0000-4000-8000-000000000001";
+const chrome: NewActivity = {
+  deviceId,
+  bundleId: "com.google.Chrome",
+  appName: "Google Chrome",
+  title: "GitHub - Google Chrome",
+  url: "https://github.com/linhvu0711/clocktrace",
+  startedAt: DateTime.unsafeMake("2026-09-17T10:00:00.000Z"),
+  endedAt: DateTime.unsafeMake("2026-09-17T10:30:00.000Z"),
+};
 
 describe("rules", () => {
   it("addRule appends at the last position", async () => {
@@ -199,5 +223,54 @@ describe("rules", () => {
       expect(error.field).toBe("target");
       expect(error.message).toBe("target: a category rule needs a Category id");
     }
+  });
+
+  it("applyPrivate blanks title and url on a Private match", async () => {
+    // Given: Store.Test seeded with the Starter set, a device, an incognito title
+    const result = await useTest(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const d = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        const activity = {
+          ...chrome,
+          deviceId: d.id,
+          title: "Example Domain - Google Chrome (Incognito)",
+          url: "https://example.com/",
+        };
+        // When
+        const blanked = yield* applyPrivate(activity);
+        return { activity, blanked };
+      }),
+    );
+    // Then
+    expect(result.blanked).toEqual({
+      ...result.activity,
+      title: null,
+      url: null,
+    });
+  });
+
+  it("applyPrivate returns the activity unchanged when no Private rule matches", async () => {
+    // Given: Store.Test, the same device, a normal title
+    const result = await useTest(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const d = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        const activity = { ...chrome, deviceId: d.id };
+        // When
+        const unchanged = yield* applyPrivate(activity);
+        return { activity, unchanged };
+      }),
+    );
+    // Then
+    expect(result.unchanged).toEqual(result.activity);
   });
 });
