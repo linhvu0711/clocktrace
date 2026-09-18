@@ -8,6 +8,7 @@ import type { StoreError } from "./errors.js";
 import type { NewProject, Project } from "./project.js";
 import type { NewRule, Rule } from "./rule.js";
 import { openStore } from "./sqlite-store.js";
+import { seedStarterSet } from "./starter-set.js";
 
 export interface StoreShape {
   readonly getOrInsertDevice: (
@@ -51,7 +52,7 @@ export interface StoreShape {
 }
 
 export class Store extends Effect.Service<Store>()("Store", {
-  scoped: (path: string) => openStore(path),
+  scoped: (path: string) => Effect.tap(openStore(path), seedStarterSet),
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
   static Test = this.Default(":memory:");
