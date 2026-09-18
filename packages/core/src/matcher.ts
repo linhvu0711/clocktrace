@@ -62,8 +62,7 @@ const matches = (
   rule: Rule,
   activity: NewActivity,
   device: Device | null,
-): boolean =>
-  candidates(rule, activity, device).some((c) => compare(rule, c));
+): boolean => candidates(rule, activity, device).some((c) => compare(rule, c));
 
 export const resolve = (
   activity: NewActivity,

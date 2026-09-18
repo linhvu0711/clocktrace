@@ -5,7 +5,7 @@ import { DateTime, Effect, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { Device, NewActivity } from "../src/index.js";
-import { resolve, starterRules, Store } from "../src/index.js";
+import { resolve, Store, starterRules } from "../src/index.js";
 
 const deviceId = "00000000-0000-4000-8000-000000000001";
 const device: Device = {
