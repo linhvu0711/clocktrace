@@ -57,7 +57,7 @@ A flat named bucket that time is summed into, with a productive yes/no flag. Cat
 _Avoid_: Project, tag, label, group
 
 **Rule**:
-One test on an Activity with one effect: set its Category, set its Project, or mark it Private. A test is one field (app, title, url, domain, device), one compare (is, contains, starts with, ends with, matches), one value. Rules are checked in order per effect and the first match wins. Category and Project rules run at query time and are never stored on the Activity. Private rules run before the write.
+One test on an Activity with one effect: set its Category, set its Project, or mark it Private. A test is one field (app, title, url, domain, device), one compare (is, contains, starts with, ends with, matches), one value. On the domain field, starts with and ends with stop at a dot: ends with `github.com` covers `github.com` and `api.github.com`, never `evilgithub.com`; starts with `docs` covers `docs.google.com`, never `docsevil.com`. Rules are checked in order per effect and the first match wins. Category and Project rules run at query time and are never stored on the Activity. Private rules run before the write.
 _Avoid_: Filter, mapping, classifier, blacklist
 
 **Private**:
