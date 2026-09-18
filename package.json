@@ -11,6 +11,7 @@
     "test": "pnpm -r run test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "typecheck": "pnpm -r run typecheck",
     "postinstall": "bash scripts/sync-repos.sh"
   },
   "devDependencies": {
