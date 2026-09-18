@@ -14,6 +14,13 @@ export const Range = Schema.Union(
 
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
 
+const pad = (n: number): string => String(n).padStart(2, "0");
+
+const isoDay = (zoned: DateTime.Zoned): string => {
+  const parts = DateTime.toParts(zoned);
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+};
+
 export const resolveRange = (
   range: Range,
   now: DateTime.Zoned,
@@ -54,12 +61,17 @@ export const resolveRange = (
           return yield* fail(`unknown keyword "${range}"`);
       }
     }
+    // A day the calendar does not hold, like 2026-02-30, must fail: Date
+    // parsing would slide it into March. The round trip catches it.
     const parse = (text: string) =>
       dayPattern.test(text)
-        ? DateTime.makeZoned(text, {
-            timeZone: now.zone,
-            adjustForTimeZone: true,
-          })
+        ? Option.filter(
+            DateTime.makeZoned(text, {
+              timeZone: now.zone,
+              adjustForTimeZone: true,
+            }),
+            (zoned) => isoDay(zoned) === text,
+          )
         : Option.none<DateTime.Zoned>();
     const from = parse(range.from);
     const to = parse(range.to);

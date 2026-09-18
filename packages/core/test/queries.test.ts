@@ -584,6 +584,64 @@ describe("timeline", () => {
     ]);
   });
 
+  it("timeline keeps two Devices apart", async () => {
+    // Given: no Rules; Code on Studio, then Code on Laptop right after
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        const laptop = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Laptop",
+          externalId: "mac-2",
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.microsoft.VSCode",
+          appName: "Code",
+          title: "a",
+          url: null,
+          startedAt: t("2026-09-18T10:00:00.000Z"),
+          endedAt: t("2026-09-18T10:10:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: laptop.id,
+          bundleId: "com.microsoft.VSCode",
+          appName: "Code",
+          title: "b",
+          url: null,
+          startedAt: t("2026-09-18T10:10:00.000Z"),
+          endedAt: t("2026-09-18T10:20:00.000Z"),
+        });
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then: same app and Category, but one block per Device
+    expect(isoBlocks(result)).toEqual([
+      {
+        start: "2026-09-18T10:00:00.000Z",
+        end: "2026-09-18T10:10:00.000Z",
+        app: "Code",
+        categoryName: "Uncategorized",
+        projectName: null,
+      },
+      {
+        start: "2026-09-18T10:10:00.000Z",
+        end: "2026-09-18T10:20:00.000Z",
+        app: "Code",
+        categoryName: "Uncategorized",
+        projectName: null,
+      },
+    ]);
+  });
+
   it("timeline keeps a gap over 60 seconds as two blocks", async () => {
     // Given: one Device, no Rules, three Code rows with a 30 s and a 61 s gap
     const result = await run(

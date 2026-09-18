@@ -150,6 +150,24 @@ describe("range", () => {
     expectInvalid(result, 'range: unknown keyword "last month"');
   });
 
+  it("fails naming range on a day the calendar does not hold", () => {
+    // Given: the Friday now; 2026-02-30 never exists, 2026 has no 02-29
+    // When
+    const feb30 = Effect.runSync(
+      Effect.either(
+        resolveRange({ from: "2026-02-30", to: "2026-03-01" }, friday),
+      ),
+    );
+    const feb29 = Effect.runSync(
+      Effect.either(
+        resolveRange({ from: "2026-02-01", to: "2026-02-29" }, friday),
+      ),
+    );
+    // Then: neither slides into March
+    expectInvalid(feb30, "range: from and to must be YYYY-MM-DD");
+    expectInvalid(feb29, "range: from and to must be YYYY-MM-DD");
+  });
+
   it("fails naming range when a date is not YYYY-MM-DD", () => {
     // Given: the Friday now
     // When

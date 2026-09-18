@@ -198,6 +198,7 @@ export const timeline = (
     interface Block {
       startMs: number;
       endMs: number;
+      deviceId: string;
       bundleId: string;
       categoryId: string | null;
       projectId: string | null;
@@ -223,6 +224,7 @@ export const timeline = (
       const last = blocks[blocks.length - 1];
       if (
         last !== undefined &&
+        last.deviceId === activity.deviceId &&
         last.bundleId === activity.bundleId &&
         last.categoryId === (category?.id ?? null) &&
         last.projectId === (project?.id ?? null) &&
@@ -233,6 +235,7 @@ export const timeline = (
         blocks.push({
           startMs,
           endMs,
+          deviceId: activity.deviceId,
           bundleId: activity.bundleId,
           categoryId: category?.id ?? null,
           projectId: project?.id ?? null,
