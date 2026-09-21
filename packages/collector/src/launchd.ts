@@ -19,26 +19,61 @@ export type LaunchdState = Schema.Schema.Type<typeof LaunchdState>;
 
 export const fakeLaunchd = (
   state: Ref.Ref<LaunchdState>,
-): Layer.Layer<Launchd> =>
-  Layer.succeed(
+  options?: {
+    readonly failBootstrap?: boolean;
+    readonly bootstrapStuck?: boolean;
+    readonly stalledSamples?: number;
+  },
+): Layer.Layer<Launchd> => {
+  const failed = () =>
+    Effect.fail(
+      new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+    );
+  let samples = 0;
+  return Layer.succeed(
     Launchd,
     new Launchd({
       isInstalled: () => Ref.get(state).pipe(Effect.map((s) => s.installed)),
       install: (plist) =>
-        Ref.update(state, (s) => ({
-          installed: true,
-          running: true,
-          plist,
-          installs: s.installs + 1,
-        })),
-      bootstrap: () => Ref.update(state, (s) => ({ ...s, running: true })),
+        options?.failBootstrap
+          ? failed()
+          : Ref.update(state, (s) => ({
+              installed: true,
+              running: !options?.bootstrapStuck,
+              plist,
+              installs: s.installs + 1,
+            })),
+      bootstrap: () =>
+        options?.failBootstrap
+          ? failed()
+          : options?.bootstrapStuck
+            ? Effect.void
+            : Ref.update(state, (s) => ({ ...s, running: true })),
       bootout: () => Ref.update(state, (s) => ({ ...s, running: false })),
-      state: () =>
-        Ref.get(state).pipe(
+      uninstall: () =>
+        Ref.update(state, (s) => ({
+          ...s,
+          installed: false,
+          running: false,
+          plist: null,
+        })),
+      state: () => {
+        const stalled = options?.stalledSamples;
+        if (stalled !== undefined) {
+          return Effect.sync(() => {
+            samples += 1;
+            return samples > stalled
+              ? ("running" as const)
+              : ("stopped" as const);
+          });
+        }
+        return Ref.get(state).pipe(
           Effect.map((s) => (s.running ? "running" : "stopped")),
-        ),
+        );
+      },
     }),
   );
+};
 
 export class LaunchdError extends Data.TaggedError("LaunchdError")<{
   readonly step: string;
@@ -132,6 +167,23 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
       bootstrap,
       bootout,
       state,
+      // Remove the plist only after the job is unloaded. bootout already
+      // treats an absent job (exit 3) as success; any other unload failure
+      // keeps the plist so a still-loaded job is not orphaned.
+      uninstall: () =>
+        bootout().pipe(
+          Effect.andThen(
+            fs.remove(plistPath, { force: true }).pipe(
+              Effect.mapError(
+                (e) =>
+                  new LaunchdError({
+                    step: `remove ${plistPath}`,
+                    detail: e.message,
+                  }),
+              ),
+            ),
+          ),
+        ),
       install: (plist: string) =>
         fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
           Effect.andThen(
@@ -145,7 +197,13 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 detail: e.message,
               }),
           ),
-          Effect.andThen(bootstrap()),
+          Effect.andThen(
+            bootstrap().pipe(
+              Effect.tapError(() =>
+                fs.remove(plistPath, { force: true }).pipe(Effect.ignore),
+              ),
+            ),
+          ),
         ),
     };
   }),

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   fakeLaunchd,
   Helper,
+  HelperExitedError,
   type Launchd,
   type LaunchdState,
   type Permissions,
@@ -33,6 +34,17 @@ const helperStub = (p: Permissions) =>
       check: () => Effect.void,
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(p),
+      request: () => Effect.succeed("asked"),
+    }),
+  );
+
+const helperExits = (cause: unknown) =>
+  Layer.succeed(
+    Helper,
+    new Helper({
+      check: () => Effect.void,
+      lines: () => Stream.empty,
+      permissions: () => Effect.fail(new HelperExitedError({ cause })),
       request: () => Effect.succeed("asked"),
     }),
   );
@@ -111,6 +123,46 @@ describe("status", () => {
       );
     }
     expect(existsSync(path)).toBe(false);
+  });
+
+  it("status names a Helper failure", async () => {
+    // Given: set up (installed, running, database) and the Helper exits with an error
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const exit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const prompt = yield* fakePrompt([], true);
+        const state = yield* Ref.make<LaunchdState>({
+          installed: true,
+          running: true,
+          plist: null,
+          installs: 0,
+        });
+        const layers = Layer.mergeAll(
+          prompt.layer,
+          fakeLaunchd(state),
+          helperExits("boom"),
+          NodeContext.layer,
+        );
+        return yield* Effect.exit(status().pipe(Effect.provide(layers)));
+      }).pipe(
+        Effect.withConfigProvider(
+          ConfigProvider.fromMap(
+            new Map([
+              ["CLOCKTRACE_HELPER", "/stub"],
+              ["CLOCKTRACE_DB", path],
+            ]),
+          ),
+        ),
+        DateTime.withCurrentZoneNamed("America/Los_Angeles"),
+      ),
+    );
+    // Then: the failure surfaces as a non-empty line naming the Helper
+    expect(exit).toEqual(Exit.fail(new HelperExitedError({ cause: "boom" })));
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      const message = (exit.cause.error as HelperExitedError).message;
+      expect(message).toBe("helper exited: boom");
+      expect(message.length).toBeGreaterThan(0);
+    }
   });
 
   it("status prints the view when set up", async () => {
