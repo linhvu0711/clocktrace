@@ -291,9 +291,7 @@ describe("server", () => {
     // Then
     for (const result of results) {
       expect(result.isError).toBe(true);
-      expect(text(result)).toBe(
-        "clocktrace is not installed, run clocktrace install",
-      );
+      expect(text(result)).toBe("not set up, run clocktrace setup");
     }
     expect(existsSync(path)).toBe(false);
   });
@@ -818,9 +816,7 @@ describe("server", () => {
     // Then
     for (const result of results) {
       expect(result.isError).toBe(true);
-      expect(text(result)).toBe(
-        "clocktrace is not installed, run clocktrace install",
-      );
+      expect(text(result)).toBe("not set up, run clocktrace setup");
     }
     expect(existsSync(path)).toBe(false);
   });

@@ -10,7 +10,7 @@ export class NotInstalledError extends Data.TaggedError("NotInstalledError")<{
   readonly path: string;
 }> {
   override get message(): string {
-    return "clocktrace is not installed, run clocktrace install";
+    return "not set up, run clocktrace setup";
   }
 }
 

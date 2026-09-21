@@ -23,12 +23,17 @@ clocktrace stop          # stop the Collector
 clocktrace status        # Collector state, permissions, last Activity, database path
 clocktrace permissions   # walk the three permissions again
 clocktrace mcp           # serve MCP over stdio for a Host
+clocktrace setup --hosts <list>   # register the MCP server with the named Hosts (no checklist)
 clocktrace --version     # print the CLI version
 ```
 
 `setup` creates the database, writes
 `~/Library/LaunchAgents/com.clocktrace.collector.plist`, starts the
-Collector, and walks the three permissions. Every other command but `mcp`
+Collector, and walks the three permissions. At the end it shows a
+checklist of the four Hosts (Claude Code, Codex, Hermes Agent,
+OpenClaw) with the ones found on this Mac pre-ticked, and registers
+`clocktrace mcp` with each ticked one; `setup --hosts` picks the Hosts
+without the checklist. Every other command but `mcp`
 prints `not set up, run clocktrace setup` first. The Collector logs to
 `~/Library/Logs/clocktrace/collector.log`.
 
