@@ -24,7 +24,11 @@ const isoDay = (zoned: DateTime.Zoned): string => {
   return `${year}-${pad(parts.month)}-${pad(parts.day)}`;
 };
 
-const isoMinute = (zoned: DateTime.Zoned): string =>
+/**
+ * The local wall clock of a zoned time at minute precision, `YYYY-MM-DDTHH:mm`,
+ * the same text a `Range` accepts.
+ */
+export const isoMinute = (zoned: DateTime.Zoned): string =>
   `${isoDay(zoned)}T${pad(DateTime.toParts(zoned).hours)}:${pad(
     DateTime.toParts(zoned).minutes,
   )}`;
