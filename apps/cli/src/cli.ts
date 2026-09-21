@@ -3,6 +3,7 @@ import { Command } from "@effect/cli";
 import { categoriesCommand } from "./categories.js";
 import { mcpCommand } from "./mcp.js";
 import { permissionsCommand } from "./permissions.js";
+import { projectsCommand } from "./projects.js";
 import { rulesCommand } from "./rules.js";
 import { setupCommand } from "./setup.js";
 import { startCommand } from "./start.js";
@@ -20,6 +21,7 @@ export const command = Command.make("clocktrace").pipe(
     mcpCommand,
     rulesCommand,
     categoriesCommand,
+    projectsCommand,
   ]),
 );
 

@@ -195,6 +195,15 @@ describe("cli", () => {
     expect(exit).toEqual(Exit.fail(new NotSetUpError()));
   });
 
+  it("projects list before setup fails not set up", async () => {
+    // Given: the launchd agent is not installed, no database file
+    const argv = ["node", "clocktrace", "projects", "list"];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+  });
+
   it("a bad compare is a validation error", async () => {
     // Given
     const argv = [
