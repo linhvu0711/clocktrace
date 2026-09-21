@@ -186,6 +186,43 @@ describe("cli", () => {
     expect(exit).toEqual(Exit.fail(new NotSetUpError()));
   });
 
+  it("a bad compare is a validation error", async () => {
+    // Given
+    const argv = [
+      "node",
+      "clocktrace",
+      "rules",
+      "add",
+      "--field",
+      "url",
+      "--compare",
+      "bogus",
+      "--value",
+      "x",
+      "--effect",
+      "private",
+    ];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      expect(ValidationError.isValidationError(exit.cause.error)).toBe(true);
+    }
+  });
+
+  it("a missing flag is a validation error", async () => {
+    // Given
+    const argv = ["node", "clocktrace", "rules", "add", "--field", "url"];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      expect(ValidationError.isValidationError(exit.cause.error)).toBe(true);
+    }
+  });
+
   it("a known command dispatches", async () => {
     // Given: the launchd agent is not installed, no database file
     const argv = ["node", "clocktrace", "status"];
