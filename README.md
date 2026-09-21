@@ -14,6 +14,8 @@ pnpm test
 
 `pnpm lint` runs Biome. CI runs all of the above on macOS for every push and pull request.
 
+Run the summary benchmark by hand with `pnpm --filter core bench`; the target is under 2 seconds on a Mac. CI does not run it.
+
 ## Layout
 
 | Path | What it is |
