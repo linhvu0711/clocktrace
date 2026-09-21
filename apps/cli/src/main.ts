@@ -3,6 +3,7 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { DateTime, Effect, Layer } from "effect";
 
 import { parseArgs, usage } from "./args.js";
+import { permissions } from "./permissions.js";
 import { Prompt } from "./prompt.js";
 import { start } from "./start.js";
 import { status } from "./status.js";
@@ -50,6 +51,8 @@ if (command === null) {
   runCommand(start());
 } else if (command === "stop") {
   runCommand(stop());
+} else if (command === "permissions") {
+  runCommand(permissions());
 } else {
   console.error(usage);
   process.exitCode = 1;
