@@ -29,6 +29,9 @@ if (arg === "run") {
   );
 } else if (arg === "--version" || arg === "-v") {
   console.log(version());
+} else if (arg === "mcp") {
+  const { serveStdio } = await import("@clocktrace/mcp");
+  await serveStdio();
 } else {
   console.log("clocktrace: nothing here yet. Try --version.");
 }

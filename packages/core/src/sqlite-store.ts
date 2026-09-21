@@ -104,11 +104,19 @@ export const openStore = (
     const selectCategories = yield* prepare(() =>
       db.prepare("SELECT id, name, productive FROM categories ORDER BY name"),
     );
+    const updateCategoryStatement = yield* prepare(() =>
+      db.prepare(
+        "UPDATE categories SET name = @name, productive = @productive WHERE id = @id",
+      ),
+    );
     const insertProjectStatement = yield* prepare(() =>
       db.prepare("INSERT INTO projects (id, name) VALUES (@id, @name)"),
     );
     const selectProjects = yield* prepare(() =>
       db.prepare("SELECT id, name FROM projects ORDER BY name"),
+    );
+    const updateProjectStatement = yield* prepare(() =>
+      db.prepare("UPDATE projects SET name = @name WHERE id = @id"),
     );
     const insertRuleStatement = yield* prepare(() =>
       db.prepare(
@@ -254,6 +262,24 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const updateCategory: StoreShape["updateCategory"] = (id, input) =>
+      Effect.gen(function* () {
+        const category = yield* Schema.validate(NewCategorySchema)(input);
+        return yield* Effect.try({
+          try: () => {
+            const run = updateCategoryStatement.run({
+              id,
+              name: category.name,
+              productive: category.productive ? 1 : 0,
+            });
+            return run.changes === 0
+              ? Option.none()
+              : Option.some({ id, ...category });
+          },
+          catch: (cause) => new StoreError({ cause }),
+        });
+      });
+
     const insertProject: StoreShape["insertProject"] = (input) =>
       Effect.gen(function* () {
         const project = yield* Schema.validate(NewProjectSchema)(input);
@@ -271,6 +297,23 @@ export const openStore = (
       Effect.try({
         try: () => selectProjects.all() as ReadonlyArray<Project>,
         catch: (cause) => new StoreError({ cause }),
+      });
+
+    const updateProject: StoreShape["updateProject"] = (id, input) =>
+      Effect.gen(function* () {
+        const project = yield* Schema.validate(NewProjectSchema)(input);
+        return yield* Effect.try({
+          try: () => {
+            const run = updateProjectStatement.run({
+              id,
+              name: project.name,
+            });
+            return run.changes === 0
+              ? Option.none()
+              : Option.some({ id, ...project });
+          },
+          catch: (cause) => new StoreError({ cause }),
+        });
       });
 
     const insertRule: StoreShape["insertRule"] = (input) =>
@@ -375,8 +418,10 @@ export const openStore = (
       readActivities,
       insertCategory,
       listCategories,
+      updateCategory,
       insertProject,
       listProjects,
+      updateProject,
       insertRule,
       listRules,
       deleteRule,

@@ -21,6 +21,26 @@ export class RuleNotFoundError extends Data.TaggedError("RuleNotFoundError")<{
   }
 }
 
+export class CategoryNotFoundError extends Data.TaggedError(
+  "CategoryNotFoundError",
+)<{
+  readonly id: string;
+}> {
+  override get message(): string {
+    return `category ${this.id} not found`;
+  }
+}
+
+export class ProjectNotFoundError extends Data.TaggedError(
+  "ProjectNotFoundError",
+)<{
+  readonly id: string;
+}> {
+  override get message(): string {
+    return `project ${this.id} not found`;
+  }
+}
+
 export class InvalidRangeError extends Data.TaggedError("InvalidRangeError")<{
   readonly field: "range";
   readonly reason: string;

@@ -19,6 +19,8 @@
   },
   "dependencies": {
     "@clocktrace/core": "workspace:*",
-    "effect": "^3.22.2"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "effect": "^3.22.2",
+    "zod": "^4.6.5"
   }
 }
