@@ -13,8 +13,8 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
         });
         rl.once("close", () => resume(Effect.succeed("")));
         rl.question(question, (answer) => {
-          rl.close();
           resume(Effect.succeed(answer));
+          rl.close();
         });
       }),
     print: (line: string) =>
