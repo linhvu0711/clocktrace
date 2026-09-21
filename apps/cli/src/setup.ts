@@ -13,7 +13,7 @@ import {
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
 import type { CommandExecutor, FileSystem } from "@effect/platform";
-import { type DateTime, Effect } from "effect";
+import { type DateTime, Effect, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import {
@@ -88,8 +88,15 @@ const pickHosts: Effect.Effect<
   return [...ticked];
 });
 
+// launchctl bootstrap returns before a RunAtLoad agent has reached running,
+// so poll the state for a bounded window instead of trusting one sample.
+const defaultLoadRetry = Schedule.recurs(20).pipe(
+  Schedule.addDelay(() => "100 millis"),
+);
+
 export const setup = (
   hosts?: ReadonlyArray<HostName>,
+  loadRetry: Schedule.Schedule<unknown, unknown> = defaultLoadRetry,
 ): Effect.Effect<
   void,
   | HelperNotFoundError
@@ -130,13 +137,22 @@ export const setup = (
         } else {
           yield* launchd.bootstrap();
         }
-        const collector = yield* launchd.state();
-        if (collector !== "running") {
-          return yield* new LaunchdError({
-            step: "launchctl bootstrap",
-            detail: "collector did not start",
-          });
-        }
+        yield* launchd.state().pipe(
+          Effect.flatMap((collector) =>
+            collector === "running"
+              ? Effect.void
+              : new LaunchdError({
+                  step: "launchctl bootstrap",
+                  detail: "collector did not start",
+                }),
+          ),
+          Effect.retry({ schedule: loadRetry }),
+          // A fresh install wrote this plist; drop it so a later run can
+          // rewrite it. A repair reuses an existing plist, so leave it.
+          Effect.tapError(() =>
+            installed ? Effect.void : launchd.uninstall().pipe(Effect.ignore),
+          ),
+        );
         yield* walkPermissions();
         const selected =
           hosts !== undefined

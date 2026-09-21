@@ -169,4 +169,31 @@ describe("install cleanup (real service)", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(existsSync(plistPath)).toBe(true);
   });
+
+  it("uninstall removes the plist", async () => {
+    // Given: a real install has written the plist
+    const { Launchd: RealLaunchd, plistPath } = await import(
+      "../src/launchd.js"
+    );
+    const layer = RealLaunchd.DefaultWithoutDependencies.pipe(
+      Layer.provide(
+        Layer.merge(
+          NodeFileSystem.layer,
+          Layer.succeed(CommandExecutor.CommandExecutor, executor(0)),
+        ),
+      ),
+    );
+    const seen = await Effect.runPromise(
+      Effect.gen(function* () {
+        const launchd = yield* RealLaunchd;
+        yield* launchd.install("<plist>");
+        const before = existsSync(plistPath);
+        yield* launchd.uninstall();
+        return { before, after: existsSync(plistPath) };
+      }).pipe(Effect.provide(layer)),
+    );
+    // Then: uninstall removes it
+    expect(seen.before).toBe(true);
+    expect(seen.after).toBe(false);
+  });
 });

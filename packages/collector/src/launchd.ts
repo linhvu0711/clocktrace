@@ -22,12 +22,14 @@ export const fakeLaunchd = (
   options?: {
     readonly failBootstrap?: boolean;
     readonly bootstrapStuck?: boolean;
+    readonly stalledSamples?: number;
   },
 ): Layer.Layer<Launchd> => {
   const failed = () =>
     Effect.fail(
       new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
     );
+  let samples = 0;
   return Layer.succeed(
     Launchd,
     new Launchd({
@@ -48,10 +50,27 @@ export const fakeLaunchd = (
             ? Effect.void
             : Ref.update(state, (s) => ({ ...s, running: true })),
       bootout: () => Ref.update(state, (s) => ({ ...s, running: false })),
-      state: () =>
-        Ref.get(state).pipe(
+      uninstall: () =>
+        Ref.update(state, (s) => ({
+          ...s,
+          installed: false,
+          running: false,
+          plist: null,
+        })),
+      state: () => {
+        const stalled = options?.stalledSamples;
+        if (stalled !== undefined) {
+          return Effect.sync(() => {
+            samples += 1;
+            return samples > stalled
+              ? ("running" as const)
+              : ("stopped" as const);
+          });
+        }
+        return Ref.get(state).pipe(
           Effect.map((s) => (s.running ? "running" : "stopped")),
-        ),
+        );
+      },
     }),
   );
 };
@@ -148,6 +167,18 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
       bootstrap,
       bootout,
       state,
+      uninstall: () =>
+        bootout().pipe(
+          Effect.ignore,
+          Effect.andThen(fs.remove(plistPath, { force: true })),
+          Effect.mapError(
+            (e) =>
+              new LaunchdError({
+                step: `remove ${plistPath}`,
+                detail: e.message,
+              }),
+          ),
+        ),
       install: (plist: string) =>
         fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
           Effect.andThen(

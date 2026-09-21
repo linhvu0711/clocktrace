@@ -21,6 +21,7 @@ import {
   Exit,
   Layer,
   Ref,
+  Schedule,
   Sink,
   Stream,
 } from "effect";
@@ -112,6 +113,7 @@ describe("setup", () => {
       readonly launchd?: {
         readonly failBootstrap?: boolean;
         readonly bootstrapStuck?: boolean;
+        readonly stalledSamples?: number;
       };
     } = {},
   ) =>
@@ -131,7 +133,7 @@ describe("setup", () => {
           noCommandsLayer,
         );
         const exit = yield* Effect.exit(
-          setup(opts.hosts).pipe(Effect.provide(layers)),
+          setup(opts.hosts, Schedule.recurs(3)).pipe(Effect.provide(layers)),
         );
         return {
           exit,
@@ -296,7 +298,7 @@ describe("setup", () => {
       "/stub",
       { launchd: { bootstrapStuck: true } },
     );
-    // Then: setup fails loudly and never reaches registration
+    // Then: setup fails loudly, never reaches registration, keeps the plist
     expect(exit).toEqual(
       Exit.fail(
         new LaunchdError({
@@ -306,6 +308,41 @@ describe("setup", () => {
       ),
     );
     expect(output).toEqual([]);
+  });
+
+  it("setup tolerates a slow startup and then succeeds", async () => {
+    // Given: the load returns success and the Collector reaches running only
+    // after two stopped samples (RunAtLoad startup latency)
+    const { exit } = await run(
+      helperStub(allGranted),
+      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      "/stub",
+      { launchd: { stalledSamples: 2 } },
+    );
+    // Then: the bounded poll waits it out instead of failing
+    expect(Exit.isSuccess(exit)).toBe(true);
+  });
+
+  it("a fresh load that never starts removes the plist", async () => {
+    // Given: no plist beforehand; the fresh load returns success (bootstrap
+    // exit 5) but the Collector never reaches running
+    const { exit, state } = await run(
+      helperStub(allGranted),
+      { installed: false, running: false, plist: null, installs: 0 },
+      "/stub",
+      { launchd: { bootstrapStuck: true } },
+    );
+    // Then: setup fails and clears the plist it just wrote
+    expect(exit).toEqual(
+      Exit.fail(
+        new LaunchdError({
+          step: "launchctl bootstrap",
+          detail: "collector did not start",
+        }),
+      ),
+    );
+    expect(state.plist).toBe(null);
+    expect(state.installed).toBe(false);
   });
 
   it("a failed fresh install leaves no plist", async () => {
