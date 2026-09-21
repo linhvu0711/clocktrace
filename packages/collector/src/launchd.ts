@@ -19,19 +19,29 @@ export type LaunchdState = Schema.Schema.Type<typeof LaunchdState>;
 
 export const fakeLaunchd = (
   state: Ref.Ref<LaunchdState>,
-): Layer.Layer<Launchd> =>
-  Layer.succeed(
+  options?: { readonly failBootstrap?: boolean },
+): Layer.Layer<Launchd> => {
+  const failed = () =>
+    Effect.fail(
+      new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+    );
+  return Layer.succeed(
     Launchd,
     new Launchd({
       isInstalled: () => Ref.get(state).pipe(Effect.map((s) => s.installed)),
       install: (plist) =>
-        Ref.update(state, (s) => ({
-          installed: true,
-          running: true,
-          plist,
-          installs: s.installs + 1,
-        })),
-      bootstrap: () => Ref.update(state, (s) => ({ ...s, running: true })),
+        options?.failBootstrap
+          ? failed()
+          : Ref.update(state, (s) => ({
+              installed: true,
+              running: true,
+              plist,
+              installs: s.installs + 1,
+            })),
+      bootstrap: () =>
+        options?.failBootstrap
+          ? failed()
+          : Ref.update(state, (s) => ({ ...s, running: true })),
       bootout: () => Ref.update(state, (s) => ({ ...s, running: false })),
       state: () =>
         Ref.get(state).pipe(
@@ -39,6 +49,7 @@ export const fakeLaunchd = (
         ),
     }),
   );
+};
 
 export class LaunchdError extends Data.TaggedError("LaunchdError")<{
   readonly step: string;
@@ -145,7 +156,13 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 detail: e.message,
               }),
           ),
-          Effect.andThen(bootstrap()),
+          Effect.andThen(
+            bootstrap().pipe(
+              Effect.tapError(() =>
+                fs.remove(plistPath, { force: true }).pipe(Effect.ignore),
+              ),
+            ),
+          ),
         ),
     };
   }),

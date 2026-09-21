@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   fakeLaunchd,
   Helper,
+  HelperExitedError,
   Launchd,
   type LaunchdState,
   type Permissions,
@@ -1142,6 +1143,31 @@ describe("server", () => {
         `database: ${dbPath}`,
       ],
     });
+  });
+
+  it("status returns isError with the Helper failure text", async () => {
+    // Given: the Test Launchd (running) and a Helper that exits with an error
+    const failingHelper = Layer.succeed(
+      Helper,
+      new Helper({
+        check: () => Effect.void,
+        lines: () => Stream.empty,
+        permissions: () =>
+          Effect.fail(new HelperExitedError({ cause: "boom" })),
+        request: () => Effect.succeed("asked"),
+      }),
+    );
+    const { client, close } = await connect(
+      EmptyStore,
+      Layer.merge(Launchd.Test, failingHelper),
+    );
+    // When
+    const result = await callTool(client, { name: "status", arguments: {} });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe("helper exited: boom");
+    expect(text(result).length).toBeGreaterThan(0);
   });
 
   it("status reports the last Activity time", async () => {

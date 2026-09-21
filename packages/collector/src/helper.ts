@@ -20,7 +20,11 @@ export class HelperNotFoundError extends Data.TaggedError(
 
 export class HelperExitedError extends Data.TaggedError("HelperExitedError")<{
   readonly cause: unknown;
-}> {}
+}> {
+  override get message(): string {
+    return `helper exited: ${this.cause}`;
+  }
+}
 
 export class Helper extends Effect.Service<Helper>()("Helper", {
   effect: Effect.gen(function* () {

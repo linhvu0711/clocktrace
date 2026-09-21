@@ -7,6 +7,7 @@ import {
   fakeLaunchd,
   Helper,
   HelperNotFoundError,
+  LaunchdError,
   type LaunchdState,
   type Permissions,
   plistPath,
@@ -108,6 +109,7 @@ describe("setup", () => {
       readonly hosts?: ReadonlyArray<HostName>;
       readonly answers?: ReadonlyArray<string>;
       readonly interactive?: boolean;
+      readonly launchd?: { readonly failBootstrap?: boolean };
     } = {},
   ) =>
     Effect.runPromise(
@@ -119,7 +121,7 @@ describe("setup", () => {
         const state = yield* Ref.make(launchdState);
         const layers = Layer.mergeAll(
           prompt.layer,
-          fakeLaunchd(state),
+          fakeLaunchd(state, opts.launchd),
           helperLayer,
           Hosts.Default,
           NodeContext.layer,
@@ -249,6 +251,73 @@ describe("setup", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual(expect.arrayContaining(manualLines));
     expect(questions).toEqual([]);
+  });
+
+  it("setup repairs a not-loaded Collector on a re-run", async () => {
+    // Given: the plist present but the Collector not loaded
+    const { exit, state } = await run(helperStub(allGranted), {
+      installed: true,
+      running: false,
+      plist: "<plist>",
+      installs: 1,
+    });
+    // Then: the re-run loads the Collector without re-installing
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(state.running).toBe(true);
+    expect(state.installs).toBe(1);
+  });
+
+  it("setup fails loudly when the load step fails", async () => {
+    // Given: the plist present, not loaded, and the load step fails
+    const { exit, output } = await run(
+      helperStub(allGranted),
+      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      "/stub",
+      { launchd: { failBootstrap: true } },
+    );
+    // Then: it fails with the launchd error and never reaches registration
+    expect(exit).toEqual(
+      Exit.fail(
+        new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+      ),
+    );
+    expect(output).toEqual([]);
+  });
+
+  it("a failed fresh install leaves no plist", async () => {
+    // Given: no plist beforehand and the load step fails
+    const { exit, state } = await run(
+      helperStub(allGranted),
+      { installed: false, running: false, plist: null, installs: 0 },
+      "/stub",
+      { launchd: { failBootstrap: true } },
+    );
+    // Then: the failed install leaves no plist behind
+    expect(exit).toEqual(
+      Exit.fail(
+        new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+      ),
+    );
+    expect(state.plist).toBe(null);
+    expect(state.installs).toBe(0);
+  });
+
+  it("a failed repair leaves the plist untouched", async () => {
+    // Given: the plist present, not loaded, and the load step fails
+    const { exit, state } = await run(
+      helperStub(allGranted),
+      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      "/stub",
+      { launchd: { failBootstrap: true } },
+    );
+    // Then: the existing plist is left untouched
+    expect(exit).toEqual(
+      Exit.fail(
+        new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+      ),
+    );
+    expect(state.plist).toBe("<plist>");
+    expect(state.installs).toBe(1);
   });
 
   it("non-tty with --hosts registers the named without a checklist", async () => {

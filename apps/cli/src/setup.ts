@@ -127,6 +127,8 @@ export const setup = (
             }),
           );
           yield* prompt.print(`launchd agent: written ${plistPath}`);
+        } else {
+          yield* launchd.bootstrap();
         }
         yield* walkPermissions();
         const selected =
