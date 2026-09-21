@@ -1,6 +1,6 @@
 # Clocktrace
 
-Automatic time tracking for a Mac, queried through an AI agent instead of a UI. The tracker records what the user does, the agent answers questions like "how much time did I spend coding this week".
+Automatic time tracking for a Mac, queried through an AI agent or the terminal instead of a UI. The tracker records what the user does, the agent answers questions like "how much time did I spend coding this week".
 
 ## Language
 
@@ -41,6 +41,10 @@ _Avoid_: Screen Time sync, iOS tracker
 **Host**:
 An AI app that starts the MCP server and gives its model our tools. v0 registers with Claude Code, Codex, Hermes Agent, and OpenClaw.
 _Avoid_: Client, agent app, harness, IDE
+
+**Twin**:
+The CLI command that pairs with an MCP tool: `clocktrace rules add` is the Twin of `add_rule`. Both call one core function and neither has logic of its own. Every tool has one (ADR 0006).
+_Avoid_: Alias, wrapper, mirror, subcommand
 
 **Rollup**:
 One row per day, Device, app, Category, and Project with the seconds summed, derived from Activities each night with the Rules of that moment. Whole-day queries read it, today reads Activities. Rebuilt for affected days when Rules change. Never the source of truth.
