@@ -506,6 +506,45 @@ describe("store", () => {
     expect(projects.map((p) => p.name)).toEqual(["Clocktrace", "Thesis"]);
   });
 
+  it("deleteCategory removes a Category and reports absent", async () => {
+    // Given: an open store with one category
+    const { first, second, categories } = await useStore((store) =>
+      Effect.gen(function* () {
+        const inserted = yield* store.insertCategory({
+          name: "Social",
+          productive: false,
+        });
+        // When
+        const first = yield* store.deleteCategory(inserted.id);
+        const second = yield* store.deleteCategory(inserted.id);
+        const categories = yield* store.listCategories();
+        return { first, second, categories };
+      }),
+    );
+    // Then
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(categories).toEqual([]);
+  });
+
+  it("deleteProject removes a Project and reports absent", async () => {
+    // Given: an open store with one project
+    const { first, second, projects } = await useStore((store) =>
+      Effect.gen(function* () {
+        const inserted = yield* store.insertProject({ name: "Thesis" });
+        // When
+        const first = yield* store.deleteProject(inserted.id);
+        const second = yield* store.deleteProject(inserted.id);
+        const projects = yield* store.listProjects();
+        return { first, second, projects };
+      }),
+    );
+    // Then
+    expect(first).toBe(true);
+    expect(second).toBe(false);
+    expect(projects).toEqual([]);
+  });
+
   it("insertRule, listRules, deleteRule", async () => {
     // Given: an open store and a category
     const { c, r0, positions, first, second, remaining } = await useStore(
