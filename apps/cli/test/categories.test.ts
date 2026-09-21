@@ -1,0 +1,212 @@
+import {
+  type CategoryNotFoundError,
+  openStore,
+  Store,
+  setCategory,
+} from "@clocktrace/core";
+import { Effect, Exit, Layer, Ref, type Scope } from "effect";
+import { describe, expect, it } from "vitest";
+
+import {
+  printCategories,
+  printRemovedCategory,
+  printSetCategory,
+} from "../src/categories.js";
+import { fakePrompt, type Prompt } from "../src/prompt.js";
+
+const EmptyStore = Layer.scoped(
+  Store,
+  Effect.map(openStore(":memory:"), (shape) => new Store(shape)),
+);
+
+const runPrint = <A, E, ELayer>(
+  layer: Layer.Layer<Store, ELayer, Scope.Scope>,
+  body: Effect.Effect<A, E, Store | Prompt>,
+) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const prompt = yield* fakePrompt([], false);
+      const exit = yield* Effect.exit(
+        Effect.scoped(
+          body.pipe(Effect.provide(Layer.merge(prompt.layer, layer))),
+        ),
+      );
+      const output = yield* Ref.get(prompt.output);
+      return { exit, output };
+    }),
+  );
+
+describe("categories", () => {
+  it("list prints the Starter set", async () => {
+    // Given: Store.Test seeded with the six Starter Categories
+    // When
+    const { exit, output } = await runPrint(Store.Test, printCategories(false));
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.map((l) => l.slice(38))).toEqual([
+      "Coding  productive",
+      "Communication  productive",
+      "Design  productive",
+      "Entertainment  not productive",
+      "Social  not productive",
+      "Writing  productive",
+    ]);
+    for (const l of output) {
+      expect(l.slice(0, 36)).toHaveLength(36);
+    }
+  });
+
+  it("list --json prints the list_categories JSON", async () => {
+    // Given: one Category
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const c = yield* setCategory({
+          id: null,
+          name: "Research",
+          productive: true,
+        });
+        // When
+        yield* printCategories(true);
+        return c;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const c = exit.value;
+      expect(JSON.parse(output[0] ?? "")).toEqual({
+        categories: [{ id: c.id, name: "Research", productive: true }],
+      });
+    }
+  });
+
+  it("list of no Categories prints none", async () => {
+    // Given: an empty store
+    // When
+    const { exit, output } = await runPrint(EmptyStore, printCategories(false));
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual(["none"]);
+  });
+
+  it("set creates and prints it", async () => {
+    // Given: an empty store
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        // When
+        yield* printSetCategory(
+          { id: null, name: "Research", productive: true },
+          false,
+        );
+        return yield* store.listCategories();
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const categories = exit.value;
+      expect(categories.length).toBe(1);
+      expect(output).toEqual([`${categories[0]?.id}  Research  productive`]);
+    }
+  });
+
+  it("set --id updates", async () => {
+    // Given: a Category named Social, not productive
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const c = yield* setCategory({
+          id: null,
+          name: "Social",
+          productive: false,
+        });
+        // When
+        yield* printSetCategory(
+          { id: c.id, name: "Social media", productive: true },
+          true,
+        );
+        return c;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(JSON.parse(output[0] ?? "")).toEqual({
+        id: exit.value.id,
+        name: "Social media",
+        productive: true,
+      });
+    }
+  });
+
+  it("set with an unknown id names the id", async () => {
+    // Given: an empty store
+    // When
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      printSetCategory(
+        {
+          id: "00000000-0000-4000-8000-000000000077",
+          name: "X",
+          productive: true,
+        },
+        false,
+      ),
+    );
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      const error = exit.cause.error as CategoryNotFoundError;
+      expect(error.message).toBe(
+        "category 00000000-0000-4000-8000-000000000077 not found",
+      );
+    }
+    expect(output).toEqual([]);
+  });
+
+  it("remove prints removed", async () => {
+    // Given: one Category
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const c = yield* setCategory({
+          id: null,
+          name: "Research",
+          productive: true,
+        });
+        // When
+        yield* printRemovedCategory(c.id, false);
+        return { c, categories: yield* store.listCategories() };
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const { c, categories } = exit.value;
+      expect(output).toEqual([`removed ${c.id}`]);
+      expect(categories).toEqual([]);
+    }
+  });
+
+  it("remove of an unknown id names the id", async () => {
+    // Given: an empty store
+    // When
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      printRemovedCategory("00000000-0000-4000-8000-000000000077", false),
+    );
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      const error = exit.cause.error as CategoryNotFoundError;
+      expect(error.message).toBe(
+        "category 00000000-0000-4000-8000-000000000077 not found",
+      );
+    }
+    expect(output).toEqual([]);
+  });
+});

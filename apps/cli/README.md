@@ -1,6 +1,6 @@
 # clocktrace
 
-The `clocktrace` command: setup, start, stop, status, permissions, and mcp.
+The `clocktrace` command: setup, start, stop, status, permissions, mcp, and the Twins of the rule, category, and project tools (`rules`, `categories`, `projects`).
 The Collector itself lives in `packages/collector` and runs as a per-user
 launchd agent.
 
@@ -24,6 +24,15 @@ clocktrace status        # Collector state, permissions, last Activity, database
 clocktrace permissions   # walk the three permissions again
 clocktrace mcp           # serve MCP over stdio for a Host
 clocktrace setup --hosts <list>   # register the MCP server with the named Hosts (no checklist)
+clocktrace rules list [--json]                # one line per Rule: id, position, field compare value, effect target
+clocktrace rules add --field <f> --compare <c> --value <v> --effect <e> [--target <id>] [--json]   # append a Rule; a category or project effect needs --target
+clocktrace rules remove <id> [--json]         # remove a Rule
+clocktrace categories list [--json]           # one line per Category: id, name, productive
+clocktrace categories set --name <n> [--productive] [--id <id>] [--json]   # create, or update by id
+clocktrace categories remove <id> [--json]    # remove a Category no Rule uses
+clocktrace projects list [--json]             # one line per Project: id, name
+clocktrace projects set --name <n> [--id <id>] [--json]   # create, or rename by id
+clocktrace projects remove <id> [--json]      # remove a Project no Rule uses
 clocktrace --version     # print the CLI version
 ```
 
@@ -36,6 +45,12 @@ OpenClaw) with the ones found on this Mac pre-ticked, and registers
 without the checklist. Every other command but `mcp`
 prints `not set up, run clocktrace setup` first. The Collector logs to
 `~/Library/Logs/clocktrace/collector.log`.
+
+`rules`, `categories`, and `projects` are the Twins of the MCP tools
+(ADR 0006): each calls the same core function as its tool, `--json`
+prints exactly what the tool returns, an empty list prints `none`, and
+a core error prints the tool's text and exits 1. A `compare` that holds
+a space is quoted: `--compare "ends with"`.
 
 ## Settings
 
@@ -50,7 +65,7 @@ documented in `packages/collector/README.md`.
 2. `pnpm --filter cli exec clocktrace stop` twice prints `collector: stopped`
    twice; `start` twice prints `collector: running` twice.
 3. `pnpm --filter cli exec clocktrace bogus` prints
-   `Invalid subcommand for clocktrace - use one of 'setup', 'start', 'stop', 'status', 'permissions', 'mcp'`
+   `Invalid subcommand for clocktrace - use one of 'setup', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects'`
    and exits 1.
 4. `CLOCKTRACE_HELPER=/nope/clocktrace-helper pnpm --filter cli exec clocktrace status`
    prints `helper not found at /nope/clocktrace-helper` and exits 1.
