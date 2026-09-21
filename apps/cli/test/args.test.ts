@@ -35,6 +35,17 @@ describe("args", () => {
     ]);
   });
 
+  it("trailing arguments parse to null", () => {
+    // Given: the argv ["setup", "--help"], ["status", "extra"]
+    // When
+    const parsed = [
+      parseArgs(["setup", "--help"]),
+      parseArgs(["status", "extra"]),
+    ];
+    // Then
+    expect(parsed).toEqual([null, null]);
+  });
+
   it("help and version flags parse", () => {
     // Given: the argv ["--help"], ["-h"], ["--version"], ["-v"], []
     // When

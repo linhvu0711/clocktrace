@@ -15,6 +15,9 @@ export const usage =
 export const parseArgs = (
   argv: ReadonlyArray<string>,
 ): CommandName | "version" | "help" | null => {
+  if (argv.length !== 1) {
+    return null;
+  }
   const [arg] = argv;
   if (arg === "--version" || arg === "-v") {
     return "version";
