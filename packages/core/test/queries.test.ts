@@ -245,16 +245,16 @@ describe("summary", () => {
     });
   });
 
-  it("summary for today reads the current zone and clock", async () => {
+  it("summary reads a local day in the current zone and clock", async () => {
     // Given: seedDay and a TestClock pinned at Friday 10:00 PDT
     const { result, coding } = await run(
       Effect.gen(function* () {
         const store = yield* Store;
         const { coding } = yield* seedDay(store);
         yield* TestClock.setTime(Date.UTC(2026, 8, 18, 17));
-        // When
+        // When: the 18th read in the pinned zone, not a UTC day
         const result = yield* summary({
-          range: "today",
+          range: { from: "2026-09-18", to: "2026-09-18" },
           groupBy: "category",
         });
         return { result, coding };
@@ -821,7 +821,7 @@ describe("activities", () => {
     expect(result.total).toBe(205);
     expect(result.hasMore).toBe(true);
     const decoded = Schema.decodeUnknownEither(ActivitiesInput)({
-      range: "today",
+      range: { from: "2026-09-18", to: "2026-09-18" },
       limit: 0,
     });
     expect(Either.isLeft(decoded)).toBe(true);
