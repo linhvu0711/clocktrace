@@ -184,4 +184,35 @@ describe("status", () => {
       `database: ${path}`,
     ]);
   });
+
+  it("status --json prints the status tool's JSON", async () => {
+    // Given: the plist installed, the collector running, the database file
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(true),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.length).toBe(1);
+    expect(JSON.parse(output[0] ?? "")).toEqual({
+      collector: "running",
+      permissions: [
+        { name: "accessibility", state: "granted", note: null },
+        { name: "full disk access", state: "granted", note: null },
+      ],
+      lastActivity: null,
+      databasePath: path,
+      imports: "not built yet",
+      lines: [
+        "collector: running",
+        "accessibility: granted",
+        "full disk access: granted",
+        "last activity: none yet",
+        `database: ${path}`,
+      ],
+    });
+  });
 });

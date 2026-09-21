@@ -1,6 +1,6 @@
 # clocktrace
 
-The `clocktrace` command: setup, start, stop, status, permissions, mcp, and the Twins of the rule, category, and project tools (`rules`, `categories`, `projects`).
+The `clocktrace` command: setup, start, stop, status, permissions, mcp, and the Twins of the rule, category, project, and question tools (`rules`, `categories`, `projects`, `summary`, `timeline`, `activities`, `status --json`).
 The Collector itself lives in `packages/collector` and runs as a per-user
 launchd agent.
 
@@ -33,6 +33,10 @@ clocktrace categories remove <id> [--json]    # remove a Category no Rule uses
 clocktrace projects list [--json]             # one line per Project: id, name
 clocktrace projects set --name <n> [--id <id>] [--json]   # create, or rename by id
 clocktrace projects remove <id> [--json]      # remove a Project no Rule uses
+clocktrace summary --from <d> --to <d> [--group-by category|project|app|device] [--device <id>] [--json]   # window and zone, then seconds per group and the total; --group-by defaults to category
+clocktrace timeline --from <d> --to <d> [--device <id>] [--json]   # window, then one line per block: start, end, app, Category, Project
+clocktrace activities --from <d> --to <d> [--device <id>] [--app <a>] [--limit <n>] [--json]   # window, then one line per Activity: start, end, app, title, URL; at most 200
+clocktrace status --json   # the status tool's JSON
 clocktrace --version     # print the CLI version
 ```
 
@@ -46,11 +50,16 @@ without the checklist. Every other command but `mcp`
 prints `not set up, run clocktrace setup` first. The Collector logs to
 `~/Library/Logs/clocktrace/collector.log`.
 
-`rules`, `categories`, and `projects` are the Twins of the MCP tools
+`rules`, `categories`, `projects`, `summary`, `timeline`, `activities`, and `status --json` are the Twins of the MCP tools
 (ADR 0006): each calls the same core function as its tool, `--json`
 prints exactly what the tool returns, an empty list prints `none`, and
 a core error prints the tool's text and exits 1. A `compare` that holds
-a space is quoted: `--compare "ends with"`.
+a space is quoted: `--compare "ends with"`. A `<d>` is a local date
+`YYYY-MM-DD` or a local date-time `YYYY-MM-DDTHH:mm` in this Mac's zone;
+words like `today` are not accepted. Every question reply starts with the
+window used and its zone; an empty window prints `no activity in this
+range`; times in the lines are local minutes, the seconds are in
+`--json`.
 
 ## Settings
 
@@ -65,7 +74,7 @@ documented in `packages/collector/README.md`.
 2. `pnpm --filter cli exec clocktrace stop` twice prints `collector: stopped`
    twice; `start` twice prints `collector: running` twice.
 3. `pnpm --filter cli exec clocktrace bogus` prints
-   `Invalid subcommand for clocktrace - use one of 'setup', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects'`
+   `Invalid subcommand for clocktrace - use one of 'setup', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects', 'summary', 'timeline', 'activities'`
    and exits 1.
 4. `CLOCKTRACE_HELPER=/nope/clocktrace-helper pnpm --filter cli exec clocktrace status`
    prints `helper not found at /nope/clocktrace-helper` and exits 1.

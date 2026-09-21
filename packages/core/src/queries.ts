@@ -55,6 +55,12 @@ export const ActivitiesPage = Schema.Struct({
   hasMore: Schema.Boolean,
 });
 
+/** The note a reply carries when the window holds nothing. */
+export const emptyNote = (
+  rows: ReadonlyArray<unknown>,
+): { readonly note?: string } =>
+  rows.length === 0 ? { note: "no activity in this range" } : {};
+
 interface RangeRows {
   readonly rows: ReadonlyArray<{
     readonly activity: Activity;

@@ -14,6 +14,7 @@ import {
   ActivitiesInput,
   activities,
   addRule,
+  emptyNote,
   openStore,
   Store,
   summary,
@@ -808,5 +809,17 @@ describe("activities", () => {
     );
     // Then
     expect(result).toEqual({ rows: [], total: 0, hasMore: false });
+  });
+});
+
+describe("emptyNote", () => {
+  it("names an empty window and stays silent otherwise", () => {
+    // Given: nothing
+    // When
+    const empty = emptyNote([]);
+    const nonEmpty = emptyNote([1]);
+    // Then
+    expect(empty).toEqual({ note: "no activity in this range" });
+    expect(nonEmpty).toEqual({});
   });
 });
