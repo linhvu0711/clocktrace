@@ -12,8 +12,9 @@ import {
   plistPath,
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
+import { Command, Options } from "@effect/cli";
 import type { CommandExecutor, FileSystem } from "@effect/platform";
-import { type DateTime, Effect, Schedule } from "effect";
+import { type DateTime, Effect, Option, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import {
@@ -22,6 +23,7 @@ import {
   hostLabel,
   hostNames,
   manualCommand,
+  UnknownHostError,
 } from "./hosts.js";
 import { walkPermissions } from "./permissions.js";
 import { Prompt } from "./prompt.js";
@@ -168,3 +170,25 @@ export const setup = (
       }),
     );
   });
+
+const hostsOption = Options.text("hosts").pipe(Options.optional);
+
+export const setupCommand = Command.make(
+  "setup",
+  { hosts: hostsOption },
+  ({ hosts }) =>
+    Effect.gen(function* () {
+      if (Option.isNone(hosts)) {
+        return yield* setup();
+      }
+      const names = hosts.value
+        .split(",")
+        .map((h) => h.trim())
+        .filter((h) => h !== "");
+      const invalid = names.filter((h) => hostNames.every((n) => n !== h));
+      if (names.length === 0 || invalid.length > 0) {
+        return yield* new UnknownHostError({ names: invalid });
+      }
+      yield* setup(names as ReadonlyArray<HostName>);
+    }),
+);

@@ -89,6 +89,6 @@ Rules for `packages/helper`. Nothing above applies to Swift unless it is repeate
 - No external SwiftPM dependencies. Apple frameworks only.
 - Formatting: 2 spaces, trailing commas in multi-line literals. No formatter runs on Swift yet.
 
-## Not covered
+## Commands
 
-- API shape (MCP tool names, CLI subcommand names): left out until the first MCP tool lands.
+- A CLI command is an `@effect/cli` `Command` in `apps/cli/src/<name>.ts`, and every MCP tool has one (ADR 0006).
