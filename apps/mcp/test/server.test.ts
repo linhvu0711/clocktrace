@@ -5,7 +5,7 @@ import { openStore, Store } from "@clocktrace/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Layer } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { InstalledStore } from "../src/installed-store.js";
@@ -57,25 +57,28 @@ describe("server", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("lists the ten tools", async () => {
+  it("lists the tools, none named finish_onboarding", async () => {
     // Given: a server over an in-memory store
     const { client, close } = await connect(Store.Test);
     // When
     const { tools } = await client.listTools();
     await close();
     // Then
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      "add_rule",
-      "finish_onboarding",
-      "list_categories",
-      "list_projects",
-      "list_rules",
-      "remove_category",
-      "remove_project",
-      "remove_rule",
-      "set_category",
-      "set_project",
-    ]);
+    const names = tools.map((t) => t.name);
+    expect(names).not.toContain("finish_onboarding");
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "add_rule",
+        "list_categories",
+        "list_projects",
+        "list_rules",
+        "remove_category",
+        "remove_project",
+        "remove_rule",
+        "set_category",
+        "set_project",
+      ]),
+    );
   });
 
   it("every tool has an input schema and an output schema", async () => {
@@ -91,54 +94,16 @@ describe("server", () => {
     }
   });
 
-  it("instructions offer Onboarding while the flag is off", async () => {
-    // Given: the same
+  it("instructions describe clocktrace and the tools, never Onboarding", async () => {
+    // Given: a server over an in-memory store
     const { client, close } = await connect(Store.Test);
     // When
     const instructions = client.getInstructions();
     await close();
     // Then
-    expect(instructions).toContain("Onboarding is not done.");
-    expect(instructions).toContain("Offer it once");
-    expect(instructions).toContain("Never block on it");
-    expect(instructions).not.toContain("Onboarding is done.");
-  });
-
-  it("finish_onboarding sets the flag", async () => {
-    // Given: a server over a real database file
-    const { client, close } = await connect(Store.Default(path));
-    // When
-    const result = await callTool(client, {
-      name: "finish_onboarding",
-      arguments: {},
-    });
-    await close();
-    const setting = await Effect.runPromise(
-      Effect.flatMap(Store, (s) => s.getSetting("onboarding")).pipe(
-        Effect.provide(Store.Default(path)),
-      ),
-    );
-    // Then
-    expect(result.isError).toBeUndefined();
-    expect(result.structuredContent).toEqual({ onboarding: "done" });
-    expect(setting).toEqual(Option.some("1"));
-  });
-
-  it("instructions say Onboarding is done on the next start", async () => {
-    // Given: a server where finish_onboarding was already called, closed
-    const first = await connect(Store.Default(path));
-    await callTool(first.client, {
-      name: "finish_onboarding",
-      arguments: {},
-    });
-    await first.close();
-    // When: a second server on the same database
-    const { client, close } = await connect(Store.Default(path));
-    const instructions = client.getInstructions();
-    await close();
-    // Then
-    expect(instructions).toContain("Onboarding is done.");
-    expect(instructions).not.toContain("Offer it once");
+    expect(instructions).toContain("clocktrace");
+    expect(instructions).not.toContain("Onboarding");
+    expect(instructions).not.toContain("finish_onboarding");
   });
 
   it("every tool returns not installed without a database", async () => {
@@ -175,9 +140,7 @@ describe("server", () => {
         name: "set_project",
         arguments: { name: "X" },
       }),
-      await callTool(client, { name: "finish_onboarding", arguments: {} }),
     ];
-    const instructions = client.getInstructions();
     await close();
     // Then
     for (const result of results) {
@@ -187,9 +150,6 @@ describe("server", () => {
       );
     }
     expect(existsSync(path)).toBe(false);
-    expect(instructions).toContain(
-      "clocktrace is not installed, run clocktrace install",
-    );
   });
 
   it("list_projects returns [] on a fresh database", async () => {

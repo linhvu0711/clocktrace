@@ -71,9 +71,3 @@ _Avoid_: Other, unknown, unassigned
 **Starter set**:
 The Categories and Rules that ship with a fresh install, covering common apps and sites. The user can rename or delete any of them.
 _Avoid_: Defaults, presets, templates
-
-### Setup
-
-**Onboarding**:
-The optional chat where the agent asks what the user does and which tools they use, then adds Rules on top of the Starter set. Tracked by one flag. Never blocks tracking.
-_Avoid_: Setup wizard, first run

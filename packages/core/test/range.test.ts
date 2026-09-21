@@ -1,8 +1,8 @@
-import { DateTime, Effect, Either } from "effect";
+import { DateTime, Effect, Either, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { InvalidRangeError } from "../src/index.js";
-import { resolveRange } from "../src/index.js";
+import { Range, resolveRange } from "../src/index.js";
 
 const friday = DateTime.unsafeMakeZoned("2026-09-18T17:00:00Z", {
   timeZone: "America/Los_Angeles",
@@ -32,86 +32,45 @@ const expectInvalid = (
 };
 
 describe("range", () => {
-  it("today and yesterday are local days in the pinned zone", () => {
-    // Given: Friday 2026-09-18 10:00 PDT, already 17:00 UTC
+  it("a string range fails to decode, a struct decodes", () => {
+    // Given: the old keyword form and the new struct form
     // When
-    const today = Effect.runSync(resolveRange("today", friday));
-    const yesterday = Effect.runSync(resolveRange("yesterday", friday));
-    // Then: the day edges land at 07:00 UTC, not 00:00 UTC
-    expect(iso(today)).toEqual({
-      from: "2026-09-18T07:00:00.000Z",
-      to: "2026-09-19T07:00:00.000Z",
+    const asString = Schema.decodeUnknownEither(Range)("today");
+    const asStruct = Schema.decodeUnknownEither(Range)({
+      from: "2026-09-18",
+      to: "2026-09-18",
     });
-    expect(iso(yesterday)).toEqual({
-      from: "2026-09-17T07:00:00.000Z",
-      to: "2026-09-18T07:00:00.000Z",
-    });
+    // Then: a string is no longer a Range
+    expect(Either.isLeft(asString)).toBe(true);
+    expect(Either.isRight(asStruct)).toBe(true);
   });
 
-  it("this week starts Monday and last week is the seven days before", () => {
-    // Given: the same Friday
-    // When
-    const thisWeek = Effect.runSync(resolveRange("this week", friday));
-    const lastWeek = Effect.runSync(resolveRange("last week", friday));
-    // Then
-    expect(iso(thisWeek)).toEqual({
-      from: "2026-09-14T07:00:00.000Z",
-      to: "2026-09-21T07:00:00.000Z",
-    });
-    expect(iso(lastWeek)).toEqual({
-      from: "2026-09-07T07:00:00.000Z",
-      to: "2026-09-14T07:00:00.000Z",
-    });
-  });
-
-  it("Sunday night local is still this week", () => {
-    // Given: Sunday 2026-09-20 23:30 PDT, already Monday in UTC
-    const now = DateTime.unsafeMakeZoned("2026-09-21T06:30:00Z", {
-      timeZone: "America/Los_Angeles",
-    });
-    // When
-    const today = Effect.runSync(resolveRange("today", now));
-    const thisWeek = Effect.runSync(resolveRange("this week", now));
-    // Then
-    expect(iso(today)).toEqual({
-      from: "2026-09-20T07:00:00.000Z",
-      to: "2026-09-21T07:00:00.000Z",
-    });
-    expect(iso(thisWeek)).toEqual({
-      from: "2026-09-14T07:00:00.000Z",
-      to: "2026-09-21T07:00:00.000Z",
-    });
-  });
-
-  it("Monday just after midnight starts a new week", () => {
-    // Given: Monday 2026-09-14 00:30 PDT
-    const now = DateTime.unsafeMakeZoned("2026-09-14T07:30:00Z", {
-      timeZone: "America/Los_Angeles",
-    });
-    // When
-    const thisWeek = Effect.runSync(resolveRange("this week", now));
-    const lastWeek = Effect.runSync(resolveRange("last week", now));
-    // Then
-    expect(iso(thisWeek)).toEqual({
-      from: "2026-09-14T07:00:00.000Z",
-      to: "2026-09-21T07:00:00.000Z",
-    });
-    expect(iso(lastWeek)).toEqual({
-      from: "2026-09-07T07:00:00.000Z",
-      to: "2026-09-14T07:00:00.000Z",
-    });
-  });
-
-  it("a date range crosses a DST change as calendar days", () => {
-    // Given: the Friday now; DST ends in Los Angeles on 2026-11-01
+  it("accepts a date-time from and to, to exclusive at that time", () => {
+    // Given: Friday 10:00 PDT; "9am the 20th to 10am the 21st"
     // When
     const result = Effect.runSync(
-      resolveRange({ from: "2026-10-31", to: "2026-11-01" }, friday),
+      resolveRange(
+        { from: "2026-09-20T09:00", to: "2026-09-21T10:00" },
+        friday,
+      ),
     );
-    // Then: 49 hours, to is inclusive and the second day has 25 hours
+    // Then: local wall clock reads in PDT (UTC-7), to lands on the instant
     expect(iso(result)).toEqual({
-      from: "2026-10-31T07:00:00.000Z",
-      to: "2026-11-02T08:00:00.000Z",
+      from: "2026-09-20T16:00:00.000Z",
+      to: "2026-09-21T17:00:00.000Z",
+    });
+  });
+
+  it("a timed from with a bare to spans to the next midnight", () => {
+    // Given: the Friday now
+    // When
+    const result = Effect.runSync(
+      resolveRange({ from: "2026-09-18T14:30", to: "2026-09-18" }, friday),
+    );
+    // Then: from is the exact time, to is the whole of the 18th
+    expect(iso(result)).toEqual({
+      from: "2026-09-18T21:30:00.000Z",
+      to: "2026-09-19T07:00:00.000Z",
     });
   });
 
@@ -121,10 +80,23 @@ describe("range", () => {
     const result = Effect.runSync(
       resolveRange({ from: "2026-09-18", to: "2026-09-18" }, friday),
     );
-    // Then
+    // Then: a bare date is midnight, a bare to is the whole day
     expect(iso(result)).toEqual({
       from: "2026-09-18T07:00:00.000Z",
       to: "2026-09-19T07:00:00.000Z",
+    });
+  });
+
+  it("a date range crosses a DST change as calendar days", () => {
+    // Given: the Friday now; DST ends in Los Angeles on 2026-11-01
+    // When
+    const result = Effect.runSync(
+      resolveRange({ from: "2026-10-31", to: "2026-11-01" }, friday),
+    );
+    // Then: 49 hours, the bare to is the whole day and the second has 25 hours
+    expect(iso(result)).toEqual({
+      from: "2026-10-31T07:00:00.000Z",
+      to: "2026-11-02T08:00:00.000Z",
     });
   });
 
@@ -140,43 +112,36 @@ describe("range", () => {
     expectInvalid(result, "range: from 2026-09-08 is after to 2026-09-01");
   });
 
-  it("fails naming range on an unknown keyword", () => {
-    // Given: the Friday now
+  it("fails naming range and the bad value on a non-date", () => {
+    // Given: the Friday now; 2026-02-30 never exists and T25:00 is no hour
     // When
-    const result = Effect.runSync(
-      Effect.either(resolveRange("last month", friday)),
+    const loose = Effect.runSync(
+      Effect.either(
+        resolveRange({ from: "2026-9-1", to: "2026-09-08" }, friday),
+      ),
     );
-    // Then
-    expectInvalid(result, 'range: unknown keyword "last month"');
-  });
-
-  it("fails naming range on a day the calendar does not hold", () => {
-    // Given: the Friday now; 2026-02-30 never exists, 2026 has no 02-29
-    // When
     const feb30 = Effect.runSync(
       Effect.either(
         resolveRange({ from: "2026-02-30", to: "2026-03-01" }, friday),
       ),
     );
-    const feb29 = Effect.runSync(
+    const badHour = Effect.runSync(
       Effect.either(
-        resolveRange({ from: "2026-02-01", to: "2026-02-29" }, friday),
+        resolveRange({ from: "2026-09-18T25:00", to: "2026-09-19" }, friday),
       ),
     );
-    // Then: neither slides into March
-    expectInvalid(feb30, "range: from and to must be YYYY-MM-DD");
-    expectInvalid(feb29, "range: from and to must be YYYY-MM-DD");
-  });
-
-  it("fails naming range when a date is not YYYY-MM-DD", () => {
-    // Given: the Friday now
-    // When
-    const result = Effect.runSync(
-      Effect.either(
-        resolveRange({ from: "2026-9-1", to: "2026-09-08" }, friday),
-      ),
+    // Then: each names range and the bad value, none slides into a real date
+    expectInvalid(
+      loose,
+      'range: from "2026-9-1" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
     );
-    // Then
-    expectInvalid(result, "range: from and to must be YYYY-MM-DD");
+    expectInvalid(
+      feb30,
+      'range: from "2026-02-30" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
+    );
+    expectInvalid(
+      badHour,
+      'range: from "2026-09-18T25:00" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
+    );
   });
 });

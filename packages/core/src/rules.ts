@@ -57,12 +57,7 @@ export const addRule = (
         });
       }
     }
-    const rules = yield* store.listRules();
-    return yield* store.insertRule({
-      ...input,
-      target,
-      position: rules.length,
-    });
+    return yield* store.insertRuleIfAbsent({ ...input, target });
   });
 
 export const removeRule = (
