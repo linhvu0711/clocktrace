@@ -103,7 +103,9 @@ const onPath = (
     Effect.catchAll(() => Effect.succeed(false)),
   );
 
-class HermesConfigParse extends Data.TaggedError("HermesConfigParse")<{
+class HermesConfigParseError extends Data.TaggedError(
+  "HermesConfigParseError",
+)<{
   cause: unknown;
 }> {}
 
@@ -117,8 +119,11 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
     const text = exists ? yield* fs.readFileString(path) : "";
     const doc = yield* Effect.try({
       try: () => parseDocument(text === "" ? "{}" : text),
-      catch: (cause) => new HermesConfigParse({ cause }),
+      catch: (cause) => new HermesConfigParseError({ cause }),
     });
+    if (doc.errors.length > 0) {
+      return yield* new HermesConfigParseError({ cause: doc.errors });
+    }
     if (doc.getIn(["mcp_servers", "clocktrace"]) !== undefined) {
       return `${hostLabel.hermes}: already registered`;
     }

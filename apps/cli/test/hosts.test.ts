@@ -346,6 +346,25 @@ describe("hosts", () => {
     expect(readFileSync(path, "utf8")).toBe("model: nous-1\n");
   });
 
+  it("a malformed hermes config fails by hand instead of crashing", async () => {
+    // Given: ~/.hermes/config.yaml contains invalid YAML
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "model: [\n");
+    // When
+    const line = await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    // Then
+    expect(line).toBe(
+      `hermes agent: failed. run by hand: ${manualCommand.hermes}`,
+    );
+    expect(readFileSync(path, "utf8")).toBe("model: [\n");
+  });
+
   it("a symlinked hermes config writes the target and keeps its mode", async () => {
     // Given: ~/.hermes/config.yaml is a symlink to a 0600 dotfiles file
     mkdirSync(join(home, ".hermes"), { recursive: true });
