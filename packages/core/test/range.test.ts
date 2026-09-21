@@ -2,7 +2,7 @@ import { DateTime, Effect, Either, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { InvalidRangeError } from "../src/index.js";
-import { Range, resolveRange } from "../src/index.js";
+import { isoMinute, Range, resolveRange } from "../src/index.js";
 
 const friday = DateTime.unsafeMakeZoned("2026-09-18T17:00:00Z", {
   timeZone: "America/Los_Angeles",
@@ -32,6 +32,14 @@ const expectInvalid = (
 };
 
 describe("range", () => {
+  it("isoMinute prints the wall clock of a zoned time at minute precision", () => {
+    // Given: Friday 17:00Z, 10:00 in Los Angeles
+    // When
+    const printed = isoMinute(friday);
+    // Then: local time in the input format
+    expect(printed).toBe("2026-09-18T10:00");
+  });
+
   it("a string range fails to decode, a struct decodes", () => {
     // Given: the old keyword form and the new struct form
     // When

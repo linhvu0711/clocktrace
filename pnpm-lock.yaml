@@ -47,6 +47,9 @@ importers:
 
   apps/mcp:
     dependencies:
+      '@clocktrace/collector':
+        specifier: workspace:^
+        version: link:../../packages/collector
       '@clocktrace/core':
         specifier: workspace:*
         version: link:../../packages/core

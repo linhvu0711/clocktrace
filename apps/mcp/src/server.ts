@@ -1,11 +1,27 @@
 import {
+  type Helper,
+  type HelperExitedError,
+  type HelperNotFoundError,
+  type Launchd,
+  type LaunchdError,
+  readStatus,
+  Status,
+  statusLines,
+} from "@clocktrace/collector";
+import {
+  ActivitiesPage,
+  activities,
   addRule,
   type CategoryInUseError,
   type CategoryNotFoundError,
   type DatabaseNewerError,
+  GroupBy,
+  type InvalidRangeError,
   type InvalidRuleError,
+  isoMinute,
   type ProjectInUseError,
   type ProjectNotFoundError,
+  type Range,
   RuleCompare,
   RuleEffect,
   RuleField,
@@ -13,20 +29,27 @@ import {
   removeCategory,
   removeProject,
   removeRule,
+  resolveRange,
   Store,
   type StoreError,
+  Summary,
   setCategory,
   setProject,
+  summary,
+  TimelineBlock,
+  timeline,
 } from "@clocktrace/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import {
   Cause,
+  DateTime,
   Effect,
   Exit,
   type Layer,
   ManagedRuntime,
   Option,
+  Schema,
 } from "effect";
 import type { ParseError } from "effect/ParseResult";
 import { z } from "zod";
@@ -39,13 +62,19 @@ export type StoreLayerError =
   | DatabaseNewerError
   | NotInstalledError;
 
+export type Services = Store | Launchd | Helper | DateTime.CurrentTimeZone;
+
 type ToolError =
   | InvalidRuleError
+  | InvalidRangeError
   | RuleNotFoundError
   | CategoryNotFoundError
   | ProjectNotFoundError
   | CategoryInUseError
   | ProjectInUseError
+  | HelperNotFoundError
+  | HelperExitedError
+  | LaunchdError
   | StoreLayerError
   | ParseError;
 
@@ -64,9 +93,43 @@ const RuleOut = z.object({
   effect: z.enum(RuleEffect.literals),
   target: z.string().nullable(),
 });
+const RangeIn = z.object({ from: z.string(), to: z.string() });
+const RangeOut = z.object({
+  from: z.string(),
+  to: z.string(),
+  zone: z.string(),
+});
+const SummaryRowOut = z.object({
+  key: z.string(),
+  name: z.string(),
+  seconds: z.number().int(),
+  productive: z.boolean().optional(),
+});
+const TimelineBlockOut = z.object({
+  start: z.string(),
+  end: z.string(),
+  app: z.string(),
+  categoryName: z.string(),
+  projectName: z.string().nullable(),
+});
+const ActivityOut = z.object({
+  id: z.string(),
+  deviceId: z.string(),
+  bundleId: z.string(),
+  appName: z.string(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  startedAt: z.string(),
+  endedAt: z.string(),
+});
+const PermissionLineOut = z.object({
+  name: z.string(),
+  state: z.enum(["granted", "denied", "not checked"]),
+  note: z.string().nullable(),
+});
 
 const instructions =
-  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project.";
+  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, summary, timeline, activities, status. summary, timeline, and activities take range { from, to }: local dates YYYY-MM-DD or local date-times YYYY-MM-DDTHH:mm; compute words like today or this week yourself. Every reply starts with the exact window used and its zone.";
 
 const failureText = (cause: Cause.Cause<ToolError>): string =>
   Option.match(Cause.failureOption(cause), {
@@ -76,14 +139,29 @@ const failureText = (cause: Cause.Cause<ToolError>): string =>
     },
   });
 
+/** The exact window a query used, as local wall clock in the input format. */
+const usedRange = (range: Range) =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.nowInCurrentZone;
+    const { from, to } = yield* resolveRange(range, now);
+    return {
+      from: isoMinute(DateTime.setZone(from, now.zone)),
+      to: isoMinute(DateTime.setZone(to, now.zone)),
+      zone: DateTime.zoneToString(now.zone),
+    };
+  });
+
+const emptyNote = (rows: ReadonlyArray<unknown>): { readonly note?: string } =>
+  rows.length === 0 ? { note: "no activity in this range" } : {};
+
 export const makeServer = async (
-  store: Layer.Layer<Store, StoreLayerError>,
+  services: Layer.Layer<Services, StoreLayerError>,
 ): Promise<{ server: McpServer; dispose: () => Promise<void> }> => {
-  const runtime = ManagedRuntime.make(store);
+  const runtime = ManagedRuntime.make(services);
   const dispose = () => runtime.dispose();
 
   const run = async <A extends Record<string, unknown>>(
-    effect: Effect.Effect<A, ToolError, Store>,
+    effect: Effect.Effect<A, ToolError, Services>,
   ): Promise<CallToolResult> => {
     const exit = await runtime.runPromiseExit(effect);
     return Exit.match(exit, {
@@ -232,6 +310,128 @@ export const makeServer = async (
       outputSchema: ProjectOut.shape,
     },
     (input) => run(setProject({ id: input.id ?? null, name: input.name })),
+  );
+
+  server.registerTool(
+    "summary",
+    {
+      description:
+        "Seconds per Category, Project, app, or Device in a range. range is { from, to }: each a local date YYYY-MM-DD or a local date-time YYYY-MM-DDTHH:mm in the user's zone; a bare from is midnight, a bare to is the whole of that day. Compute today, yesterday, or this week yourself and pass dates. device is a Device id, the key of groupBy device. The reply starts with range { from, to, zone }, the exact window used, then rows and total seconds.",
+      inputSchema: {
+        range: RangeIn,
+        groupBy: z.enum(GroupBy.literals),
+        device: z.string().optional(),
+      },
+      outputSchema: {
+        range: RangeOut,
+        rows: z.array(SummaryRowOut),
+        total: z.number().int(),
+        note: z.string().optional(),
+      },
+    },
+    (input) =>
+      run(
+        Effect.gen(function* () {
+          const range = yield* usedRange(input.range);
+          const result = yield* summary({
+            range: input.range,
+            groupBy: input.groupBy,
+            deviceId: input.device,
+          });
+          const encoded = yield* Schema.encode(Summary)(result);
+          return { range, ...encoded, ...emptyNote(encoded.rows) };
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "timeline",
+    {
+      description:
+        "Blocks of continuous time in one app and Category within a range, in time order, clipped to the window. Same range rules as summary. device is a Device id, the key of summary with groupBy device. The reply starts with range { from, to, zone }, then rows and total, the block count.",
+      inputSchema: { range: RangeIn, device: z.string().optional() },
+      outputSchema: {
+        range: RangeOut,
+        rows: z.array(TimelineBlockOut),
+        total: z.number().int(),
+        note: z.string().optional(),
+      },
+    },
+    (input) =>
+      run(
+        Effect.gen(function* () {
+          const range = yield* usedRange(input.range);
+          const blocks = yield* timeline({
+            range: input.range,
+            deviceId: input.device,
+          });
+          const rows = yield* Schema.encode(Schema.Array(TimelineBlock))(
+            blocks,
+          );
+          return { range, rows, total: rows.length, ...emptyNote(rows) };
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "activities",
+    {
+      description:
+        "Raw Activities (app, window title, URL, start, end) in a range, in time order, at most 200 per call. hasMore true means more exist: narrow the range, or filter by app (bundle id or app name) or device (a Device id). Same range rules as summary. The reply starts with range { from, to, zone }, then rows, total, and hasMore.",
+      inputSchema: {
+        range: RangeIn,
+        device: z.string().optional(),
+        app: z.string().optional(),
+        limit: z.number().int().positive().optional(),
+      },
+      outputSchema: {
+        range: RangeOut,
+        rows: z.array(ActivityOut),
+        total: z.number().int(),
+        hasMore: z.boolean(),
+        note: z.string().optional(),
+      },
+    },
+    (input) =>
+      run(
+        Effect.gen(function* () {
+          const range = yield* usedRange(input.range);
+          const page = yield* activities({
+            range: input.range,
+            deviceId: input.device,
+            app: input.app,
+            limit: input.limit,
+          });
+          const encoded = yield* Schema.encode(ActivitiesPage)(page);
+          return { range, ...encoded, ...emptyNote(encoded.rows) };
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "status",
+    {
+      description:
+        "Whether the Collector runs, each permission with its state and what is lost while denied, the last Activity time, the database path, and imports (not built yet). lines is the same text clocktrace status prints.",
+      inputSchema: {},
+      outputSchema: {
+        collector: z.enum(["running", "stopped"]),
+        permissions: z.array(PermissionLineOut),
+        lastActivity: z.string().nullable(),
+        databasePath: z.string(),
+        imports: z.literal("not built yet"),
+        lines: z.array(z.string()),
+      },
+    },
+    () =>
+      run(
+        Effect.gen(function* () {
+          const s = yield* readStatus();
+          const lines = yield* statusLines(s);
+          const encoded = yield* Schema.encode(Status)(s);
+          return { ...encoded, imports: "not built yet" as const, lines };
+        }),
+      ),
   );
 
   return { server, dispose };
