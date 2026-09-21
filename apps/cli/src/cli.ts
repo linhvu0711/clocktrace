@@ -9,6 +9,7 @@ import { setupCommand } from "./setup.js";
 import { startCommand } from "./start.js";
 import { statusCommand } from "./status.js";
 import { stopCommand } from "./stop.js";
+import { summaryCommand } from "./summary.js";
 import { version } from "./version.js";
 
 export const command = Command.make("clocktrace").pipe(
@@ -22,6 +23,7 @@ export const command = Command.make("clocktrace").pipe(
     rulesCommand,
     categoriesCommand,
     projectsCommand,
+    summaryCommand,
   ]),
 );
 

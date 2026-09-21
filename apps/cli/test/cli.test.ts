@@ -241,6 +241,50 @@ describe("cli", () => {
     }
   });
 
+  it("an unknown group is a validation error", async () => {
+    // Given
+    const argv = [
+      "node",
+      "clocktrace",
+      "summary",
+      "--from",
+      "2026-09-18",
+      "--to",
+      "2026-09-18",
+      "--group-by",
+      "week",
+    ];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(
+        ValidationError.invalidValue(
+          HelpDoc.p(
+            "Expected one of the following cases: category, project, app, device",
+          ),
+        ),
+      ),
+    );
+  });
+
+  it("summary before setup fails not set up", async () => {
+    // Given: the launchd agent is not installed, no database file
+    const argv = [
+      "node",
+      "clocktrace",
+      "summary",
+      "--from",
+      "2026-09-18",
+      "--to",
+      "2026-09-18",
+    ];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+  });
+
   it("a known command dispatches", async () => {
     // Given: the launchd agent is not installed, no database file
     const argv = ["node", "clocktrace", "status"];
