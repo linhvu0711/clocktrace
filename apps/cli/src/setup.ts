@@ -7,7 +7,7 @@ import {
   type HelperNotFoundError,
   helperPathConfig,
   Launchd,
-  type LaunchdError,
+  LaunchdError,
   logPath,
   plistPath,
 } from "@clocktrace/collector";
@@ -129,6 +129,13 @@ export const setup = (
           yield* prompt.print(`launchd agent: written ${plistPath}`);
         } else {
           yield* launchd.bootstrap();
+        }
+        const collector = yield* launchd.state();
+        if (collector !== "running") {
+          return yield* new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "collector did not start",
+          });
         }
         yield* walkPermissions();
         const selected =

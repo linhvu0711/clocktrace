@@ -19,7 +19,10 @@ export type LaunchdState = Schema.Schema.Type<typeof LaunchdState>;
 
 export const fakeLaunchd = (
   state: Ref.Ref<LaunchdState>,
-  options?: { readonly failBootstrap?: boolean },
+  options?: {
+    readonly failBootstrap?: boolean;
+    readonly bootstrapStuck?: boolean;
+  },
 ): Layer.Layer<Launchd> => {
   const failed = () =>
     Effect.fail(
@@ -34,14 +37,16 @@ export const fakeLaunchd = (
           ? failed()
           : Ref.update(state, (s) => ({
               installed: true,
-              running: true,
+              running: !options?.bootstrapStuck,
               plist,
               installs: s.installs + 1,
             })),
       bootstrap: () =>
         options?.failBootstrap
           ? failed()
-          : Ref.update(state, (s) => ({ ...s, running: true })),
+          : options?.bootstrapStuck
+            ? Effect.void
+            : Ref.update(state, (s) => ({ ...s, running: true })),
       bootout: () => Ref.update(state, (s) => ({ ...s, running: false })),
       state: () =>
         Ref.get(state).pipe(

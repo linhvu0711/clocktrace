@@ -109,7 +109,10 @@ describe("setup", () => {
       readonly hosts?: ReadonlyArray<HostName>;
       readonly answers?: ReadonlyArray<string>;
       readonly interactive?: boolean;
-      readonly launchd?: { readonly failBootstrap?: boolean };
+      readonly launchd?: {
+        readonly failBootstrap?: boolean;
+        readonly bootstrapStuck?: boolean;
+      };
     } = {},
   ) =>
     Effect.runPromise(
@@ -279,6 +282,27 @@ describe("setup", () => {
     expect(exit).toEqual(
       Exit.fail(
         new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+      ),
+    );
+    expect(output).toEqual([]);
+  });
+
+  it("setup fails when the load reports success but the Collector stays stopped", async () => {
+    // Given: the plist present, not loaded; the load returns success but the
+    // Collector never comes up (launchctl bootstrap exit 5 on a bad plist)
+    const { exit, output } = await run(
+      helperStub(allGranted),
+      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      "/stub",
+      { launchd: { bootstrapStuck: true } },
+    );
+    // Then: setup fails loudly and never reaches registration
+    expect(exit).toEqual(
+      Exit.fail(
+        new LaunchdError({
+          step: "launchctl bootstrap",
+          detail: "collector did not start",
+        }),
       ),
     );
     expect(output).toEqual([]);
