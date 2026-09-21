@@ -15,13 +15,12 @@ import {
   type CategoryInUseError,
   type CategoryNotFoundError,
   type DatabaseNewerError,
+  emptyNote,
   GroupBy,
   type InvalidRangeError,
   type InvalidRuleError,
-  isoMinute,
   type ProjectInUseError,
   type ProjectNotFoundError,
-  type Range,
   RuleCompare,
   RuleEffect,
   RuleField,
@@ -29,7 +28,6 @@ import {
   removeCategory,
   removeProject,
   removeRule,
-  resolveRange,
   Store,
   type StoreError,
   Summary,
@@ -38,6 +36,7 @@ import {
   summary,
   TimelineBlock,
   timeline,
+  usedRange,
 } from "@clocktrace/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -138,21 +137,6 @@ const failureText = (cause: Cause.Cause<ToolError>): string =>
       throw Cause.squash(cause);
     },
   });
-
-/** The exact window a query used, as local wall clock in the input format. */
-const usedRange = (range: Range) =>
-  Effect.gen(function* () {
-    const now = yield* DateTime.nowInCurrentZone;
-    const { from, to } = yield* resolveRange(range, now);
-    return {
-      from: isoMinute(DateTime.setZone(from, now.zone)),
-      to: isoMinute(DateTime.setZone(to, now.zone)),
-      zone: DateTime.zoneToString(now.zone),
-    };
-  });
-
-const emptyNote = (rows: ReadonlyArray<unknown>): { readonly note?: string } =>
-  rows.length === 0 ? { note: "no activity in this range" } : {};
 
 export const makeServer = async (
   services: Layer.Layer<Services, StoreLayerError>,

@@ -88,4 +88,22 @@ export const resolveRange = (
     return { from: fromUtc, to: toUtc };
   });
 
+/** The exact window a query used, as local wall clock in the input format, with its zone. */
+export const usedRange = (
+  range: Range,
+): Effect.Effect<
+  { readonly from: string; readonly to: string; readonly zone: string },
+  InvalidRangeError,
+  DateTime.CurrentTimeZone
+> =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.nowInCurrentZone;
+    const { from, to } = yield* resolveRange(range, now);
+    return {
+      from: isoMinute(DateTime.setZone(from, now.zone)),
+      to: isoMinute(DateTime.setZone(to, now.zone)),
+      zone: DateTime.zoneToString(now.zone),
+    };
+  });
+
 export type Range = Schema.Schema.Type<typeof Range>;
