@@ -65,13 +65,15 @@ export const printAddedRule = (
   Store | Prompt
 > =>
   Effect.gen(function* () {
-    const store = yield* Store;
+    const names: ReadonlyMap<string, string> = json
+      ? new Map()
+      : yield* Effect.flatMap(Store, (store) =>
+          Effect.map(
+            Effect.all([store.listCategories(), store.listProjects()]),
+            ([categories, projects]) => targetNames(categories, projects),
+          ),
+        );
     const rule = yield* addRule(input);
-    const [categories, projects] = yield* Effect.all([
-      store.listCategories(),
-      store.listProjects(),
-    ]);
-    const names = targetNames(categories, projects);
     yield* report(json, rule, (r) => [ruleLine(r, names)]);
   });
 
