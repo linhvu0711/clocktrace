@@ -5,6 +5,7 @@ import { DateTime, Effect, Layer } from "effect";
 import { parseArgs, usage } from "./args.js";
 import { permissions } from "./permissions.js";
 import { Prompt } from "./prompt.js";
+import { setup } from "./setup.js";
 import { start } from "./start.js";
 import { status } from "./status.js";
 import { stop } from "./stop.js";
@@ -53,6 +54,8 @@ if (command === null) {
   runCommand(stop());
 } else if (command === "permissions") {
   runCommand(permissions());
+} else if (command === "setup") {
+  runCommand(setup());
 } else {
   console.error(usage);
   process.exitCode = 1;
