@@ -1,5 +1,11 @@
-import { Effect, Exit, Ref } from "effect";
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { CommandExecutor } from "@effect/platform";
+import { NodeFileSystem } from "@effect/platform-node";
+import { Effect, Exit, Layer, Ref, Stream } from "effect";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   fakeLaunchd,
@@ -91,5 +97,76 @@ describe("fakeLaunchd failBootstrap", () => {
     expect(state.installed).toBe(false);
     expect(state.plist).toBe(null);
     expect(state.installs).toBe(0);
+  });
+});
+
+describe("install cleanup (real service)", () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "clocktrace-home-"));
+    vi.stubEnv("HOME", home);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  // A launchctl stub that reports a chosen exit code for every command.
+  const executor = (code: number): CommandExecutor.CommandExecutor => ({
+    [CommandExecutor.TypeId]: CommandExecutor.TypeId,
+    exitCode: () => Effect.succeed(code as CommandExecutor.ExitCode),
+    start: () => Effect.die("unused"),
+    string: () => Effect.succeed(""),
+    lines: () => Effect.succeed([]),
+    stream: () => Stream.empty,
+    streamLines: () => Stream.empty,
+  });
+
+  // `plistPath` is fixed at import from `os.homedir()`, so the module is
+  // imported after HOME is redirected to a temp dir. install then writes and
+  // (on a failed load) removes a real plist under that temp home, never the
+  // machine's `~/Library/LaunchAgents`.
+  const runInstall = async (code: number) => {
+    const { Launchd: RealLaunchd, plistPath } = await import(
+      "../src/launchd.js"
+    );
+    const exit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const launchd = yield* RealLaunchd;
+        return yield* Effect.exit(launchd.install("<plist>"));
+      }).pipe(
+        Effect.provide(
+          RealLaunchd.DefaultWithoutDependencies.pipe(
+            Layer.provide(
+              Layer.merge(
+                NodeFileSystem.layer,
+                Layer.succeed(CommandExecutor.CommandExecutor, executor(code)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return { exit, plistPath };
+  };
+
+  it("a failed real install removes the plist it wrote", async () => {
+    // Given: launchctl bootstrap fails (exit 1) after the plist is written
+    const { exit, plistPath } = await runInstall(1);
+    // Then: install fails and the plist it wrote is gone
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(existsSync(plistPath)).toBe(false);
+  });
+
+  it("a successful real install writes the plist", async () => {
+    // Given: launchctl bootstrap succeeds (exit 0)
+    const { exit, plistPath } = await runInstall(0);
+    // Then: install succeeds and the plist is present
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(existsSync(plistPath)).toBe(true);
   });
 });
