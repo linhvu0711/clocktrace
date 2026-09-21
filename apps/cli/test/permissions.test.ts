@@ -6,7 +6,6 @@ import {
   fakeLaunchd,
   type GrantRequest,
   Helper,
-  Launchd,
   type LaunchdState,
   type Permissions,
   type RequestOutcome,
@@ -25,7 +24,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { permissions } from "../src/permissions.js";
-import { fakePrompt, type Prompt } from "../src/prompt.js";
+import { fakePrompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 
 describe("permissions", () => {

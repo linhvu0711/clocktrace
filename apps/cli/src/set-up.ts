@@ -7,6 +7,7 @@ import {
 import { FileSystem } from "@effect/platform";
 import { Data, Effect } from "effect";
 
+// biome-ignore lint/complexity/noBannedTypes: the error has no fields
 export class NotSetUpError extends Data.TaggedError("NotSetUpError")<{}> {
   override get message(): string {
     return "not set up, run clocktrace setup";
