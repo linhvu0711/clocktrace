@@ -1,4 +1,5 @@
 import { Launchd, type LaunchdError } from "@clocktrace/collector";
+import { Command } from "@effect/cli";
 import type { FileSystem } from "@effect/platform";
 import { Effect } from "effect";
 
@@ -20,3 +21,5 @@ export const stop = (): Effect.Effect<
       }),
     ),
   );
+
+export const stopCommand = Command.make("stop", {}, () => stop());

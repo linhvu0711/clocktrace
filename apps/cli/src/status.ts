@@ -8,6 +8,7 @@ import {
   statusLines,
 } from "@clocktrace/collector";
 import type { Store, StoreError } from "@clocktrace/core";
+import { Command } from "@effect/cli";
 import type { FileSystem } from "@effect/platform";
 import { type DateTime, Effect } from "effect";
 import type { ParseError } from "effect/ParseResult";
@@ -42,3 +43,5 @@ export const status = (): Effect.Effect<
   | LaunchdError,
   Prompt | Launchd | Helper | FileSystem.FileSystem | DateTime.CurrentTimeZone
 > => requireSetUp.pipe(Effect.andThen(withStore(printStatus())));
+
+export const statusCommand = Command.make("status", {}, () => status());

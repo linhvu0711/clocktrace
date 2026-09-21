@@ -9,6 +9,16 @@ export const hostNames = ["claude", "codex", "hermes", "openclaw"] as const;
 
 export type HostName = (typeof hostNames)[number];
 
+export class UnknownHostError extends Data.TaggedError("UnknownHostError")<{
+  readonly names: ReadonlyArray<string>;
+}> {
+  override get message(): string {
+    return this.names.length === 0
+      ? "--hosts needs at least one name"
+      : `unknown host: ${this.names.join(", ")}`;
+  }
+}
+
 export const hostLabel: Record<HostName, string> = {
   claude: "claude code",
   codex: "codex",

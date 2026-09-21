@@ -49,6 +49,8 @@ documented in `packages/collector/README.md`.
    prints `state = running`.
 2. `pnpm --filter cli exec clocktrace stop` twice prints `collector: stopped`
    twice; `start` twice prints `collector: running` twice.
-3. `pnpm --filter cli exec clocktrace bogus` prints the usage line and exits 1.
+3. `pnpm --filter cli exec clocktrace bogus` prints
+   `Invalid subcommand for clocktrace - use one of 'setup', 'start', 'stop', 'status', 'permissions', 'mcp'`
+   and exits 1.
 4. `CLOCKTRACE_HELPER=/nope/clocktrace-helper pnpm --filter cli exec clocktrace status`
    prints `helper not found at /nope/clocktrace-helper` and exits 1.

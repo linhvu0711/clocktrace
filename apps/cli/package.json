@@ -19,8 +19,11 @@
     "@clocktrace/collector": "workspace:^",
     "@clocktrace/core": "workspace:*",
     "@clocktrace/mcp": "workspace:*",
+    "@effect/cli": "^0.77.2",
     "@effect/platform": "^0.97.2",
     "@effect/platform-node": "^0.108.2",
+    "@effect/printer": "^0.51.0",
+    "@effect/printer-ansi": "^0.51.0",
     "effect": "^3.22.2",
     "yaml": "^2.9.1"
   }
