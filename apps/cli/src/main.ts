@@ -1,5 +1,36 @@
+import { Helper, Launchd } from "@clocktrace/collector";
+import { NodeContext, NodeRuntime } from "@effect/platform-node";
+import { DateTime, Effect, Layer } from "effect";
+
 import { parseArgs, usage } from "./args.js";
+import { Prompt } from "./prompt.js";
+import { start } from "./start.js";
+import { status } from "./status.js";
+import { stop } from "./stop.js";
 import { version } from "./version.js";
+
+const layers = Layer.mergeAll(
+  Helper.Default,
+  Launchd.Default,
+  Prompt.Default,
+  NodeContext.layer,
+  DateTime.layerCurrentZoneLocal,
+);
+
+const runCommand = <E extends { readonly message: string }>(
+  effect: Effect.Effect<void, E, Layer.Layer.Success<typeof layers>>,
+) =>
+  NodeRuntime.runMain(
+    effect.pipe(
+      Effect.catchAll((e) =>
+        Effect.sync(() => {
+          console.error(e.message);
+          process.exitCode = 1;
+        }),
+      ),
+      Effect.provide(layers),
+    ),
+  );
 
 const command = parseArgs(process.argv.slice(2));
 
@@ -13,6 +44,12 @@ if (command === null) {
 } else if (command === "mcp") {
   const { serveStdio } = await import("@clocktrace/mcp");
   await serveStdio();
+} else if (command === "status") {
+  runCommand(status());
+} else if (command === "start") {
+  runCommand(start());
+} else if (command === "stop") {
+  runCommand(stop());
 } else {
   console.error(usage);
   process.exitCode = 1;
