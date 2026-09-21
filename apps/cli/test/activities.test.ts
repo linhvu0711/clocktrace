@@ -1,0 +1,257 @@
+import {
+  type InvalidRangeError,
+  openStore,
+  Store,
+  type StoreShape,
+} from "@clocktrace/core";
+import { DateTime, Effect, Exit, Layer, Ref } from "effect";
+import { describe, expect, it } from "vitest";
+
+import { printActivities } from "../src/activities.js";
+import { fakePrompt, type Prompt } from "../src/prompt.js";
+
+const EmptyStore = Layer.scoped(
+  Store,
+  Effect.map(openStore(":memory:"), (shape) => new Store(shape)),
+);
+
+const runPrint = <A, E>(
+  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone>,
+) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const prompt = yield* fakePrompt([], false);
+      const exit = yield* Effect.exit(
+        Effect.scoped(
+          body.pipe(
+            DateTime.withCurrentZoneNamed("America/Los_Angeles"),
+            Effect.provide(Layer.merge(prompt.layer, EmptyStore)),
+          ),
+        ),
+      );
+      const output = yield* Ref.get(prompt.output);
+      return { exit, output };
+    }),
+  );
+
+const t = (s: string) => DateTime.unsafeMake(s);
+
+// Studio: Code 08:00 to 09:30Z, then Chrome to 09:40Z; 01:00 to 02:40 in Los Angeles
+const seedDay = (store: StoreShape) =>
+  Effect.gen(function* () {
+    const studio = yield* store.getOrInsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+    yield* store.insertActivity({
+      deviceId: studio.id,
+      bundleId: "com.microsoft.VSCode",
+      appName: "Code",
+      title: "a",
+      url: null,
+      startedAt: t("2026-09-18T08:00:00.000Z"),
+      endedAt: t("2026-09-18T09:30:00.000Z"),
+    });
+    yield* store.insertActivity({
+      deviceId: studio.id,
+      bundleId: "com.google.Chrome",
+      appName: "Google Chrome",
+      title: "b",
+      url: "https://github.com/acme/shop",
+      startedAt: t("2026-09-18T09:30:00.000Z"),
+      endedAt: t("2026-09-18T09:40:00.000Z"),
+    });
+    return studio;
+  });
+
+const seedMany = (store: StoreShape, count: number) =>
+  Effect.gen(function* () {
+    const studio = yield* store.getOrInsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+    for (let i = 0; i < count; i++) {
+      const startedAt = Date.UTC(2026, 8, 18, 8) + i * 60_000;
+      yield* store.insertActivity({
+        deviceId: studio.id,
+        bundleId: "com.microsoft.VSCode",
+        appName: "Code",
+        title: null,
+        url: null,
+        startedAt: DateTime.unsafeMake(startedAt),
+        endedAt: DateTime.unsafeMake(startedAt + 60_000),
+      });
+    }
+  });
+
+const window = "2026-09-18T00:00 to 2026-09-19T00:00 America/Los_Angeles";
+
+describe("activities", () => {
+  it("activities prints the window, then one line per row", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printActivities(
+          { range: { from: "2026-09-18", to: "2026-09-18" } },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      window,
+      "2026-09-18T01:00  2026-09-18T02:30  Code  a  -",
+      "2026-09-18T02:30  2026-09-18T02:40  Google Chrome  b  https://github.com/acme/shop",
+    ]);
+  });
+
+  it("activities --app keeps one app", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printActivities(
+          {
+            range: { from: "2026-09-18", to: "2026-09-18" },
+            app: "com.google.Chrome",
+          },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      window,
+      "2026-09-18T02:30  2026-09-18T02:40  Google Chrome  b  https://github.com/acme/shop",
+    ]);
+  });
+
+  it("activities over the cap prints 200 rows and the cap line", async () => {
+    // Given: 205 one-minute Code Activities from 08:00Z
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedMany(store, 205);
+        // When
+        yield* printActivities(
+          { range: { from: "2026-09-18", to: "2026-09-18" } },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.length).toBe(202);
+    expect(output[1]).toBe("2026-09-18T01:00  2026-09-18T01:01  Code  -  -");
+    expect(output[201]).toBe("200 of 205, use --limit");
+  });
+
+  it("activities --limit caps the rows", async () => {
+    // Given: 205 one-minute Code Activities from 08:00Z
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedMany(store, 205);
+        // When
+        yield* printActivities(
+          { range: { from: "2026-09-18", to: "2026-09-18" }, limit: 3 },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.length).toBe(5);
+    expect(output[4]).toBe("3 of 205, use --limit");
+  });
+
+  it("activities --json prints the activities tool's JSON", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printActivities(
+          { range: { from: "2026-09-18", to: "2026-09-18" } },
+          true,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.length).toBe(1);
+    const page = JSON.parse(output[0] ?? "");
+    expect(page.range).toEqual({
+      from: "2026-09-18T00:00",
+      to: "2026-09-19T00:00",
+      zone: "America/Los_Angeles",
+    });
+    expect(page.rows.length).toBe(2);
+    expect(page.rows[0]).toMatchObject({
+      bundleId: "com.microsoft.VSCode",
+      appName: "Code",
+      title: "a",
+      url: null,
+      startedAt: "2026-09-18T08:00:00.000Z",
+      endedAt: "2026-09-18T09:30:00.000Z",
+    });
+    expect(page.total).toBe(2);
+    expect(page.hasMore).toBe(false);
+    expect(Object.keys(page)).toEqual(["range", "rows", "total", "hasMore"]);
+  });
+
+  it("activities of an empty window prints the note", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printActivities(
+          { range: { from: "2026-01-01", to: "2026-01-01" } },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "2026-01-01T00:00 to 2026-01-02T00:00 America/Los_Angeles",
+      "no activity in this range",
+    ]);
+  });
+
+  it("to before from is an error naming range", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printActivities(
+          { range: { from: "2026-09-08", to: "2026-09-01" } },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      const error = exit.cause.error as InvalidRangeError;
+      expect(error.message).toBe(
+        "range: from 2026-09-08 is after to 2026-09-01",
+      );
+    }
+    expect(output).toEqual([]);
+  });
+});

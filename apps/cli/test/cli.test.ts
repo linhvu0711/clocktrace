@@ -302,6 +302,23 @@ describe("cli", () => {
     expect(exit).toEqual(Exit.fail(new NotSetUpError()));
   });
 
+  it("activities before setup fails not set up", async () => {
+    // Given: the launchd agent is not installed, no database file
+    const argv = [
+      "node",
+      "clocktrace",
+      "activities",
+      "--from",
+      "2026-09-18",
+      "--to",
+      "2026-09-18",
+    ];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+  });
+
   it("a known command dispatches", async () => {
     // Given: the launchd agent is not installed, no database file
     const argv = ["node", "clocktrace", "status"];

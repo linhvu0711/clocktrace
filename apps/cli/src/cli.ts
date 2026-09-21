@@ -1,5 +1,6 @@
 import { Command } from "@effect/cli";
 
+import { activitiesCommand } from "./activities.js";
 import { categoriesCommand } from "./categories.js";
 import { mcpCommand } from "./mcp.js";
 import { permissionsCommand } from "./permissions.js";
@@ -26,6 +27,7 @@ export const command = Command.make("clocktrace").pipe(
     projectsCommand,
     summaryCommand,
     timelineCommand,
+    activitiesCommand,
   ]),
 );
 
