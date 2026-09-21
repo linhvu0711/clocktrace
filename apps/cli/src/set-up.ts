@@ -35,3 +35,6 @@ export const withStore = <A, E, R>(
   Effect.flatMap(Effect.orDie(dbPathConfig), (path) =>
     Effect.provide(effect, Store.Default(path)),
   );
+
+export const whenSetUp = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  requireSetUp.pipe(Effect.andThen(withStore(effect)));

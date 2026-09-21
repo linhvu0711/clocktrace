@@ -177,6 +177,15 @@ describe("cli", () => {
     );
   });
 
+  it("rules list before setup fails not set up", async () => {
+    // Given: the launchd agent is not installed, no database file
+    const argv = ["node", "clocktrace", "rules", "list"];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+  });
+
   it("a known command dispatches", async () => {
     // Given: the launchd agent is not installed, no database file
     const argv = ["node", "clocktrace", "status"];
