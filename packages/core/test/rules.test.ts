@@ -72,6 +72,71 @@ describe("rules", () => {
     expect(ids).toEqual([a.id, b.id]);
   });
 
+  it("addRule returns the existing rule instead of a duplicate", async () => {
+    // Given: an empty store with one category and a rule added twice
+    const { a, b, ids } = await useEmpty(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const c = yield* store.insertCategory({
+          name: "Work",
+          productive: true,
+        });
+        const rule = {
+          field: "domain",
+          compare: "is",
+          value: "github.com",
+          effect: "category",
+          target: c.id,
+        } as const;
+        // When
+        const a = yield* addRule(rule);
+        const b = yield* addRule(rule);
+        const ids = (yield* store.listRules()).map((r) => r.id);
+        return { a, b, ids };
+      }),
+    );
+    // Then
+    expect(a.position).toBe(0);
+    expect(b.position).toBe(0);
+    expect(b.id).toBe(a.id);
+    expect(ids).toEqual([a.id]);
+  });
+
+  it("addRule adds a rule that differs in one field", async () => {
+    // Given: an empty store with one category and two rules that differ in value
+    const { a, b, ids } = await useEmpty(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const c = yield* store.insertCategory({
+          name: "Work",
+          productive: true,
+        });
+        // When
+        const a = yield* addRule({
+          field: "domain",
+          compare: "is",
+          value: "github.com",
+          effect: "category",
+          target: c.id,
+        });
+        const b = yield* addRule({
+          field: "domain",
+          compare: "is",
+          value: "gitlab.com",
+          effect: "category",
+          target: c.id,
+        });
+        const ids = (yield* store.listRules()).map((r) => r.id);
+        return { a, b, ids };
+      }),
+    );
+    // Then
+    expect(a.position).toBe(0);
+    expect(b.position).toBe(1);
+    expect(b.id).not.toBe(a.id);
+    expect(ids).toEqual([a.id, b.id]);
+  });
+
   it("removeRule removes the rule and keeps positions dense", async () => {
     // Given: three private rules added with addRule
     const remaining = await useEmpty(

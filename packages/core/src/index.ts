@@ -5,7 +5,6 @@ export * from "./device.js";
 export * from "./errors.js";
 export * from "./matcher.js";
 export * from "./migrations.js";
-export * from "./onboarding.js";
 export * from "./project.js";
 export * from "./projects.js";
 export * from "./queries.js";
