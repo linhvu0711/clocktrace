@@ -196,4 +196,38 @@ describe("install cleanup (real service)", () => {
     expect(seen.before).toBe(true);
     expect(seen.after).toBe(false);
   });
+
+  it("uninstall keeps the plist when the unload fails", async () => {
+    // Given: a plist written by a real install
+    const { Launchd: RealLaunchd, plistPath } = await import(
+      "../src/launchd.js"
+    );
+    const withExit = (code: number) =>
+      RealLaunchd.DefaultWithoutDependencies.pipe(
+        Layer.provide(
+          Layer.merge(
+            NodeFileSystem.layer,
+            Layer.succeed(CommandExecutor.CommandExecutor, executor(code)),
+          ),
+        ),
+      );
+    await Effect.runPromise(
+      Effect.flatMap(RealLaunchd, (l) => l.install("<plist>")).pipe(
+        Effect.provide(withExit(0)),
+      ),
+    );
+    const before = existsSync(plistPath);
+    // When: bootout fails (exit 1, e.g. the job is still loaded)
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.flatMap(RealLaunchd, (l) => l.uninstall()).pipe(
+          Effect.provide(withExit(1)),
+        ),
+      ),
+    );
+    // Then: uninstall fails and the plist is left in place
+    expect(before).toBe(true);
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(existsSync(plistPath)).toBe(true);
+  });
 });

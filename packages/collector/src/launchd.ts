@@ -167,16 +167,21 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
       bootstrap,
       bootout,
       state,
+      // Remove the plist only after the job is unloaded. bootout already
+      // treats an absent job (exit 3) as success; any other unload failure
+      // keeps the plist so a still-loaded job is not orphaned.
       uninstall: () =>
         bootout().pipe(
-          Effect.ignore,
-          Effect.andThen(fs.remove(plistPath, { force: true })),
-          Effect.mapError(
-            (e) =>
-              new LaunchdError({
-                step: `remove ${plistPath}`,
-                detail: e.message,
-              }),
+          Effect.andThen(
+            fs.remove(plistPath, { force: true }).pipe(
+              Effect.mapError(
+                (e) =>
+                  new LaunchdError({
+                    step: `remove ${plistPath}`,
+                    detail: e.message,
+                  }),
+              ),
+            ),
           ),
         ),
       install: (plist: string) =>
