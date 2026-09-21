@@ -6,7 +6,13 @@ import { DateTime, Effect, Either, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { Device, NewActivity } from "../src/index.js";
-import { openStore, resolve, Store, starterRules } from "../src/index.js";
+import {
+  openStore,
+  removeCategory,
+  resolve,
+  Store,
+  starterRules,
+} from "../src/index.js";
 
 const deviceId = "00000000-0000-4000-8000-000000000001";
 const device: Device = {
@@ -40,6 +46,53 @@ describe("starter set", () => {
 
   const open = <A, E>(effect: Effect.Effect<A, E, Store>): Promise<A> =>
     Effect.runPromise(effect.pipe(Effect.provide(Store.Default(path))));
+
+  it("a Starter Category can be removed, and a fresh database seeds it again", async () => {
+    // Given: a seeded store with every Rule deleted and Coding found
+    const afterRemove = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const rules = yield* store.listRules();
+        for (const rule of rules) {
+          yield* store.deleteRule(rule.id);
+        }
+        const categories = yield* store.listCategories();
+        const coding = categories.find((c) => c.name === "Coding");
+        // When
+        if (coding !== undefined) {
+          yield* removeCategory(coding.id);
+        }
+        return yield* store.listCategories();
+      }),
+    );
+    // Then: Coding is gone from this database
+    expect(afterRemove.map((c) => c.name)).toEqual([
+      "Communication",
+      "Design",
+      "Entertainment",
+      "Social",
+      "Writing",
+    ]);
+    // When: a fresh database opens
+    const freshDir = mkdtempSync(join(tmpdir(), "clocktrace-"));
+    const freshPath = join(freshDir, "clocktrace.db");
+    const seeded = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return yield* store.listCategories();
+      }).pipe(Effect.provide(Store.Default(freshPath))),
+    );
+    rmSync(freshDir, { recursive: true, force: true });
+    // Then: the full Starter set is seeded again
+    expect(seeded.map((c) => c.name)).toEqual([
+      "Coding",
+      "Communication",
+      "Design",
+      "Entertainment",
+      "Social",
+      "Writing",
+    ]);
+  });
 
   it("a fresh store gets six Categories and the Starter Rules", async () => {
     // Given: a temp path with no file

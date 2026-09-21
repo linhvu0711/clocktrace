@@ -109,6 +109,9 @@ export const openStore = (
         "UPDATE categories SET name = @name, productive = @productive WHERE id = @id",
       ),
     );
+    const deleteCategoryStatement = yield* prepare(() =>
+      db.prepare("DELETE FROM categories WHERE id = @id"),
+    );
     const insertProjectStatement = yield* prepare(() =>
       db.prepare("INSERT INTO projects (id, name) VALUES (@id, @name)"),
     );
@@ -117,6 +120,9 @@ export const openStore = (
     );
     const updateProjectStatement = yield* prepare(() =>
       db.prepare("UPDATE projects SET name = @name WHERE id = @id"),
+    );
+    const deleteProjectStatement = yield* prepare(() =>
+      db.prepare("DELETE FROM projects WHERE id = @id"),
     );
     const insertRuleStatement = yield* prepare(() =>
       db.prepare(
@@ -280,6 +286,12 @@ export const openStore = (
         });
       });
 
+    const deleteCategory: StoreShape["deleteCategory"] = (id) =>
+      Effect.try({
+        try: () => deleteCategoryStatement.run({ id }).changes > 0,
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     const insertProject: StoreShape["insertProject"] = (input) =>
       Effect.gen(function* () {
         const project = yield* Schema.validate(NewProjectSchema)(input);
@@ -314,6 +326,12 @@ export const openStore = (
           },
           catch: (cause) => new StoreError({ cause }),
         });
+      });
+
+    const deleteProject: StoreShape["deleteProject"] = (id) =>
+      Effect.try({
+        try: () => deleteProjectStatement.run({ id }).changes > 0,
+        catch: (cause) => new StoreError({ cause }),
       });
 
     const insertRule: StoreShape["insertRule"] = (input) =>
@@ -419,9 +437,11 @@ export const openStore = (
       insertCategory,
       listCategories,
       updateCategory,
+      deleteCategory,
       insertProject,
       listProjects,
       updateProject,
+      deleteProject,
       insertRule,
       listRules,
       deleteRule,

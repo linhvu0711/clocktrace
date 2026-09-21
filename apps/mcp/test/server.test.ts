@@ -57,7 +57,7 @@ describe("server", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("lists the eight tools", async () => {
+  it("lists the ten tools", async () => {
     // Given: a server over an in-memory store
     const { client, close } = await connect(Store.Test);
     // When
@@ -70,6 +70,8 @@ describe("server", () => {
       "list_categories",
       "list_projects",
       "list_rules",
+      "remove_category",
+      "remove_project",
       "remove_rule",
       "set_category",
       "set_project",
@@ -157,6 +159,14 @@ describe("server", () => {
         },
       }),
       await callTool(client, { name: "remove_rule", arguments: { id: "x" } }),
+      await callTool(client, {
+        name: "remove_category",
+        arguments: { id: "x" },
+      }),
+      await callTool(client, {
+        name: "remove_project",
+        arguments: { id: "x" },
+      }),
       await callTool(client, {
         name: "set_category",
         arguments: { name: "X", productive: true },
@@ -526,6 +536,86 @@ describe("server", () => {
     const result = await callTool(client, {
       name: "set_project",
       arguments: { id: "00000000-0000-4000-8000-000000000077", name: "X" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "project 00000000-0000-4000-8000-000000000077 not found",
+    );
+  });
+
+  it("remove_category removes the Category", async () => {
+    // Given: an empty store with a Category made through set_category
+    const { client, close } = await connect(EmptyStore);
+    const created = await callTool(client, {
+      name: "set_category",
+      arguments: { name: "Research", productive: true },
+    });
+    const id = (created.structuredContent as { id: string }).id;
+    // When
+    const removed = await callTool(client, {
+      name: "remove_category",
+      arguments: { id },
+    });
+    const listed = await callTool(client, {
+      name: "list_categories",
+      arguments: {},
+    });
+    await close();
+    // Then
+    expect(removed.isError).toBeUndefined();
+    expect(removed.structuredContent).toEqual({ removed: id });
+    expect(listed.structuredContent).toEqual({ categories: [] });
+  });
+
+  it("remove_category of an unknown id names the id", async () => {
+    // Given: the same
+    const { client, close } = await connect(EmptyStore);
+    // When
+    const result = await callTool(client, {
+      name: "remove_category",
+      arguments: { id: "00000000-0000-4000-8000-000000000077" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "category 00000000-0000-4000-8000-000000000077 not found",
+    );
+  });
+
+  it("remove_project removes the Project", async () => {
+    // Given: an empty store with a Project made through set_project
+    const { client, close } = await connect(EmptyStore);
+    const created = await callTool(client, {
+      name: "set_project",
+      arguments: { name: "Thesis" },
+    });
+    const id = (created.structuredContent as { id: string }).id;
+    // When
+    const removed = await callTool(client, {
+      name: "remove_project",
+      arguments: { id },
+    });
+    const listed = await callTool(client, {
+      name: "list_projects",
+      arguments: {},
+    });
+    await close();
+    // Then
+    expect(removed.isError).toBeUndefined();
+    expect(removed.structuredContent).toEqual({ removed: id });
+    expect(listed.structuredContent).toEqual({ projects: [] });
+  });
+
+  it("remove_project of an unknown id names the id", async () => {
+    // Given: the same
+    const { client, close } = await connect(EmptyStore);
+    // When
+    const result = await callTool(client, {
+      name: "remove_project",
+      arguments: { id: "00000000-0000-4000-8000-000000000077" },
     });
     await close();
     // Then

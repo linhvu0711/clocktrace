@@ -41,6 +41,24 @@ export class ProjectNotFoundError extends Data.TaggedError(
   }
 }
 
+export class CategoryInUseError extends Data.TaggedError("CategoryInUseError")<{
+  readonly id: string;
+  readonly count: number;
+}> {
+  override get message(): string {
+    return `category ${this.id} is used by ${this.count} rules, remove them first`;
+  }
+}
+
+export class ProjectInUseError extends Data.TaggedError("ProjectInUseError")<{
+  readonly id: string;
+  readonly count: number;
+}> {
+  override get message(): string {
+    return `project ${this.id} is used by ${this.count} rules, remove them first`;
+  }
+}
+
 export class InvalidRangeError extends Data.TaggedError("InvalidRangeError")<{
   readonly field: "range";
   readonly reason: string;

@@ -49,6 +49,8 @@ export interface StoreShape {
   ) => Effect.Effect<Rule, ParseError | StoreError>;
   readonly listRules: () => Effect.Effect<ReadonlyArray<Rule>, StoreError>;
   readonly deleteRule: (id: string) => Effect.Effect<boolean, StoreError>;
+  readonly deleteCategory: (id: string) => Effect.Effect<boolean, StoreError>;
+  readonly deleteProject: (id: string) => Effect.Effect<boolean, StoreError>;
   readonly getSetting: (
     key: string,
   ) => Effect.Effect<Option.Option<string>, StoreError>;

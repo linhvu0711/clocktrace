@@ -1,15 +1,19 @@
 import {
   addRule,
+  type CategoryInUseError,
   type CategoryNotFoundError,
   type DatabaseNewerError,
   finishOnboarding,
   type InvalidRuleError,
   isOnboardingDone,
+  type ProjectInUseError,
   type ProjectNotFoundError,
   RuleCompare,
   RuleEffect,
   RuleField,
   type RuleNotFoundError,
+  removeCategory,
+  removeProject,
   removeRule,
   Store,
   type StoreError,
@@ -42,6 +46,8 @@ type ToolError =
   | RuleNotFoundError
   | CategoryNotFoundError
   | ProjectNotFoundError
+  | CategoryInUseError
+  | ProjectInUseError
   | StoreLayerError
   | ParseError;
 
@@ -62,7 +68,7 @@ const RuleOut = z.object({
 });
 
 const instructionsBase =
-  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, set_category, set_project, finish_onboarding.";
+  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, finish_onboarding.";
 const onboardingOfferText =
   "Onboarding is not done. Offer it once: ask what the user does and which apps and sites they use, add Rules on top of the Starter set with add_rule, then call finish_onboarding. Never block on it: answer any question first, and never require Onboarding before another tool.";
 const onboardingDoneText = "Onboarding is done.";
@@ -185,6 +191,26 @@ export const makeServer = async (
       outputSchema: { removed: z.string() },
     },
     ({ id }) => run(Effect.as(removeRule(id), { removed: id })),
+  );
+
+  server.registerTool(
+    "remove_category",
+    {
+      description: "Remove a Category by id. Fails if Rules still use it.",
+      inputSchema: { id: z.string() },
+      outputSchema: { removed: z.string() },
+    },
+    ({ id }) => run(Effect.as(removeCategory(id), { removed: id })),
+  );
+
+  server.registerTool(
+    "remove_project",
+    {
+      description: "Remove a Project by id. Fails if Rules still use it.",
+      inputSchema: { id: z.string() },
+      outputSchema: { removed: z.string() },
+    },
+    ({ id }) => run(Effect.as(removeProject(id), { removed: id })),
   );
 
   server.registerTool(
