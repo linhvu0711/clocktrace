@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
-import { Chunk, Effect, Layer, Stream } from "effect";
+import { Chunk, Data, Effect, Layer, Stream } from "effect";
 import { parseDocument } from "yaml";
 
 export const hostNames = ["claude", "codex", "hermes", "openclaw"] as const;
@@ -103,6 +103,10 @@ const onPath = (
     Effect.catchAll(() => Effect.succeed(false)),
   );
 
+class HermesConfigParse extends Data.TaggedError("HermesConfigParse")<{
+  cause: unknown;
+}> {}
+
 const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -111,9 +115,10 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
       .exists(path)
       .pipe(Effect.catchAll(() => Effect.succeed(false)));
     const text = exists ? yield* fs.readFileString(path) : "";
-    const doc = yield* Effect.sync(() =>
-      parseDocument(text === "" ? "{}" : text),
-    );
+    const doc = yield* Effect.try({
+      try: () => parseDocument(text === "" ? "{}" : text),
+      catch: (cause) => new HermesConfigParse({ cause }),
+    });
     if (doc.getIn(["mcp_servers", "clocktrace"]) !== undefined) {
       return `${hostLabel.hermes}: already registered`;
     }
@@ -121,20 +126,26 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
       command: "clocktrace",
       args: ["mcp"],
     });
+    // Write beside the resolved target so a symlink keeps pointing at its
+    // source, and keep the target's mode on the replacement file.
+    const target = exists
+      ? yield* fs
+          .realPath(path)
+          .pipe(Effect.catchAll(() => Effect.succeed(path)))
+      : path;
+    const info = exists
+      ? yield* fs.stat(target).pipe(Effect.catchAll(() => Effect.succeed(null)))
+      : null;
     yield* fs.makeDirectory(join(homedir(), ".hermes"), { recursive: true });
-    const tmp = `${path}.tmp`;
+    const tmp = `${target}.tmp`;
     yield* fs.writeFileString(tmp, doc.toString()).pipe(
-      Effect.andThen(fs.rename(tmp, path)),
+      Effect.andThen(info === null ? Effect.void : fs.chmod(tmp, info.mode)),
+      Effect.andThen(fs.rename(tmp, target)),
       Effect.tapError(() => fs.remove(tmp).pipe(Effect.ignore)),
     );
     return `${hostLabel.hermes}: registered`;
   }).pipe(
     Effect.catchAll(() =>
-      Effect.succeed(
-        `${hostLabel.hermes}: failed. run by hand: ${manualCommand.hermes}`,
-      ),
-    ),
-    Effect.catchAllDefect(() =>
       Effect.succeed(
         `${hostLabel.hermes}: failed. run by hand: ${manualCommand.hermes}`,
       ),

@@ -1,13 +1,16 @@
 import {
   chmodSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   fakeLaunchd,
@@ -341,6 +344,29 @@ describe("hosts", () => {
       `hermes agent: failed. run by hand: ${manualCommand.hermes}`,
     );
     expect(readFileSync(path, "utf8")).toBe("model: nous-1\n");
+  });
+
+  it("a symlinked hermes config writes the target and keeps its mode", async () => {
+    // Given: ~/.hermes/config.yaml is a symlink to a 0600 dotfiles file
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const target = join(home, "dotfiles", "hermes.yaml");
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, "model: nous-1\n");
+    chmodSync(target, 0o600);
+    const link = join(home, ".hermes", "config.yaml");
+    symlinkSync(target, link);
+    // When
+    const line = await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    // Then
+    expect(line).toBe("hermes agent: registered");
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readFileSync(target, "utf8")).toContain("clocktrace");
+    expect(statSync(target).mode & 0o777).toBe(0o600);
   });
 
   it("the checklist registers the ticked hosts", async () => {
