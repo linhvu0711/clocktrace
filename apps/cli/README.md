@@ -1,7 +1,8 @@
 # clocktrace
 
-CLI for clocktrace. Runs the collector that turns `clocktrace-helper watch`
-lines into Activities in the local SQLite store.
+The `clocktrace` command: setup, start, stop, status, permissions, and mcp.
+The Collector itself lives in `packages/collector` and runs as a per-user
+launchd agent.
 
 ## Build
 
@@ -11,35 +12,38 @@ pnpm build
 ```
 
 `pnpm build` at the repo root also builds the helper binary
-(`packages/helper`, `swift build -c release`), which `clocktrace run`
-needs.
+(`packages/helper`, `swift build -c release`), which the Collector needs.
 
 ## Commands
 
 ```bash
-clocktrace --version   # print the CLI version
-clocktrace run         # run the collector in the foreground
+clocktrace setup         # create the database, install the Collector, walk the permissions
+clocktrace start         # start the Collector
+clocktrace stop          # stop the Collector
+clocktrace status        # Collector state, permissions, last Activity, database path
+clocktrace permissions   # walk the three permissions again
+clocktrace mcp           # serve MCP over stdio for a Host
+clocktrace --version     # print the CLI version
 ```
 
-`clocktrace run` starts `clocktrace-helper watch`, registers this Mac as a
-Device on first run, and writes Activities until Ctrl+C. The helper is
-restarted with backoff if it exits. Logs go to the terminal the command
-was started from.
+`setup` creates the database, writes
+`~/Library/LaunchAgents/com.clocktrace.collector.plist`, starts the
+Collector, and walks the three permissions. Every other command but `mcp`
+prints `not set up, run clocktrace setup` first. The Collector logs to
+`~/Library/Logs/clocktrace/collector.log`.
 
 ## Settings
 
-| Env var | Default |
-| --- | --- |
-| `CLOCKTRACE_HELPER` | `packages/helper/.build/release/clocktrace-helper` next to this package |
-| `CLOCKTRACE_DB` | `~/Library/Application Support/clocktrace/clocktrace.db` |
+The `CLOCKTRACE_HELPER` and `CLOCKTRACE_DB` env vars and their defaults are
+documented in `packages/collector/README.md`.
 
 ## Live checks
 
-1. `pnpm --filter cli exec clocktrace run`, wait for `collector started`,
-   switch between apps for a few seconds each, then Ctrl+C. Activities
-   appear in `activities` (`sqlite3 "$CLOCKTRACE_DB" "select * from activities"`),
-   and one `mac` row appears in `devices`.
-2. `CLOCKTRACE_HELPER=/nope/clocktrace-helper pnpm --filter cli exec clocktrace run`
+1. `pnpm --filter cli exec clocktrace setup`, answer `skip` to each prompt,
+   then `launchctl print gui/$(id -u)/com.clocktrace.collector | grep "state ="`
+   prints `state = running`.
+2. `pnpm --filter cli exec clocktrace stop` twice prints `collector: stopped`
+   twice; `start` twice prints `collector: running` twice.
+3. `pnpm --filter cli exec clocktrace bogus` prints the usage line and exits 1.
+4. `CLOCKTRACE_HELPER=/nope/clocktrace-helper pnpm --filter cli exec clocktrace status`
    prints `helper not found at /nope/clocktrace-helper` and exits 1.
-3. With `clocktrace run` running, `pkill -f "clocktrace-helper watch"` logs
-   `helper exited, restarting` and the helper comes back under a new pid.

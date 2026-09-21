@@ -3,8 +3,7 @@
   "compilerOptions": {
     "noEmit": true,
     "paths": {
-      "@clocktrace/core": ["../../packages/core/src/index.ts"],
-      "@clocktrace/collector": ["../../packages/collector/src/index.ts"]
+      "@clocktrace/core": ["../../packages/core/src/index.ts"]
     }
   },
   "include": ["src", "test"]

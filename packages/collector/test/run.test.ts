@@ -60,6 +60,13 @@ describe("run", () => {
           Helper,
           new Helper({
             check: () => Effect.void,
+            permissions: () =>
+              Effect.succeed({
+                accessibility: "granted",
+                automation: {},
+                fullDiskAccess: "granted",
+              }),
+            request: () => Effect.succeed("asked"),
             lines: () =>
               Stream.fromEffect(
                 Ref.updateAndGet(count, (n) => n + 1).pipe(

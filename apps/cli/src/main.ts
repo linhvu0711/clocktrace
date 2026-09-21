@@ -1,24 +1,30 @@
-import { Store } from "@clocktrace/core";
-import { NodeRuntime } from "@effect/platform-node";
-import { Effect, Layer } from "effect";
+import { Helper, Launchd } from "@clocktrace/collector";
+import { NodeContext, NodeRuntime } from "@effect/platform-node";
+import { DateTime, Effect, Layer } from "effect";
 
-import { dbPathConfig } from "./config.js";
-import { Helper } from "./helper.js";
-import { MacIdentity } from "./mac-identity.js";
-import { runCollector } from "./run.js";
+import { parseArgs, usage } from "./args.js";
+import { permissions } from "./permissions.js";
+import { Prompt } from "./prompt.js";
+import { setup } from "./setup.js";
+import { start } from "./start.js";
+import { status } from "./status.js";
+import { stop } from "./stop.js";
 import { version } from "./version.js";
 
-const [arg] = process.argv.slice(2);
+const layers = Layer.mergeAll(
+  Helper.Default,
+  Launchd.Default,
+  Prompt.Default,
+  NodeContext.layer,
+  DateTime.layerCurrentZoneLocal,
+);
 
-if (arg === "run") {
-  const layers = Layer.mergeAll(
-    Helper.Default,
-    MacIdentity.Default,
-    Layer.unwrapEffect(Effect.map(dbPathConfig, (path) => Store.Default(path))),
-  );
+const runCommand = <E extends { readonly message: string }>(
+  effect: Effect.Effect<void, E, Layer.Layer.Success<typeof layers>>,
+) =>
   NodeRuntime.runMain(
-    runCollector().pipe(
-      Effect.catchTag("HelperNotFoundError", (e) =>
+    effect.pipe(
+      Effect.catchAll((e) =>
         Effect.sync(() => {
           console.error(e.message);
           process.exitCode = 1;
@@ -27,11 +33,30 @@ if (arg === "run") {
       Effect.provide(layers),
     ),
   );
-} else if (arg === "--version" || arg === "-v") {
+
+const command = parseArgs(process.argv.slice(2));
+
+if (command === null) {
+  console.error(usage);
+  process.exitCode = 1;
+} else if (command === "help") {
+  console.log(usage);
+} else if (command === "version") {
   console.log(version());
-} else if (arg === "mcp") {
+} else if (command === "mcp") {
   const { serveStdio } = await import("@clocktrace/mcp");
   await serveStdio();
+} else if (command === "status") {
+  runCommand(status());
+} else if (command === "start") {
+  runCommand(start());
+} else if (command === "stop") {
+  runCommand(stop());
+} else if (command === "permissions") {
+  runCommand(permissions());
+} else if (command === "setup") {
+  runCommand(setup());
 } else {
-  console.log("clocktrace: nothing here yet. Try --version.");
+  console.error(usage);
+  process.exitCode = 1;
 }

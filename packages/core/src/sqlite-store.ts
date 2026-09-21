@@ -158,6 +158,11 @@ export const openStore = (
         "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
       ),
     );
+    const selectLatestEnd = yield* prepare(() =>
+      db.prepare(
+        "SELECT ended_at AS endedAt FROM activities ORDER BY ended_at DESC LIMIT 1",
+      ),
+    );
 
     const getOrInsertDevice: StoreShape["getOrInsertDevice"] = (input) =>
       Effect.gen(function* () {
@@ -232,6 +237,17 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
     };
+
+    const latestActivityEnd: StoreShape["latestActivityEnd"] = () =>
+      Effect.try({
+        try: () => {
+          const row = selectLatestEnd.get() as { endedAt: string } | undefined;
+          return row === undefined
+            ? Option.none()
+            : Option.some(DateTime.unsafeMake(row.endedAt));
+        },
+        catch: (cause) => new StoreError({ cause }),
+      });
 
     const insertCategory: StoreShape["insertCategory"] = (input) =>
       Effect.gen(function* () {
@@ -466,6 +482,7 @@ export const openStore = (
       listDevices,
       insertActivity,
       readActivities,
+      latestActivityEnd,
       insertCategory,
       listCategories,
       updateCategory,

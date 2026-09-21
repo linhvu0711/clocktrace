@@ -1,13 +1,15 @@
 {
-  "name": "@clocktrace/cli",
+  "name": "@clocktrace/collector",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "clocktrace": "./bin/clocktrace.js"
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
-    "bin",
     "dist"
   ],
   "scripts": {
@@ -16,9 +18,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@clocktrace/collector": "workspace:^",
-    "@clocktrace/core": "workspace:*",
-    "@clocktrace/mcp": "workspace:*",
+    "@clocktrace/core": "workspace:^",
     "@effect/platform": "^0.97.2",
     "@effect/platform-node": "^0.108.2",
     "effect": "^3.22.2"

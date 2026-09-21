@@ -2,6 +2,12 @@ import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Data, Effect, Layer, Stream } from "effect";
 
+import {
+  decodePermissions,
+  type GrantRequest,
+  requestArgs,
+} from "./permissions.js";
+
 export class HelperNotFoundError extends Data.TaggedError(
   "HelperNotFoundError",
 )<{
@@ -42,6 +48,35 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
             ),
           ),
         ),
+      permissions: (path: string) =>
+        Command.make(path, "permissions").pipe(
+          Command.string,
+          Effect.provideService(CommandExecutor.CommandExecutor, executor),
+          Effect.mapError((cause) => new HelperExitedError({ cause })),
+          Effect.flatMap(decodePermissions),
+        ),
+      request: (path: string, grant: GrantRequest) =>
+        Command.make(
+          path,
+          "permissions",
+          "request",
+          ...requestArgs(grant),
+        ).pipe(
+          Command.exitCode,
+          Effect.provideService(CommandExecutor.CommandExecutor, executor),
+          Effect.mapError((cause) => new HelperExitedError({ cause })),
+          Effect.flatMap((code) =>
+            code === 0
+              ? Effect.succeed("asked" as const)
+              : code === 3
+                ? Effect.succeed("notRunning" as const)
+                : Effect.fail(
+                    new HelperExitedError({
+                      cause: `permissions request exited ${code}`,
+                    }),
+                  ),
+          ),
+        ),
     };
   }),
   dependencies: [NodeContext.layer],
@@ -49,6 +84,16 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
   static Test = Layer.succeed(
     this,
-    new Helper({ check: () => Effect.void, lines: () => Stream.empty }),
+    new Helper({
+      check: () => Effect.void,
+      lines: () => Stream.empty,
+      permissions: () =>
+        Effect.succeed({
+          accessibility: "granted",
+          automation: {},
+          fullDiskAccess: "granted",
+        }),
+      request: () => Effect.succeed("asked"),
+    }),
   );
 }

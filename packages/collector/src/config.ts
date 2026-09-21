@@ -5,10 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Config } from "effect";
 
 const defaultHelperPath = fileURLToPath(
-  new URL(
-    "../../../packages/helper/.build/release/clocktrace-helper",
-    import.meta.url,
-  ),
+  new URL("../../helper/.build/release/clocktrace-helper", import.meta.url),
 );
 
 export const helperPathConfig = Config.string("CLOCKTRACE_HELPER").pipe(

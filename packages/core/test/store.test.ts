@@ -244,7 +244,11 @@ describe("store", () => {
       ),
     );
     // Then
-    expect(keys).toEqual(["insertActivity", "readActivities"]);
+    expect(keys).toEqual([
+      "insertActivity",
+      "latestActivityEnd",
+      "readActivities",
+    ]);
   });
 
   it("readActivities returns overlapping rows in start order", async () => {
@@ -331,6 +335,47 @@ describe("store", () => {
     );
     // Then
     expect(rows).toEqual([]);
+  });
+
+  it("latestActivityEnd is none on an empty store", async () => {
+    // Given: a fresh file store
+    // When
+    const end = await useStore((store) => store.latestActivityEnd());
+    // Then
+    expect(end).toEqual(Option.none());
+  });
+
+  it("latestActivityEnd is the newest end", async () => {
+    // Given: a device and two Activities, the newest end inserted first
+    const end = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* store.insertActivity({
+          deviceId: d.id,
+          bundleId: "com.apple.finder",
+          appName: "Finder",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T11:00:00.000Z"),
+          endedAt: t("2026-09-18T12:00:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: d.id,
+          bundleId: "com.apple.finder",
+          appName: "Finder",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T09:00:00.000Z"),
+          endedAt: t("2026-09-18T10:00:00.000Z"),
+        });
+        // When
+        return yield* store.latestActivityEnd();
+      }),
+    );
+    // Then
+    expect(Option.map(end, DateTime.formatIso)).toEqual(
+      Option.some("2026-09-18T12:00:00.000Z"),
+    );
   });
 
   it("insertActivity rejects endedAt before startedAt", async () => {
