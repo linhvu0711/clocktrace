@@ -19,7 +19,16 @@ export const command = Command.make("clocktrace").pipe(
   ]),
 );
 
-export const run = Command.run(command, {
+const cliRun = Command.run(command, {
   name: "clocktrace",
   version: version(),
 });
+
+// The library's built-in version option has no short alias; keep the old
+// parser's lone `-v`.
+export const run: typeof cliRun = (args) =>
+  cliRun(
+    args.length === 3 && args[2] === "-v"
+      ? [...args.slice(0, 2), "--version"]
+      : args,
+  );

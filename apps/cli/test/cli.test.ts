@@ -140,6 +140,16 @@ describe("cli", () => {
     expect(lines.join("\n")).toContain(version());
   });
 
+  it("the short version flag prints the package version", async () => {
+    // Given
+    const argv = ["node", "clocktrace", "-v"];
+    // When
+    const { exit, lines } = await runArgv(argv);
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(lines.join("\n")).toContain(version());
+  });
+
   it("an unknown command is a validation error", async () => {
     // Given
     const argv = ["node", "clocktrace", "bogus"];
