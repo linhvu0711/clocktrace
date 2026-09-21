@@ -19,8 +19,8 @@ const EmptyStore = Layer.scoped(
   Effect.map(openStore(":memory:"), (shape) => new Store(shape)),
 );
 
-const runPrint = <A, E, LE>(
-  layer: Layer.Layer<Store, LE, Scope>,
+const runPrint = <A, E, ELayer>(
+  layer: Layer.Layer<Store, ELayer, Scope>,
   body: Effect.Effect<A, E, Store | Prompt>,
 ) =>
   Effect.runPromise(
