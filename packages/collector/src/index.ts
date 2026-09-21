@@ -8,3 +8,4 @@ export * from "./permissions.js";
 export * from "./plist.js";
 export * from "./register-device.js";
 export * from "./run.js";
+export * from "./status.js";
