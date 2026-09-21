@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -30,7 +31,7 @@ import { NodeInspectSymbol } from "effect/Inspectable";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
-import { type HostName, Hosts } from "../src/hosts.js";
+import { type HostName, Hosts, manualCommand } from "../src/hosts.js";
 import { fakePrompt } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
 
@@ -319,6 +320,27 @@ describe("hosts", () => {
     // Then
     expect(line).toBe("hermes agent: already registered");
     expect(readFileSync(path, "utf8")).toBe(text);
+  });
+
+  it("an unreadable hermes config fails by hand instead of overwriting", async () => {
+    // Given: ~/.hermes/config.yaml exists but cannot be read
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "model: nous-1\n");
+    chmodSync(path, 0o000);
+    // When
+    const line = await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    chmodSync(path, 0o644);
+    // Then
+    expect(line).toBe(
+      `hermes agent: failed. run by hand: ${manualCommand.hermes}`,
+    );
+    expect(readFileSync(path, "utf8")).toBe("model: nous-1\n");
   });
 
   it("the checklist registers the ticked hosts", async () => {

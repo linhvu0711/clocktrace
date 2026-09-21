@@ -44,9 +44,17 @@ if (command === null) {
   console.error(usage);
   process.exitCode = 1;
 } else if (typeof command === "object") {
-  runSetup(
-    command.hosts.filter((h): h is HostName => hostNames.some((n) => n === h)),
-  );
+  const invalid = command.hosts.filter((h) => hostNames.every((n) => n !== h));
+  if (command.hosts.length === 0 || invalid.length > 0) {
+    console.error(
+      invalid.length > 0
+        ? `unknown host: ${invalid.join(", ")}\n${usage}`
+        : usage,
+    );
+    process.exitCode = 1;
+  } else {
+    runSetup(command.hosts as ReadonlyArray<HostName>);
+  }
 } else if (command === "help") {
   console.log(usage);
 } else if (command === "version") {

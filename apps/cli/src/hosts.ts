@@ -110,10 +110,10 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
     const exists = yield* fs
       .exists(path)
       .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    const text = exists
-      ? yield* fs.readFileString(path).pipe(Effect.orElseSucceed(() => ""))
-      : "";
-    const doc = parseDocument(text === "" ? "{}" : text);
+    const text = exists ? yield* fs.readFileString(path) : "";
+    const doc = yield* Effect.sync(() =>
+      parseDocument(text === "" ? "{}" : text),
+    );
     if (doc.getIn(["mcp_servers", "clocktrace"]) !== undefined) {
       return `${hostLabel.hermes}: already registered`;
     }
@@ -121,13 +121,20 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
       command: "clocktrace",
       args: ["mcp"],
     });
-    yield* fs
-      .makeDirectory(join(homedir(), ".hermes"), { recursive: true })
-      .pipe(Effect.orDie);
-    yield* fs.writeFileString(path, doc.toString()).pipe(Effect.orDie);
+    yield* fs.makeDirectory(join(homedir(), ".hermes"), { recursive: true });
+    const tmp = `${path}.tmp`;
+    yield* fs.writeFileString(tmp, doc.toString()).pipe(
+      Effect.andThen(fs.rename(tmp, path)),
+      Effect.tapError(() => fs.remove(tmp).pipe(Effect.ignore)),
+    );
     return `${hostLabel.hermes}: registered`;
   }).pipe(
     Effect.catchAll(() =>
+      Effect.succeed(
+        `${hostLabel.hermes}: failed. run by hand: ${manualCommand.hermes}`,
+      ),
+    ),
+    Effect.catchAllDefect(() =>
       Effect.succeed(
         `${hostLabel.hermes}: failed. run by hand: ${manualCommand.hermes}`,
       ),
