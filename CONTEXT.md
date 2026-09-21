@@ -14,6 +14,14 @@ _Avoid_: Event, session, entry, log
 The background process that watches the Mac and writes Activities. Runs as a per-user launchd agent.
 _Avoid_: Tracker, daemon, watcher, recorder
 
+**Installed**:
+The Collector's plist file exists in `~/Library/LaunchAgents`. Distinct from Loaded: a stopped Collector is still installed. `setup` and `requireSetUp` treat installed-but-stopped as set up.
+_Avoid_: Set up, present, configured
+
+**Loaded**:
+The Collector is bootstrapped into launchd and can run. `setup` installs and then loads; a failed load leaves the Collector installed but not loaded.
+_Avoid_: Running, started, active, bootstrapped
+
 **Helper**:
 The small native Swift binary the Collector runs for every read that needs a macOS permission: frontmost app, window title, browser URL, idle seconds, and the Biome stream files.
 _Avoid_: Native module, bridge, agent
