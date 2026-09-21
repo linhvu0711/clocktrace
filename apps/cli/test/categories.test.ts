@@ -20,7 +20,7 @@ const EmptyStore = Layer.scoped(
 );
 
 const runPrint = <A, E, ELayer>(
-  layer: Layer.Layer<Store, ELayer, Scope>,
+  layer: Layer.Layer<Store, ELayer, Scope.Scope>,
   body: Effect.Effect<A, E, Store | Prompt>,
 ) =>
   Effect.runPromise(
