@@ -47,6 +47,9 @@ export interface StoreShape {
   readonly insertRule: (
     input: NewRule,
   ) => Effect.Effect<Rule, ParseError | StoreError>;
+  readonly insertRuleIfAbsent: (
+    input: Omit<NewRule, "position">,
+  ) => Effect.Effect<Rule, ParseError | StoreError>;
   readonly listRules: () => Effect.Effect<ReadonlyArray<Rule>, StoreError>;
   readonly deleteRule: (id: string) => Effect.Effect<boolean, StoreError>;
   readonly getSetting: (

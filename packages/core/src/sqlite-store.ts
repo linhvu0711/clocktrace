@@ -329,6 +329,38 @@ export const openStore = (
         });
       });
 
+    const insertRuleIfAbsent: StoreShape["insertRuleIfAbsent"] = (input) =>
+      Effect.gen(function* () {
+        const rule = yield* Schema.validate(NewRuleSchema)({
+          ...input,
+          position: 0,
+        });
+        return yield* Effect.try({
+          try: () =>
+            db
+              .transaction(() => {
+                const rules = selectRules.all() as ReadonlyArray<Rule>;
+                const duplicate = rules.find(
+                  (row) =>
+                    row.field === rule.field &&
+                    row.compare === rule.compare &&
+                    row.value === rule.value &&
+                    row.effect === rule.effect &&
+                    row.target === rule.target,
+                );
+                if (duplicate) {
+                  return duplicate;
+                }
+                const id = randomUUID();
+                const inserted = { id, ...rule, position: rules.length };
+                insertRuleStatement.run(inserted);
+                return inserted;
+              })
+              .immediate(),
+          catch: (cause) => new StoreError({ cause }),
+        });
+      });
+
     const listRules: StoreShape["listRules"] = () =>
       Effect.try({
         try: () => selectRules.all() as ReadonlyArray<Rule>,
@@ -423,6 +455,7 @@ export const openStore = (
       listProjects,
       updateProject,
       insertRule,
+      insertRuleIfAbsent,
       listRules,
       deleteRule,
       getSetting,
