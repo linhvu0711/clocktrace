@@ -58,6 +58,17 @@ export const addRule = (
       }
     }
     const rules = yield* store.listRules();
+    const duplicate = rules.find(
+      (row) =>
+        row.field === input.field &&
+        row.compare === input.compare &&
+        row.value === input.value &&
+        row.effect === input.effect &&
+        row.target === target,
+    );
+    if (duplicate) {
+      return duplicate;
+    }
     return yield* store.insertRule({
       ...input,
       target,
