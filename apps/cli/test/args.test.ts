@@ -35,6 +35,22 @@ describe("args", () => {
     ]);
   });
 
+  it("setup --hosts parses the csv into named hosts", () => {
+    // Given: the argv ["setup", "--hosts", "claude,codex"]
+    // When
+    const command = parseArgs(["setup", "--hosts", "claude,codex"]);
+    // Then
+    expect(command).toEqual({ command: "setup", hosts: ["claude", "codex"] });
+  });
+
+  it("setup --hosts without a csv parses to null", () => {
+    // Given: the argv ["setup", "--hosts"]
+    // When
+    const command = parseArgs(["setup", "--hosts"]);
+    // Then
+    expect(command).toBe(null);
+  });
+
   it("trailing arguments parse to null", () => {
     // Given: the argv ["setup", "--help"], ["status", "extra"]
     // When

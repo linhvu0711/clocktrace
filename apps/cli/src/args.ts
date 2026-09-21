@@ -12,9 +12,21 @@ export type CommandName = (typeof commands)[number];
 export const usage =
   "usage: clocktrace (setup | start | stop | status | permissions | mcp | --version)";
 
+export interface SetupArgs {
+  readonly command: "setup";
+  readonly hosts: ReadonlyArray<string>;
+}
+
 export const parseArgs = (
   argv: ReadonlyArray<string>,
-): CommandName | "version" | "help" | null => {
+): CommandName | SetupArgs | "version" | "help" | null => {
+  if (argv.length === 3 && argv[0] === "setup" && argv[1] === "--hosts") {
+    const hosts = (argv[2] ?? "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter((h) => h !== "");
+    return { command: "setup", hosts };
+  }
   if (argv.length !== 1) {
     return null;
   }
