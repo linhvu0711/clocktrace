@@ -133,6 +133,8 @@ describe("start and stop", () => {
       new App({
         isInstalled: () => Effect.succeed(false),
         install: () => Effect.succeed("written" as const),
+        commit: () => Effect.void,
+        rollback: () => Effect.void,
       }),
     );
     // When

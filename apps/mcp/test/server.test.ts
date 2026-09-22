@@ -1319,6 +1319,8 @@ describe("server", () => {
       new App({
         isInstalled: () => Effect.succeed(false),
         install: () => Effect.succeed("written" as const),
+        commit: () => Effect.void,
+        rollback: () => Effect.void,
       }),
     );
     const { client, close } = await connect(

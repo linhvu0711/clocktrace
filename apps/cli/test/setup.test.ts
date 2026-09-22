@@ -93,14 +93,21 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
 } satisfies CommandExecutor.CommandExecutor);
 
 // Tracks how many bundles were written; isInstalled flips true after
-// the first install, like the real app on disk.
-const fakeApp = (installs: Ref.Ref<number>) =>
+// the first install, like the real app on disk. commit and rollback
+// count the calls setup makes around the running check.
+const fakeApp = (
+  installs: Ref.Ref<number>,
+  committed: Ref.Ref<number>,
+  rolledBack: Ref.Ref<number>,
+) =>
   Layer.succeed(
     App,
     new App({
       isInstalled: () => Effect.map(Ref.get(installs), (n) => n > 0),
       install: () =>
         Ref.update(installs, (n) => n + 1).pipe(Effect.as("written" as const)),
+      commit: () => Ref.update(committed, (n) => n + 1),
+      rollback: () => Ref.update(rolledBack, (n) => n + 1),
     }),
   );
 
@@ -157,6 +164,8 @@ describe("setup", () => {
         }
         const state = yield* Ref.make(launchdState);
         const appInstalls = yield* Ref.make(0);
+        const appCommits = yield* Ref.make(0);
+        const appRollbacks = yield* Ref.make(0);
         const layers = Layer.mergeAll(
           Console.setConsole(console),
           NodeContext.layer,
@@ -167,7 +176,7 @@ describe("setup", () => {
             : Layer.succeed(Stdin, new Stdin({ isTTY: Effect.succeed(false) })),
           fakeLaunchd(state, opts.launchd),
           helperLayer,
-          opts.app ?? fakeApp(appInstalls),
+          opts.app ?? fakeApp(appInstalls, appCommits, appRollbacks),
           Hosts.Default,
           noCommandsLayer,
           Style.Test,
@@ -181,6 +190,8 @@ describe("setup", () => {
           shown: yield* terminal.shown,
           state: yield* Ref.get(state),
           appInstalls: yield* Ref.get(appInstalls),
+          appCommits: yield* Ref.get(appCommits),
+          appRollbacks: yield* Ref.get(appRollbacks),
         };
       }).pipe(
         Effect.withConfigProvider(
@@ -215,7 +226,7 @@ describe("setup", () => {
   it("setup writes the app, installs the Collector, walks the permissions, and prints the manual commands", async () => {
     // Given: no plist and no database file
     // When
-    const { exit, output, state, appInstalls } = await run(
+    const { exit, output, state, appInstalls, appCommits } = await run(
       helperStub(allGranted),
       {
         installed: false,
@@ -232,6 +243,7 @@ describe("setup", () => {
       ...expectedWalk(),
     ]);
     expect(appInstalls).toBe(1);
+    expect(appCommits).toBe(1);
     expect(existsSync(path)).toBe(true);
     expect(state.installed).toBe(true);
     expect(state.running).toBe(true);
@@ -373,7 +385,7 @@ describe("setup", () => {
   it("a rewrite that never starts puts the previous agent back", async () => {
     // Given: the plist present, not loaded; the load returns success but the
     // Collector never comes up (launchctl bootstrap exit 5 on a bad plist)
-    const { exit, output, state } = await run(
+    const { exit, output, state, appCommits, appRollbacks } = await run(
       helperStub(allGranted),
       { installed: true, running: false, plist: "<plist>", installs: 1 },
       "/stub",
@@ -395,6 +407,8 @@ describe("setup", () => {
     expect(state.plist).toBe("<plist>");
     expect(state.installed).toBe(true);
     expect(state.installs).toBe(3);
+    expect(appRollbacks).toBe(1);
+    expect(appCommits).toBe(0);
   });
 
   it("setup tolerates a slow startup and then succeeds", async () => {
@@ -458,6 +472,8 @@ describe("setup", () => {
         isInstalled: () => Effect.succeed(false),
         install: () =>
           Effect.fail(new AppError({ step: "codesign", detail: "exit 1" })),
+        commit: () => Effect.void,
+        rollback: () => Effect.void,
       }),
     );
     // When

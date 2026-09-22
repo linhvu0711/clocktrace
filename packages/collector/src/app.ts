@@ -91,6 +91,7 @@ export class App extends Effect.Service<App>()("App", {
       );
     const fsError = (step: string) => (e: { readonly message: string }) =>
       new AppError({ step, detail: e.message });
+    const rollback = `${appPath}.old`;
     return {
       isInstalled: () => fs.exists(appMainPath).pipe(Effect.orDie),
       install: (helperPath: string) =>
@@ -154,8 +155,8 @@ export class App extends Effect.Service<App>()("App", {
             return "written" as const;
           });
           // The live app moves aside first so a failed staging rename puts
-          // it back; the rollback is deleted once the new app is in place.
-          const rollback = `${appPath}.old`;
+          // it back; a landed rename keeps the rollback until the caller
+          // commits or rolls it back.
           const result = yield* build.pipe(
             Effect.flatMap((r) =>
               fs.remove(rollback, { recursive: true, force: true }).pipe(
@@ -177,14 +178,6 @@ export class App extends Effect.Service<App>()("App", {
                     Effect.mapError(fsError(`rename ${staging}`)),
                     Effect.tapError(() =>
                       Effect.ignore(fs.rename(rollback, appPath)),
-                    ),
-                    Effect.tap(() =>
-                      Effect.ignore(
-                        fs.remove(rollback, {
-                          recursive: true,
-                          force: true,
-                        }),
-                      ),
                     ),
                   ),
                 ),
@@ -211,6 +204,42 @@ export class App extends Effect.Service<App>()("App", {
           }
           return result;
         }),
+      // install leaves .old behind so a caller that finds the new bundle
+      // broken can put the previous app back; commit deletes it once the
+      // new Collector is running.
+      commit: () =>
+        fs
+          .remove(rollback, { recursive: true, force: true })
+          .pipe(Effect.mapError(fsError(`write ${rollback}`))),
+      // rename refuses to replace a non-empty directory, so the broken
+      // bundle is removed first; a failed rename leaves .old in place.
+      rollback: () =>
+        Effect.gen(function* () {
+          const has = yield* fs
+            .exists(rollback)
+            .pipe(Effect.mapError(fsError(`read ${rollback}`)));
+          if (!has) {
+            return;
+          }
+          yield* fs
+            .remove(appPath, { recursive: true, force: true })
+            .pipe(Effect.mapError(fsError(`remove ${appPath}`)));
+          yield* fs
+            .rename(rollback, appPath)
+            .pipe(Effect.mapError(fsError(`rename ${rollback}`)));
+          const registered = yield* exit(
+            "lsregister",
+            lsregisterPath,
+            "-f",
+            appPath,
+          );
+          if (registered !== 0) {
+            return yield* new AppError({
+              step: "lsregister",
+              detail: `exit ${registered}`,
+            });
+          }
+        }).pipe(Effect.asVoid),
     };
   }),
   dependencies: [NodeContext.layer],
@@ -221,6 +250,8 @@ export class App extends Effect.Service<App>()("App", {
     new App({
       isInstalled: () => Effect.succeed(true),
       install: () => Effect.succeed("written" as const),
+      commit: () => Effect.void,
+      rollback: () => Effect.void,
     }),
   );
 }

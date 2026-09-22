@@ -238,7 +238,7 @@ describe("App.install", () => {
     const { result, mod } = await runApp(ADHOC, (app) =>
       app.install(helperPath),
     );
-    // Then
+    // Then: the new bundle is in place and the previous one waits in .old
     expect(result).toEqual(Exit.succeed("written"));
     expect(
       readFileSync(join(appHome, "Contents", "MacOS", "Clocktrace"), "utf8"),
@@ -246,7 +246,36 @@ describe("App.install", () => {
     expect(existsSync(join(appHome, "Contents", "stale"))).toBe(false);
     expect(existsSync(join(mod.appPath, "Contents", "stale"))).toBe(false);
     expect(existsSync(`${mod.appPath}.new`)).toBe(false);
+    expect(existsSync(`${mod.appPath}.old`)).toBe(true);
+    // When: the install is committed
+    const committed = await runApp(ADHOC, (app) => app.commit());
+    // Then: the rollback copy is gone
+    expect(committed.result).toEqual(Exit.succeed(undefined));
     expect(existsSync(`${mod.appPath}.old`)).toBe(false);
+  });
+
+  it("rollback puts the previous app back", async () => {
+    // Given: a first install with the old helper; the helper rebuilt
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    writeFileSync(helperPath, "helper-bytes-2");
+    // When: a second install lands and is rolled back
+    const { result, commands, mod } = await runApp(ADHOC, (app) =>
+      Effect.gen(function* () {
+        yield* app.install(helperPath);
+        yield* app.rollback();
+      }),
+    );
+    // Then: the previous bundle is back, .old is gone, and the restored
+    // app is registered again
+    expect(result).toEqual(Exit.succeed(undefined));
+    expect(
+      readFileSync(
+        join(mod.appPath, "Contents", "MacOS", "Clocktrace"),
+        "utf8",
+      ),
+    ).toBe("helper-bytes");
+    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
+    expect(commands.at(-1)).toEqual([mod.lsregisterPath, "-f", mod.appPath]);
   });
 
   it("install copies a built app next to the Helper whole and signs nothing", async () => {
