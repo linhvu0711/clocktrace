@@ -11,7 +11,17 @@ export type Span = { readonly text: string; readonly tone?: Tone };
 
 export type Cell = string | Span | ReadonlyArray<string | Span>;
 
-export type Look = { readonly color: boolean; readonly unicode: boolean };
+export type Look = {
+  readonly color: boolean;
+  readonly unicode: boolean;
+  /** Terminal columns; 0 when stdout is not a TTY, and nothing is cut. */
+  readonly width: number;
+};
+
+export type ColumnsOptions = {
+  /** What to do with a last cell wider than the room `Look.width` leaves. */
+  readonly overflow?: "truncate";
+};
 
 const ansi: Record<Tone, Ansi.Ansi> = {
   ok: Ansi.green,
@@ -76,24 +86,96 @@ export const shortPath = (path: string, home: string): string =>
 const visible = (cell: Cell): number =>
   spans(cell).reduce((n, s) => n + stringWidth(s.text), 0);
 
+type Grapheme = {
+  readonly text: string;
+  readonly tone: Tone | undefined;
+  readonly width: number;
+};
+
+const segmenter = new Intl.Segmenter();
+
+const graphemes = (cell: Cell): ReadonlyArray<Grapheme> =>
+  spans(cell).flatMap((s) =>
+    Array.from(segmenter.segment(s.text), ({ segment }) => ({
+      text: segment,
+      tone: s.tone,
+      width: stringWidth(segment),
+    })),
+  );
+
+const regroup = (gs: ReadonlyArray<Grapheme>): ReadonlyArray<Span> => {
+  const out: Array<Span> = [];
+  for (const g of gs) {
+    const last = out[out.length - 1];
+    if (last !== undefined && last.tone === g.tone) {
+      out[out.length - 1] = { ...last, text: last.text + g.text };
+    } else {
+      out.push(
+        g.tone === undefined
+          ? { text: g.text }
+          : { text: g.text, tone: g.tone },
+      );
+    }
+  }
+  return out;
+};
+
+const take = (
+  gs: ReadonlyArray<Grapheme>,
+  room: number,
+): ReadonlyArray<Grapheme> => {
+  const out: Array<Grapheme> = [];
+  let used = 0;
+  for (const g of gs) {
+    if (used + g.width > room) {
+      break;
+    }
+    out.push(g);
+    used += g.width;
+  }
+  return out;
+};
+
+const cut = (cell: Cell, room: number, look: Look): ReadonlyArray<Span> => {
+  const ellipsis = look.unicode ? "…" : "...";
+  const e = stringWidth(ellipsis);
+  const gs = graphemes(cell);
+  return e > room
+    ? regroup(take(gs, room))
+    : [...regroup(take(gs, room - e)), { text: ellipsis }];
+};
+
 export const columns = (
   rows: ReadonlyArray<ReadonlyArray<Cell>>,
   look: Look,
+  _options: ColumnsOptions = {},
 ): ReadonlyArray<string> => {
-  const widthAt = (i: number): number =>
-    Math.max(...rows.map((r) => visible(r[i] ?? ""))) + 2;
-  return rows.map((r) =>
-    r
-      .map((cell, i) => {
-        const rendered = spans(cell)
-          .map((s) => renderSpan(s, look))
-          .join("");
-        return i < r.length - 1
-          ? rendered + " ".repeat(widthAt(i) - visible(cell))
-          : rendered;
-      })
-      .join(""),
-  );
+  const widest = (i: number): number =>
+    Math.max(...rows.map((r) => visible(r[i] ?? "")));
+  const render = (ss: ReadonlyArray<Span>): string =>
+    ss.map((s) => renderSpan(s, look)).join("");
+  return rows.map((r) => {
+    const last = r.length - 1;
+    const cell = r[last];
+    if (cell === undefined) {
+      return "";
+    }
+    const lead = r.slice(0, last);
+    const start = lead.reduce((n, _, i) => n + widest(i) + 2, 0);
+    const head = lead
+      .map(
+        (c, i) => render(spans(c)) + " ".repeat(widest(i) - visible(c)) + "  ",
+      )
+      .join("");
+    const room = look.width - start;
+    if (look.width === 0 || visible(cell) <= room) {
+      return head + render(spans(cell));
+    }
+    if (room <= 0) {
+      return head;
+    }
+    return head + render(cut(cell, room, look));
+  });
 };
 
 export const clock = (t: DateTime.Utc, now: DateTime.Zoned): string => {
@@ -135,6 +217,7 @@ export class Style extends Effect.Service<Style>()("Style", {
   effect: Effect.gen(function* () {
     const terminal = yield* Terminal.Terminal;
     const isTTY = yield* terminal.isTTY;
+    const width = yield* terminal.columns;
     const noColor = yield* Effect.orDie(
       Config.option(Config.string("NO_COLOR")),
     );
@@ -142,10 +225,14 @@ export class Style extends Effect.Service<Style>()("Style", {
     return {
       color: colorEnabled(isTTY, noColor),
       unicode: unicodeEnabled(term),
+      width,
     };
   }),
   dependencies: [NodeContext.layer],
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
-  static Test = Layer.succeed(this, new Style({ color: false, unicode: true }));
+  static Test = Layer.succeed(
+    this,
+    new Style({ color: false, unicode: true, width: 0 }),
+  );
 }

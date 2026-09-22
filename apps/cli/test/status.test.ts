@@ -333,7 +333,10 @@ describe("status", () => {
           Prompt.Default,
           fakeLaunchd(state),
           helperStub(allGranted),
-          Layer.succeed(Style, new Style({ color: true, unicode: true })),
+          Layer.succeed(
+            Style,
+            new Style({ color: true, unicode: true, width: 0 }),
+          ),
         );
         const exit = yield* Effect.exit(status().pipe(Effect.provide(layers)));
         const output = yield* console.getLines();
