@@ -67,6 +67,8 @@ describe("run", () => {
                 fullDiskAccess: "granted",
               }),
             request: () => Effect.succeed("asked"),
+            biomeDevices: () => Effect.succeed([]),
+            biomeRecords: () => Effect.succeed([]),
             lines: () =>
               Stream.fromEffect(
                 Ref.updateAndGet(count, (n) => n + 1).pipe(

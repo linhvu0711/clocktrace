@@ -1,3 +1,4 @@
+export * from "./biome-line.js";
 export * from "./collector.js";
 export * from "./config.js";
 export * from "./helper.js";

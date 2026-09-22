@@ -40,6 +40,8 @@ const helperStub = (p: Permissions) =>
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(p),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 
@@ -51,6 +53,8 @@ const helperMissing = (missingPath: string) =>
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(allGranted),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 
@@ -62,6 +66,8 @@ const helperExits = (cause: unknown) =>
       lines: () => Stream.empty,
       permissions: () => Effect.fail(new HelperExitedError({ cause })),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 

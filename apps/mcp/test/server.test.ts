@@ -160,6 +160,8 @@ const stubHelper = (p: Permissions) =>
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(p),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 
@@ -1158,6 +1160,8 @@ describe("server", () => {
         permissions: () =>
           Effect.fail(new HelperExitedError({ cause: "boom" })),
         request: () => Effect.succeed("asked"),
+        biomeDevices: () => Effect.succeed([]),
+        biomeRecords: () => Effect.succeed([]),
       }),
     );
     const { client, close } = await connect(
@@ -1187,6 +1191,8 @@ describe("server", () => {
             fullDiskAccess: "granted",
           }),
         request: () => Effect.succeed("asked"),
+        biomeDevices: () => Effect.succeed([]),
+        biomeRecords: () => Effect.succeed([]),
       }),
     );
     const { client, close } = await connect(

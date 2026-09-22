@@ -1,6 +1,6 @@
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Layer, Stream } from "effect";
+import { Chunk, Data, Effect, Either, Layer, Option, Stream } from "effect";
 
 import {
   decodePermissions,
@@ -26,10 +26,64 @@ export class HelperExitedError extends Data.TaggedError("HelperExitedError")<{
   }
 }
 
+export class BiomeExitError extends Data.TaggedError("BiomeExitError")<{
+  readonly code: number;
+  readonly stderr: string;
+}> {
+  override get message(): string {
+    return `helper biome exited ${this.code}: ${this.stderr.trim()}`;
+  }
+}
+
+export const biomeResult = (
+  code: number,
+  lines: ReadonlyArray<string>,
+  stderr: string,
+): Either.Either<ReadonlyArray<string>, BiomeExitError> =>
+  code === 0
+    ? Either.right(lines.filter((l) => l !== ""))
+    : Either.left(new BiomeExitError({ code, stderr }));
+
 export class Helper extends Effect.Service<Helper>()("Helper", {
   effect: Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const executor = yield* CommandExecutor.CommandExecutor;
+    const runBiome = (
+      command: Command.Command,
+    ): Effect.Effect<
+      ReadonlyArray<string>,
+      HelperExitedError | BiomeExitError
+    > =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const process = yield* executor.start(command);
+          const [lines, stderr, code] = yield* Effect.all(
+            [
+              process.stdout.pipe(
+                Stream.decodeText(),
+                Stream.splitLines,
+                Stream.runCollect,
+                Effect.map(Chunk.toReadonlyArray),
+              ),
+              process.stderr.pipe(
+                Stream.decodeText(),
+                Stream.runCollect,
+                Effect.map((chunk) => Chunk.toReadonlyArray(chunk).join("")),
+              ),
+              process.exitCode,
+            ],
+            { concurrency: "unbounded" },
+          );
+          return yield* biomeResult(code, lines, stderr);
+        }),
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            cause instanceof BiomeExitError
+              ? cause
+              : new HelperExitedError({ cause }),
+        ),
+      );
     return {
       check: (path: string) =>
         fs.exists(path).pipe(
@@ -81,6 +135,20 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
                   ),
           ),
         ),
+      biomeDevices: (path: string) =>
+        runBiome(Command.make(path, "biome", "devices")),
+      biomeRecords: (path: string, since: Option.Option<number>) =>
+        runBiome(
+          Command.make(
+            path,
+            "biome",
+            "records",
+            ...Option.match(since, {
+              onNone: () => [] as ReadonlyArray<string>,
+              onSome: (s) => ["--since", String(Math.floor(s))],
+            }),
+          ),
+        ),
     };
   }),
   dependencies: [NodeContext.layer],
@@ -98,6 +166,8 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
           fullDiskAccess: "granted",
         }),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 }
