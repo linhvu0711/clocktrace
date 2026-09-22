@@ -58,7 +58,12 @@ export const printRemovedCategory = (
 
 const id = Options.text("id").pipe(Options.optional);
 const name = Options.text("name");
-const productive = Options.boolean("productive");
+const productive = Options.choice("productive", ["true", "false"]).pipe(
+  Options.optional,
+  Options.withDescription(
+    "true or false; on an update, leaving it out keeps the current value",
+  ),
+);
 const idArg = Args.text({ name: "id" });
 
 const listCommand = Command.make("list", { json: jsonOption }, ({ json }) =>
@@ -68,8 +73,19 @@ const listCommand = Command.make("list", { json: jsonOption }, ({ json }) =>
 const setCommand = Command.make(
   "set",
   { id, name, productive, json: jsonOption },
-  ({ id, json, ...rest }) =>
-    whenSetUp(printSetCategory({ ...rest, id: Option.getOrNull(id) }, json)),
+  ({ id, name, productive, json }) =>
+    whenSetUp(
+      printSetCategory(
+        {
+          id: Option.getOrNull(id),
+          name,
+          productive: Option.getOrUndefined(
+            Option.map(productive, (p) => p === "true"),
+          ),
+        },
+        json,
+      ),
+    ),
 );
 
 const removeCommand = Command.make(

@@ -53,6 +53,13 @@ export const starterRules: ReadonlyArray<StarterRule> = [
     effect: "private",
     category: null,
   },
+  {
+    field: "title",
+    compare: "ends with",
+    value: "(Private)",
+    effect: "private",
+    category: null,
+  },
   site("github.com", "Coding"),
   site("gitlab.com", "Coding"),
   site("stackoverflow.com", "Coding"),

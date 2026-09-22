@@ -142,6 +142,96 @@ describe("categories", () => {
     }
   });
 
+  it("set --id keeps productive when the flag is omitted", async () => {
+    // Given: a productive Category named Coding
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const c = yield* setCategory({
+          id: null,
+          name: "Coding",
+          productive: true,
+        });
+        // When: a rename that leaves out productive, then list
+        yield* printSetCategory({ id: c.id, name: "Code" }, false);
+        yield* printCategories(false);
+        return c;
+      }),
+    );
+    // Then: set and list both show it still productive
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const line = `${exit.value.id}  Code  productive`;
+      expect(output[0]).toBe(line);
+      expect(output.slice(1)).toEqual([line]);
+    }
+  });
+
+  it("set --id --productive false turns the flag off", async () => {
+    // Given: a productive Category named Coding
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const c = yield* setCategory({
+          id: null,
+          name: "Coding",
+          productive: true,
+        });
+        // When
+        yield* printSetCategory(
+          { id: c.id, name: "Code", productive: false },
+          false,
+        );
+        return c;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output[0]).toBe(`${exit.value.id}  Code  not productive`);
+    }
+  });
+
+  it("set with no id defaults to not productive and --productive true makes it productive", async () => {
+    // Given: an empty store
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        // When: a create with no flag, then a create with --productive true
+        yield* printSetCategory({ id: null, name: "Reading" }, false);
+        yield* printSetCategory(
+          { id: null, name: "Focus", productive: true },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output[0]?.slice(38)).toBe("Reading  not productive");
+    expect(output[1]?.slice(38)).toBe("Focus  productive");
+  });
+
+  it("set --id unknown with no flag names the id", async () => {
+    // Given: an empty store
+    // When: an update with no flag on an id that does not exist
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      printSetCategory(
+        { id: "00000000-0000-4000-8000-000000000077", name: "X" },
+        false,
+      ),
+    );
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      const error = exit.cause.error as CategoryNotFoundError;
+      expect(error.message).toBe(
+        "category 00000000-0000-4000-8000-000000000077 not found",
+      );
+    }
+    expect(output).toEqual([]);
+  });
+
   it("set with an unknown id names the id", async () => {
     // Given: an empty store
     // When

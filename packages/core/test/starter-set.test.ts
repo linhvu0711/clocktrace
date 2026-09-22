@@ -342,4 +342,24 @@ describe("starter set", () => {
     // Then
     expect(result.private).toBe(false);
   });
+
+  it('seeds a Private rule for "(Private)"', async () => {
+    // Given: a fresh open
+    const rules = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return yield* store.listRules();
+      }),
+    );
+    // When
+    const privateValues = rules
+      .filter((r) => r.effect === "private")
+      .map((r) => r.value);
+    // Then
+    expect(privateValues).toEqual([
+      "(Incognito)",
+      "Private Browsing",
+      "(Private)",
+    ]);
+  });
 });
