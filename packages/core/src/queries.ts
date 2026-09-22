@@ -117,6 +117,7 @@ const loadRange = (input: {
         { concurrency: 1 },
       ),
     );
+    const categories = yield* store.listCategories();
     return {
       rows: stored.map((activity) => {
         const info = resolved.get(activity.bundleId) ?? null;
@@ -127,6 +128,8 @@ const loadRange = (input: {
             activity,
             rules,
             deviceById.get(activity.deviceId) ?? null,
+            info?.genre ?? null,
+            categories,
           ),
           ms:
             Math.min(activity.endedAt.epochMillis, to.epochMillis) -
@@ -135,7 +138,7 @@ const loadRange = (input: {
       }),
       from,
       to,
-      categories: yield* store.listCategories(),
+      categories,
       projects: yield* store.listProjects(),
       devices,
     };

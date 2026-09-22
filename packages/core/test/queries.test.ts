@@ -442,6 +442,41 @@ describe("timeline", () => {
     expect(isoBlocks(result).map((b) => b.app)).toEqual(["Bluesky"]);
   });
 
+  it("an iOS Activity without a Rule lands in the genre Category", async () => {
+    // Given: seedIphone with an unmapped id, a Social category, no rules
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedIphone(store, "com.burbn.instagram");
+        yield* store.insertCategory({
+          name: "Social",
+          productive: false,
+        });
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        }).pipe(
+          Effect.provide(
+            Layer.succeed(
+              AppStore,
+              new AppStore({
+                lookup: () =>
+                  Effect.succeed(
+                    Option.some({
+                      name: "Instagram",
+                      genre: "Social Networking",
+                    }),
+                  ),
+              }),
+            ),
+          ),
+        );
+      }),
+    );
+    // Then
+    expect(isoBlocks(result).map((b) => b.categoryName)).toEqual(["Social"]);
+  });
+
   it("an unmapped iOS bundle id keeps its bundle id", async () => {
     // Given: seedIphone with an unmapped bundle id
     const result = await run(

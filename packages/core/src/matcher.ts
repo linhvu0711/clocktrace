@@ -1,6 +1,8 @@
 import { Schema } from "effect";
 
 import type { NewActivity } from "./activity.js";
+import { genreCategories } from "./app-store-genres.js";
+import type { Category } from "./category.js";
 import type { Device } from "./device.js";
 import type { Rule } from "./rule.js";
 
@@ -84,12 +86,19 @@ export const resolve = (
   activity: NewActivity,
   rules: ReadonlyArray<Rule>,
   device: Device | null,
+  genre: string | null = null,
+  categories: ReadonlyArray<Category> = [],
 ): Resolution => {
   const sorted = [...rules].sort((a, b) => a.position - b.position);
   const first = (effect: Rule["effect"]) =>
     sorted.find((r) => r.effect === effect && matches(r, activity, device));
   return {
-    categoryId: first("category")?.target ?? null,
+    categoryId:
+      first("category")?.target ??
+      (genre === null
+        ? null
+        : (categories.find((c) => c.name === genreCategories[genre])?.id ??
+          null)),
     projectId: first("project")?.target ?? null,
     private: first("private") !== undefined,
   };

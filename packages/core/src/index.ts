@@ -1,6 +1,7 @@
 export * from "./activity.js";
 export * from "./app-names.js";
 export * from "./app-store.js";
+export * from "./app-store-genres.js";
 export * from "./categories.js";
 export * from "./category.js";
 export * from "./device.js";
