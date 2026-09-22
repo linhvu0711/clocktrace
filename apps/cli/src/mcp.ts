@@ -21,6 +21,12 @@ export const startMcp = (
   Effect.tryPromise({
     try: serve,
     catch: (cause) => new McpStartupError({ cause }),
-  });
+  }).pipe(
+    Effect.tap(() =>
+      Effect.sync(() => {
+        console.error("clocktrace mcp: serving on stdio");
+      }),
+    ),
+  );
 
 export const mcpCommand = Command.make("mcp", {}, () => startMcp());

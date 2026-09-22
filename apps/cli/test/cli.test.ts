@@ -183,7 +183,7 @@ describe("cli", () => {
     // When
     const { exit } = await runArgv(argv);
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
   });
 
   it("categories list before setup fails not set up", async () => {
@@ -192,7 +192,7 @@ describe("cli", () => {
     // When
     const { exit } = await runArgv(argv);
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
   });
 
   it("projects list before setup fails not set up", async () => {
@@ -201,7 +201,7 @@ describe("cli", () => {
     // When
     const { exit } = await runArgv(argv);
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
   });
 
   it("a bad compare is a validation error", async () => {
@@ -282,7 +282,7 @@ describe("cli", () => {
     // When
     const { exit } = await runArgv(argv);
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
   });
 
   it("timeline before setup fails not set up", async () => {
@@ -299,7 +299,7 @@ describe("cli", () => {
     // When
     const { exit } = await runArgv(argv);
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
   });
 
   it("activities before setup fails not set up", async () => {
@@ -316,7 +316,7 @@ describe("cli", () => {
     // When
     const { exit } = await runArgv(argv);
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
   });
 
   it("a known command dispatches", async () => {
@@ -325,6 +325,6 @@ describe("cli", () => {
     // When
     const { exit } = await runArgv(argv);
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
   });
 });

@@ -80,7 +80,7 @@ export class LaunchdError extends Data.TaggedError("LaunchdError")<{
   readonly detail: string;
 }> {
   override get message(): string {
-    return `${this.step}: ${this.detail}`;
+    return `${this.step}: ${this.detail} · see ${logPath}`;
   }
 }
 

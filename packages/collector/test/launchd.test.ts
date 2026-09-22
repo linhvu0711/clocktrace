@@ -12,6 +12,7 @@ import {
   Launchd,
   LaunchdError,
   type LaunchdState,
+  logPath,
   stateFromPrint,
 } from "../src/launchd.js";
 
@@ -50,6 +51,20 @@ describe("stateFromPrint", () => {
     const state = stateFromPrint([]);
     // Then
     expect(state).toBe("stopped");
+  });
+});
+
+describe("LaunchdError", () => {
+  it("names step, detail, and the log path", () => {
+    // Given: a bootstrap failure
+    const error = new LaunchdError({
+      step: "launchctl bootstrap",
+      detail: "exit 1",
+    });
+    // When
+    const message = error.message;
+    // Then
+    expect(message).toBe(`launchctl bootstrap: exit 1 · see ${logPath}`);
   });
 });
 

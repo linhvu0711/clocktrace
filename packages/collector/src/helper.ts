@@ -14,7 +14,7 @@ export class HelperNotFoundError extends Data.TaggedError(
   readonly path: string;
 }> {
   override get message(): string {
-    return `helper not found at ${this.path}`;
+    return `helper not found at ${this.path} · run pnpm build or set CLOCKTRACE_HELPER`;
   }
 }
 
