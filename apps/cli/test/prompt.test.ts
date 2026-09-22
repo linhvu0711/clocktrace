@@ -1,4 +1,9 @@
-import type { CommandExecutor, FileSystem, Path, Terminal } from "@effect/platform";
+import type {
+  CommandExecutor,
+  FileSystem,
+  Path,
+  Terminal,
+} from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Console, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
@@ -57,10 +62,13 @@ describe("Prompt", () => {
   it("confirm returns the default on Enter", async () => {
     // Given: an Enter keypress at a (Y/n) confirm
     // When
-    const { exit, shown } = await run([{ key: "enter" }], true, Effect.flatMap(
-      Prompt,
-      (prompt) => prompt.confirm({ message: "Allow?", initial: true }),
-    ));
+    const { exit, shown } = await run(
+      [{ key: "enter" }],
+      true,
+      Effect.flatMap(Prompt, (prompt) =>
+        prompt.confirm({ message: "Allow?", initial: true }),
+      ),
+    );
     // Then
     expect(exit).toEqual(Exit.succeed(true));
     expect(shown).toContain("Allow?");
@@ -70,10 +78,13 @@ describe("Prompt", () => {
   it("confirm returns false on n", async () => {
     // Given: n then Enter at a (Y/n) confirm
     // When
-    const { exit } = await run(["n", { key: "enter" }], true, Effect.flatMap(
-      Prompt,
-      (prompt) => prompt.confirm({ message: "Allow?", initial: true }),
-    ));
+    const { exit } = await run(
+      ["n", { key: "enter" }],
+      true,
+      Effect.flatMap(Prompt, (prompt) =>
+        prompt.confirm({ message: "Allow?", initial: true }),
+      ),
+    );
     // Then
     expect(exit).toEqual(Exit.succeed(false));
   });
@@ -81,10 +92,13 @@ describe("Prompt", () => {
   it("ctrl-c at confirm fails StoppedError", async () => {
     // Given: ctrl-c at a confirm
     // When
-    const { exit } = await run([{ key: "c", ctrl: true }], true, Effect.flatMap(
-      Prompt,
-      (prompt) => prompt.confirm({ message: "Allow?", initial: false }),
-    ));
+    const { exit } = await run(
+      [{ key: "c", ctrl: true }],
+      true,
+      Effect.flatMap(Prompt, (prompt) =>
+        prompt.confirm({ message: "Allow?", initial: false }),
+      ),
+    );
     // Then
     expect(exit).toEqual(Exit.fail(new StoppedError()));
   });
@@ -92,10 +106,13 @@ describe("Prompt", () => {
   it("wait shows the line on a terminal and clears it", async () => {
     // Given: a TTY terminal
     // When
-    const { exit, output, shown } = await run([], true, Effect.flatMap(
-      Prompt,
-      (prompt) => prompt.wait("  starting collector…", Effect.succeed(7)),
-    ));
+    const { exit, output, shown } = await run(
+      [],
+      true,
+      Effect.flatMap(Prompt, (prompt) =>
+        prompt.wait("  starting collector…", Effect.succeed(7)),
+      ),
+    );
     // Then
     expect(exit).toEqual(Exit.succeed(7));
     expect(shown).toContain("  starting collector…");
@@ -105,10 +122,13 @@ describe("Prompt", () => {
   it("wait prints the line when there is no terminal", async () => {
     // Given: no TTY
     // When
-    const { exit, output, shown } = await run([], false, Effect.flatMap(
-      Prompt,
-      (prompt) => prompt.wait("  starting collector…", Effect.succeed(7)),
-    ));
+    const { exit, output, shown } = await run(
+      [],
+      false,
+      Effect.flatMap(Prompt, (prompt) =>
+        prompt.wait("  starting collector…", Effect.succeed(7)),
+      ),
+    );
     // Then
     expect(exit).toEqual(Exit.succeed(7));
     expect(output).toEqual(["  starting collector…"]);
