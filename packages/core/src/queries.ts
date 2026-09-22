@@ -1,6 +1,7 @@
-import { DateTime, Effect, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 
 import { Activity } from "./activity.js";
+import { type ResolvedApp, resolveAppName } from "./app-names.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";
 import type { InvalidRangeError, StoreError } from "./errors.js";
@@ -94,18 +95,43 @@ const loadRange = (input: {
     const rules = yield* store.listRules();
     const devices = yield* store.listDevices();
     const deviceById = new Map(devices.map((d) => [d.id, d]));
+    const iosBundleIds = [
+      ...new Set(
+        stored
+          .filter((a) => {
+            const kind = deviceById.get(a.deviceId)?.kind;
+            return kind === "iphone" || kind === "ipad";
+          })
+          .map((a) => a.bundleId),
+      ),
+    ];
+    const resolved = new Map<string, ResolvedApp | null>(
+      yield* Effect.forEach(
+        iosBundleIds,
+        (bundleId) =>
+          Effect.map(
+            resolveAppName(bundleId),
+            (app) => [bundleId, Option.getOrNull(app)] as const,
+          ),
+        { concurrency: 1 },
+      ),
+    );
     return {
-      rows: stored.map((activity) => ({
-        activity,
-        resolution: resolve(
-          activity,
-          rules,
-          deviceById.get(activity.deviceId) ?? null,
-        ),
-        ms:
-          Math.min(activity.endedAt.epochMillis, to.epochMillis) -
-          Math.max(activity.startedAt.epochMillis, from.epochMillis),
-      })),
+      rows: stored.map((activity) => {
+        const info = resolved.get(activity.bundleId) ?? null;
+        return {
+          activity:
+            info === null ? activity : { ...activity, appName: info.name },
+          resolution: resolve(
+            activity,
+            rules,
+            deviceById.get(activity.deviceId) ?? null,
+          ),
+          ms:
+            Math.min(activity.endedAt.epochMillis, to.epochMillis) -
+            Math.max(activity.startedAt.epochMillis, from.epochMillis),
+        };
+      }),
       from,
       to,
       categories: yield* store.listCategories(),

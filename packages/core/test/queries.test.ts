@@ -95,6 +95,25 @@ const seedDay = (store: StoreShape) =>
     return { studio, coding };
   });
 
+const seedIphone = (store: StoreShape, bundleId = "com.apple.mobilesafari") =>
+  Effect.gen(function* () {
+    const iphone = yield* store.getOrInsertDevice({
+      kind: "iphone",
+      name: "iPhone",
+      externalId: "iphone-1",
+    });
+    yield* store.insertActivity({
+      deviceId: iphone.id,
+      bundleId,
+      appName: bundleId,
+      title: null,
+      url: null,
+      startedAt: t("2026-09-18T19:00:00.000Z"),
+      endedAt: t("2026-09-18T19:30:00.000Z"),
+    });
+    return iphone;
+  });
+
 const seedLaptop = (store: StoreShape) =>
   Effect.gen(function* () {
     const laptop = yield* store.getOrInsertDevice({
@@ -196,6 +215,26 @@ describe("summary", () => {
         { key: "com.google.Chrome", name: "Google Chrome", seconds: 900 },
       ],
       total: 8100,
+    });
+  });
+
+  it("summary by app shows the resolved name keyed by bundle id", async () => {
+    // Given: seedIphone
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedIphone(store);
+        // When
+        return yield* summary({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          groupBy: "app",
+        });
+      }),
+    );
+    // Then
+    expect(result).toEqual({
+      rows: [{ key: "com.apple.mobilesafari", name: "Safari", seconds: 1800 }],
+      total: 1800,
     });
   });
 
@@ -346,6 +385,64 @@ const isoBlocks = (blocks: ReadonlyArray<TimelineBlock>) =>
   }));
 
 describe("timeline", () => {
+  it("timeline shows the built-in name for an iPhone Activity", async () => {
+    // Given: seedIphone
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedIphone(store);
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(isoBlocks(result)).toEqual([
+      {
+        start: "2026-09-18T19:00:00.000Z",
+        end: "2026-09-18T19:30:00.000Z",
+        app: "Safari",
+        categoryName: "Uncategorized",
+        projectName: null,
+      },
+    ]);
+  });
+
+  it("an unmapped iOS bundle id keeps its bundle id", async () => {
+    // Given: seedIphone with an unmapped bundle id
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedIphone(store, "com.example.notanapp");
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(isoBlocks(result).map((b) => b.app)).toEqual([
+      "com.example.notanapp",
+    ]);
+  });
+
+  it("a Mac Activity keeps its stored name", async () => {
+    // Given: seedDay (mac, appName "Code")
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(isoBlocks(result)[0]?.app).toBe("Code");
+  });
+
   it("timeline merges adjacent Activities with the same app and Category", async () => {
     // Given: seedDay
     const result = await run(
@@ -690,6 +787,23 @@ const seedMany = (store: StoreShape, count: number) =>
   });
 
 describe("activities", () => {
+  it("activities returns the resolved name in appName", async () => {
+    // Given: seedIphone
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedIphone(store);
+        // When
+        return yield* activities({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        });
+      }),
+    );
+    // Then
+    expect(result.rows[0]?.appName).toBe("Safari");
+    expect(result.rows[0]?.bundleId).toBe("com.apple.mobilesafari");
+  });
+
   it("activities returns at most 200 rows with total and hasMore", async () => {
     // Given: 205 one-minute Code Activities from 08:00Z
     const result = await run(
