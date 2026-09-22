@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+
 import {
   App,
   type AppError,
@@ -27,7 +29,7 @@ import type {
 import { type DateTime, Effect, Option, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import type { Style } from "./format.js";
+import { columns, line, mark, Style, shortPath, span } from "./format.js";
 import {
   type HostName,
   Hosts,
@@ -37,6 +39,7 @@ import {
   manualCommand,
   UnknownHostError,
 } from "./hosts.js";
+import { ReportedError } from "./output.js";
 import { walkPermissions } from "./permissions.js";
 import { Prompt, type Stdin, type StoppedError } from "./prompt.js";
 import { withStore } from "./set-up.js";
@@ -54,12 +57,25 @@ type HostBorders = FileSystem.FileSystem | CommandExecutor.CommandExecutor;
 
 const registerHosts = (
   hosts: ReadonlyArray<HostName>,
-): Effect.Effect<void, never, Hosts | Prompt | HostBorders> =>
+): Effect.Effect<void, never, Hosts | Prompt | HostBorders | Style> =>
   Effect.gen(function* () {
     const hostsService = yield* Hosts;
     const prompt = yield* Prompt;
+    const look = yield* Style;
     for (const host of hosts) {
-      yield* prompt.print(yield* hostsService.register(host));
+      const result = yield* hostsService.register(host);
+      const row = result.includes("failed")
+        ? [
+            mark("bad", look),
+            ` ${hostTitle[host]} failed · run by hand: ${manualCommand[host]}`,
+          ]
+        : [
+            mark("ok", look),
+            result.endsWith("already registered")
+              ? ` ${hostTitle[host]} already registered`
+              : ` ${hostTitle[host]} registered`,
+          ];
+      yield* prompt.print(line(["  ", ...row], look));
     }
   });
 
@@ -88,14 +104,16 @@ const pickHosts: Effect.Effect<
 // launchctl bootstrap returns before a RunAtLoad agent has reached running,
 // so poll the state for a bounded window instead of trusting one sample.
 // A re-run boots the agent out first, and relaunching a KeepAlive job after
-// bootout takes longer than the fresh-install path, so the window covers it.
-const defaultLoadRetry = Schedule.recurs(60).pipe(
-  Schedule.addDelay(() => "100 millis"),
+// bootout takes much longer than the fresh-install path, so the window is
+// wall-clock bounded: a slow `launchctl print` must not eat the budget.
+const defaultLoadRetry = Schedule.spaced("100 millis").pipe(
+  Schedule.upTo("45 seconds"),
 );
 
 export const setup = (
   hosts?: ReadonlyArray<HostName>,
   loadRetry: Schedule.Schedule<unknown, unknown> = defaultLoadRetry,
+  openRetry?: Schedule.Schedule<unknown, unknown>,
 ): Effect.Effect<
   void,
   | HelperNotFoundError
@@ -106,6 +124,7 @@ export const setup = (
   | StoreError
   | DatabaseNewerError
   | LaunchdError
+  | ReportedError
   | StoppedError,
   | Prompt
   | Stdin
@@ -130,8 +149,25 @@ export const setup = (
         const launchd = yield* Launchd;
         const prompt = yield* Prompt;
         const app = yield* App;
-        const written = yield* app.install(helperPath);
-        yield* prompt.print(`app: ${written} ${appPath}`);
+        const look = yield* Style;
+        const home = homedir();
+        yield* prompt.print(line([span("head", "Collector")], look));
+        const collectorRows = columns(
+          [
+            [
+              ["  ", mark("ok", look), " app"],
+              span("dim", shortPath(appPath, home)),
+            ],
+            [
+              ["  ", mark("ok", look), " launch agent"],
+              span("dim", shortPath(plistPath, home)),
+            ],
+            [["  ", mark("ok", look), " running"]],
+          ],
+          look,
+        );
+        yield* app.install(helperPath);
+        yield* prompt.print(collectorRows[0] ?? "");
         const installed = yield* launchd.isInstalled();
         const previous = installed ? yield* launchd.readPlist() : null;
         if (installed) {
@@ -167,27 +203,49 @@ export const setup = (
               logPath,
             }),
           );
-          yield* prompt.print(`launchd agent: written ${plistPath}`);
-          yield* launchd.state().pipe(
-            Effect.flatMap((collector) =>
-              collector === "running"
-                ? Effect.void
-                : new LaunchdError({
-                    step: "launchctl bootstrap",
-                    detail: "collector did not start",
-                  }),
+          yield* prompt.print(collectorRows[1] ?? "");
+          yield* prompt.wait(
+            "  starting collector…",
+            launchd.state().pipe(
+              Effect.flatMap((collector) =>
+                collector === "running"
+                  ? Effect.void
+                  : new LaunchdError({
+                      step: "launchctl bootstrap",
+                      detail: "collector did not start",
+                    }),
+              ),
+              Effect.retry({ schedule: loadRetry }),
             ),
-            Effect.retry({ schedule: loadRetry }),
           );
-        }).pipe(Effect.tapError(() => restore.pipe(Effect.ignore)));
+        }).pipe(
+          Effect.tapError(() => restore.pipe(Effect.ignore)),
+          Effect.catchTag("LaunchdError", (e) =>
+            prompt
+              .printError(
+                line(
+                  e.step.startsWith("launchctl")
+                    ? [
+                        "  ",
+                        mark("bad", look),
+                        " collector did not start · see ",
+                        span("dim", shortPath(logPath, home)),
+                      ]
+                    : ["  ", mark("bad", look), ` ${e.message}`],
+                  look,
+                ),
+              )
+              .pipe(
+                Effect.andThen(Effect.fail(new ReportedError({ cause: e }))),
+              ),
+          ),
+        );
+        yield* prompt.print(collectorRows[2] ?? "");
         // Outside the failure guard: a failed .old delete must not roll
         // back a Collector that is already running.
         yield* Effect.ignore(app.commit());
         const interactive = yield* prompt.interactive;
-        if (!interactive) {
-          yield* prompt.print("no terminal, skipping questions");
-        }
-        yield* walkPermissions();
+        yield* walkPermissions({ openRetry });
         const selected =
           hosts !== undefined ? hosts : interactive ? yield* pickHosts : [];
         if (selected.length === 0) {
@@ -195,6 +253,19 @@ export const setup = (
         } else {
           yield* registerHosts(selected);
         }
+        yield* prompt.print("");
+        yield* prompt.print(
+          line(
+            [
+              "Done. Database at ",
+              span("dim", shortPath(databasePath, home)),
+              ". Run ",
+              span("head", "clocktrace status"),
+              " any time.",
+            ],
+            look,
+          ),
+        );
       }),
     );
   });

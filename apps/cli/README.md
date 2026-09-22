@@ -43,7 +43,9 @@ clocktrace --version     # print the CLI version
 `setup` creates the database, writes `~/Applications/Clocktrace.app` — the
 bundle that owns the macOS grants; it must not be moved — writes
 `~/Library/LaunchAgents/com.clocktrace.collector.plist`, starts the
-Collector, and walks the three permissions. At the end it shows a
+Collector, and walks the three permissions: one line per permission, a
+`(Y/n)` question only for what can be granted now, and an offer to open
+a closed browser first. At the end it shows a
 checklist of the four Hosts (Claude Code, Codex, Hermes Agent,
 OpenClaw) with the ones found on this Mac pre-ticked, and registers
 `clocktrace mcp` with each ticked one; `setup --hosts` picks the Hosts
@@ -69,8 +71,9 @@ documented in `packages/collector/README.md`.
 
 ## Live checks
 
-1. `pnpm --filter cli exec clocktrace setup`, answer `skip` to each prompt,
-   then `launchctl print gui/$(id -u)/com.clocktrace.collector | grep "state ="`
+1. `pnpm --filter cli exec clocktrace setup`, answer the permission
+   questions with Enter, `n`, Enter, then
+   `launchctl print gui/$(id -u)/com.clocktrace.collector | grep "state ="`
    prints `state = running`.
 2. `pnpm --filter cli exec clocktrace stop` twice prints `collector: stopped`
    twice; `start` twice prints `collector: running` twice.
@@ -85,3 +88,5 @@ documented in `packages/collector/README.md`.
 5. `pnpm --filter cli exec clocktrace setup` again rewrites the app and the
    agent: `ls ~/Applications/Clocktrace.app` exists and
    `clocktrace status --json` prints `"app":"present"`.
+6. `pnpm --filter cli exec clocktrace permissions | cat` prints
+   `no terminal, skipping questions` once and exits 0.
