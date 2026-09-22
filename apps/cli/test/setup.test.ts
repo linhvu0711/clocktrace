@@ -197,6 +197,7 @@ describe("setup", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       `launchd agent: written ${plistPath}`,
+      "no terminal, skipping questions",
       ...expectedWalk(),
     ]);
     expect(existsSync(path)).toBe(true);
@@ -221,7 +222,10 @@ describe("setup", () => {
     const second = await run(helperStub(allGranted), first.state);
     // Then
     expect(Exit.isSuccess(second.exit)).toBe(true);
-    expect(second.output).toEqual(expectedWalk());
+    expect(second.output).toEqual([
+      "no terminal, skipping questions",
+      ...expectedWalk(),
+    ]);
     expect(second.state.installs).toBe(1);
     expect(existsSync(path)).toBe(true);
   });
@@ -260,7 +264,7 @@ describe("setup", () => {
     expect(output.every((l) => !l.endsWith("registered"))).toBe(true);
   });
 
-  it("non-tty without --hosts prints the four commands", async () => {
+  it("non-tty without --hosts prints no terminal once and the four commands", async () => {
     // Given: the mock terminal is not a TTY; no hosts argument
     // When
     const { exit, output, shown } = await run(helperStub(allGranted), {
@@ -271,7 +275,11 @@ describe("setup", () => {
     });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
+    expect(
+      output.filter((l) => l === "no terminal, skipping questions"),
+    ).toHaveLength(1);
     expect(output).toEqual(expect.arrayContaining(manualLines));
+    expect(output).not.toContain("no host picked");
     expect(shown).not.toContain("Hosts");
   });
 

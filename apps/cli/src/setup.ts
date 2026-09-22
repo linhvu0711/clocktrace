@@ -153,11 +153,15 @@ export const setup = (
             installed ? Effect.void : launchd.uninstall().pipe(Effect.ignore),
           ),
         );
+        const interactive = yield* prompt.interactive;
+        if (!interactive) {
+          yield* prompt.print("no terminal, skipping questions");
+        }
         yield* walkPermissions();
         const selected =
           hosts !== undefined
             ? hosts
-            : (yield* prompt.interactive)
+            : interactive
               ? yield* pickHosts
               : [];
         if (selected.length === 0) {
