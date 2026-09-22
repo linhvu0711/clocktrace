@@ -6,6 +6,7 @@ export * from "./categories.js";
 export * from "./category.js";
 export * from "./device.js";
 export * from "./errors.js";
+export * from "./import-batch.js";
 export * from "./ios-app-names.js";
 export * from "./matcher.js";
 export * from "./migrations.js";

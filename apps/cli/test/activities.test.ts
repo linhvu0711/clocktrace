@@ -59,7 +59,7 @@ const t = (s: string) => DateTime.unsafeMake(s);
 // Studio: Code 08:00 to 09:30Z, then Chrome to 09:40Z; 01:00 to 02:40 in Los Angeles
 const seedDay = (store: StoreShape) =>
   Effect.gen(function* () {
-    const studio = yield* store.getOrInsertDevice({
+    const studio = yield* store.upsertDevice({
       kind: "mac",
       name: "Studio",
       externalId: "mac-1",
@@ -87,7 +87,7 @@ const seedDay = (store: StoreShape) =>
 
 const seedMany = (store: StoreShape, count: number) =>
   Effect.gen(function* () {
-    const studio = yield* store.getOrInsertDevice({
+    const studio = yield* store.upsertDevice({
       kind: "mac",
       name: "Studio",
       externalId: "mac-1",

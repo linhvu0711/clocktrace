@@ -2,16 +2,7 @@ import { join } from "node:path";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import {
-  Chunk,
-  Data,
-  Effect,
-  Either,
-  Layer,
-  Option,
-  type Scope,
-  Stream,
-} from "effect";
+import { Chunk, Data, Effect, Either, Layer, type Scope, Stream } from "effect";
 
 import {
   decodePermissions,
@@ -62,6 +53,16 @@ export const biomeResult = (
           lines: lines.filter((l) => l !== ""),
         }),
       );
+
+export const sinceArgs = (
+  since: ReadonlyMap<string, number>,
+): ReadonlyArray<string> =>
+  [...since.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .flatMap(([device, seconds]) => [
+      "--since",
+      `${device}=${Math.floor(seconds)}`,
+    ]);
 
 // The `open` flags the Helper is always run under: wait for the app,
 // launch a fresh instance so its stdout is the app's own, and capture
@@ -156,18 +157,8 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
         ),
       biomeDevices: (path: string) =>
         runBiome(Command.make(path, "biome", "devices")),
-      biomeRecords: (path: string, since: Option.Option<number>) =>
-        runBiome(
-          Command.make(
-            path,
-            "biome",
-            "records",
-            ...Option.match(since, {
-              onNone: () => [] as ReadonlyArray<string>,
-              onSome: (s) => ["--since", String(Math.floor(s))],
-            }),
-          ),
-        ),
+      biomeRecords: (path: string, since: ReadonlyMap<string, number>) =>
+        runBiome(Command.make(path, "biome", "records", ...sinceArgs(since))),
     };
 
     // Runs the Helper as ~/Applications/Clocktrace.app and returns what it

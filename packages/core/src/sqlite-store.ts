@@ -11,6 +11,7 @@ import { NewCategory as NewCategorySchema } from "./category.js";
 import type { Device } from "./device.js";
 import { NewDevice as NewDeviceSchema } from "./device.js";
 import { DatabaseNewerError, StoreError } from "./errors.js";
+import { ImportBatch as ImportBatchSchema } from "./import-batch.js";
 import { migrations } from "./migrations.js";
 import type { Project } from "./project.js";
 import { NewProject as NewProjectSchema } from "./project.js";
@@ -76,9 +77,9 @@ export const openStore = (
     const prepare = <T>(f: () => T) =>
       Effect.try({ try: f, catch: toStoreError });
 
-    const insertDevice = yield* prepare(() =>
+    const upsertDeviceStatement = yield* prepare(() =>
       db.prepare(
-        "INSERT OR IGNORE INTO devices (id, kind, name, external_id) VALUES (@id, @kind, @name, @externalId)",
+        "INSERT INTO devices (id, kind, name, external_id) VALUES (@id, @kind, @name, @externalId) ON CONFLICT(external_id) DO UPDATE SET name = excluded.name, kind = excluded.kind",
       ),
     );
     const selectDeviceByExternalId = yield* prepare(() =>
@@ -174,12 +175,12 @@ export const openStore = (
       ),
     );
 
-    const getOrInsertDevice: StoreShape["getOrInsertDevice"] = (input) =>
+    const upsertDevice: StoreShape["upsertDevice"] = (input) =>
       Effect.gen(function* () {
         const device = yield* Schema.validate(NewDeviceSchema)(input);
         return yield* Effect.try({
           try: () => {
-            insertDevice.run({ id: randomUUID(), ...device });
+            upsertDeviceStatement.run({ id: randomUUID(), ...device });
             return selectDeviceByExternalId.get({
               externalId: device.externalId,
             }) as Device;
@@ -523,8 +524,36 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const writeImportBatch: StoreShape["writeImportBatch"] = (batch) =>
+      Effect.gen(function* () {
+        const parsed = yield* Schema.validate(ImportBatchSchema)(batch);
+        return yield* Effect.try({
+          try: () =>
+            db
+              .transaction(() => {
+                for (const activity of parsed.activities) {
+                  insertActivityStatement.run({
+                    id: randomUUID(),
+                    deviceId: activity.deviceId,
+                    bundleId: activity.bundleId,
+                    appName: activity.appName,
+                    title: activity.title,
+                    url: activity.url,
+                    startedAt: DateTime.formatIso(activity.startedAt),
+                    endedAt: DateTime.formatIso(activity.endedAt),
+                  });
+                }
+                for (const setting of parsed.settings) {
+                  upsertSetting.run(setting);
+                }
+              })
+              .immediate(),
+          catch: (cause) => new StoreError({ cause }),
+        });
+      });
+
     return {
-      getOrInsertDevice,
+      upsertDevice,
       listDevices,
       insertActivity,
       readActivities,
@@ -546,5 +575,6 @@ export const openStore = (
       getSetting,
       setSetting,
       seedStarterSet,
+      writeImportBatch,
     };
   });

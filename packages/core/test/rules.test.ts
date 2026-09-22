@@ -325,7 +325,7 @@ describe("rules", () => {
     const result = await useTest(
       Effect.gen(function* () {
         const store = yield* Store;
-        const d = yield* store.getOrInsertDevice({
+        const d = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -354,7 +354,7 @@ describe("rules", () => {
     const result = await useTest(
       Effect.gen(function* () {
         const store = yield* Store;
-        const d = yield* store.getOrInsertDevice({
+        const d = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",

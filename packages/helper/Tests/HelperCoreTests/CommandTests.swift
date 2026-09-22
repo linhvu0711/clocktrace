@@ -100,21 +100,48 @@ final class CommandTests: XCTestCase {
     // When
     let command = Command.parse(args)
     // Then
-    XCTAssertEqual(command, .biomeRecords(since: nil))
+    XCTAssertEqual(command, .biomeRecords(since: [:]))
   }
 
   func testParsesBiomeRecordsWithSince() {
-    // Given: args ["biome", "records", "--since", "1758307200"]
-    let args = ["biome", "records", "--since", "1758307200"]
+    // Given: args ["biome", "records", "--since", "a-device=1758307200"]
+    let args = ["biome", "records", "--since", "a-device=1758307200"]
     // When
     let command = Command.parse(args)
     // Then
-    XCTAssertEqual(command, .biomeRecords(since: 1758307200))
+    XCTAssertEqual(command, .biomeRecords(since: ["a-device": 1758307200]))
   }
 
-  func testReturnsUsageForABadSince() {
-    // Given: args ["biome", "records", "--since", "soon"]
-    let args = ["biome", "records", "--since", "soon"]
+  func testParsesBiomeRecordsWithASincePerDevice() {
+    // Given: args ["biome", "records", "--since", "a-device=150", "--since", "b-device=200"]
+    let args = ["biome", "records", "--since", "a-device=150", "--since", "b-device=200"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .biomeRecords(since: ["a-device": 150, "b-device": 200]))
+  }
+
+  func testReturnsUsageForABareSince() {
+    // Given: args ["biome", "records", "--since", "5"]
+    let args = ["biome", "records", "--since", "5"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .usage)
+  }
+
+  func testReturnsUsageForASinceSecondsThatIsNotAnInteger() {
+    // Given: args ["biome", "records", "--since", "a-device=soon"]
+    let args = ["biome", "records", "--since", "a-device=soon"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .usage)
+  }
+
+  func testReturnsUsageForADeviceNamedTwice() {
+    // Given: args ["biome", "records", "--since", "a-device=1", "--since", "a-device=2"]
+    let args = ["biome", "records", "--since", "a-device=1", "--since", "a-device=2"]
     // When
     let command = Command.parse(args)
     // Then

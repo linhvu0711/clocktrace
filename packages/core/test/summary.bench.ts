@@ -17,7 +17,7 @@ test("summary over one year of 100 000 Activities", async ({ bench }) => {
   await runtime.runPromise(
     Effect.gen(function* () {
       const store = yield* Store;
-      const device = yield* store.getOrInsertDevice({
+      const device = yield* store.upsertDevice({
         kind: "mac",
         name: "Studio",
         externalId: "mac-1",

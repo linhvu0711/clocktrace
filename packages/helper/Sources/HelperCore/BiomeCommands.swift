@@ -25,7 +25,7 @@ public func decodeSegment(_ data: Data, device: String, segment: String) -> [Bio
 
 public func biomeRecords(
   reads: BiomeReads = .live,
-  since: Int?,
+  since: [String: Int],
   emit: (String) -> Void = HelperCore.emit,
   emitError: (String) -> Void = HelperCore.emitError
 ) -> Int32 {
@@ -49,7 +49,7 @@ public func biomeRecords(
       continue
     }
     for segment in segments.sorted(by: { $0.name < $1.name }) {
-      if let since, segment.modifiedAt < Double(since) { continue }
+      if let since = since[device], segment.modifiedAt < Double(since) { continue }
       guard let data = reads.segmentData(device, segment.name) else {
         emit(BiomeLine.parseError(BiomeParseErrorLine(segment: segment.name, offset: 0)).json())
         continue

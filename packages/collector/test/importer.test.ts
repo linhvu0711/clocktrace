@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 
-import { Store } from "@clocktrace/core";
+import { type ImportBatch, Store, StoreError } from "@clocktrace/core";
 import {
   DateTime,
   Effect,
+  Either,
   Layer,
   Option,
   Ref,
+  Schema,
   Stream,
   TestClock,
   TestContext,
@@ -14,7 +16,13 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { BiomeExitError, Helper } from "../src/helper.js";
-import { importOnce, importProgressKey, importTick } from "../src/importer.js";
+import {
+  ImportResult,
+  importOnce,
+  importProgressKey,
+  importStatusKey,
+  importTick,
+} from "../src/importer.js";
 import { MacIdentity } from "../src/mac-identity.js";
 import type { Permissions } from "../src/permissions.js";
 
@@ -29,6 +37,7 @@ const D_MAC =
   '{"deviceIdentifier":"00000000-0000-4000-8000-000000000001","lastSyncDate":null,"me":true,"model":"26A428","name":"","platform":3}';
 const D_PHONE = `{"deviceIdentifier":"${P2}","lastSyncDate":1789837200,"me":false,"model":"24A437","name":"","platform":2}`;
 const D_PAD = `{"deviceIdentifier":"${P3}","lastSyncDate":1789664400,"me":false,"model":"24A437","name":"Linh's iPad","platform":1}`;
+const D_PHONE_NAMED = `{"deviceIdentifier":"${P2}","lastSyncDate":1789837200,"me":false,"model":"24A437","name":"Linh's iPhone","platform":2}`;
 const D_UNK =
   '{"deviceIdentifier":"00000000-0000-4000-8000-000000000004","lastSyncDate":null,"me":false,"model":null,"name":"","platform":null}';
 
@@ -156,7 +165,8 @@ const allGranted: Permissions = {
 
 interface Ctx {
   calls: Ref.Ref<number>;
-  sinces: Ref.Ref<ReadonlyArray<Option.Option<number>>>;
+  sinces: Ref.Ref<ReadonlyArray<ReadonlyMap<string, number>>>;
+  devicesRef: Ref.Ref<ReadonlyArray<string>>;
   recordsRef: Ref.Ref<ReadonlyArray<string>>;
 }
 
@@ -164,11 +174,13 @@ const run = <A, E>(
   spec: {
     devices:
       | ReadonlyArray<string>
-      | Effect.Effect<ReadonlyArray<string>, BiomeExitError>;
+      | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+      | "ref";
     records:
       | ReadonlyArray<string>
       | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
       | "ref";
+    store?: Layer.Layer<Store, never, Store>;
   },
   macos: string,
   inside: (ctx: Ctx) => Effect.Effect<A, E, Helper | Store | MacIdentity>,
@@ -177,12 +189,17 @@ const run = <A, E>(
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);
       const calls = yield* Ref.make(0);
-      const sinces = yield* Ref.make<ReadonlyArray<Option.Option<number>>>([]);
+      const sinces = yield* Ref.make<
+        ReadonlyArray<ReadonlyMap<string, number>>
+      >([]);
+      const devicesRef = yield* Ref.make<ReadonlyArray<string>>([]);
       const recordsRef = yield* Ref.make<ReadonlyArray<string>>([]);
       const deviceEff: Effect.Effect<readonly string[], BiomeExitError> =
-        Effect.isEffect(spec.devices)
-          ? spec.devices
-          : Effect.succeed(spec.devices);
+        spec.devices === "ref"
+          ? Ref.get(devicesRef)
+          : Effect.isEffect(spec.devices)
+            ? spec.devices
+            : Effect.succeed(spec.devices);
       const recordEff: Effect.Effect<readonly string[], BiomeExitError> =
         spec.records === "ref"
           ? Ref.get(recordsRef)
@@ -212,10 +229,44 @@ const run = <A, E>(
           macosVersion: Effect.succeed(macos),
         }),
       );
-      return yield* inside({ calls, sinces, recordsRef }).pipe(
-        Effect.provide(Layer.mergeAll(stubHelper, Store.Test, stubMac)),
+      return yield* inside({ calls, sinces, devicesRef, recordsRef }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            stubHelper,
+            Store.Test,
+            stubMac,
+            spec.store === undefined
+              ? Layer.empty
+              : Layer.provide(spec.store, Store.Test),
+          ),
+        ),
       );
     }).pipe(Effect.provide(TestContext.TestContext)),
+  );
+
+const spyStore = (
+  batches: Ref.Ref<ReadonlyArray<ImportBatch>>,
+  failNext: Ref.Ref<boolean>,
+): Layer.Layer<Store, never, Store> =>
+  Layer.effect(
+    Store,
+    Effect.map(
+      Store,
+      (s) =>
+        new Store({
+          ...s,
+          writeImportBatch: (batch) =>
+            Ref.getAndSet(failNext, false).pipe(
+              Effect.flatMap((fail) =>
+                fail
+                  ? Effect.fail(new StoreError({ cause: "disk full" }))
+                  : Ref.update(batches, (bs) => [...bs, batch]).pipe(
+                      Effect.andThen(s.writeImportBatch(batch)),
+                    ),
+              ),
+            ),
+        }),
+    ),
   );
 
 const t = (s: string) => DateTime.unsafeMake(s);
@@ -264,6 +315,37 @@ describe("importer", () => {
       { kind: "ipad", name: "Linh's iPad", externalId: P3 },
       { kind: "iphone", name: "iPhone", externalId: P2 },
     ]);
+  });
+
+  it("a renamed DevicePeer shows its new name and an empty name falls back only while empty", async () => {
+    // Given: an iPhone peer first seen with an empty name
+    // When: the peer reports a name, then an empty name again
+    const result = await run({ devices: "ref", records: [] }, "27.0", (ctx) =>
+      Effect.gen(function* () {
+        yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
+        yield* importOnce("/stub");
+        const store = yield* Store;
+        const first = yield* store.listDevices();
+        yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE_NAMED]);
+        yield* importOnce("/stub");
+        const second = yield* store.listDevices();
+        yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
+        yield* importOnce("/stub");
+        const third = yield* store.listDevices();
+        return { first, second, third };
+      }),
+    );
+    // Then
+    const names = (ds: ReadonlyArray<{ name: string }>) =>
+      ds.map((d) => d.name);
+    expect(names(result.first)).toEqual(["iPhone"]);
+    expect(names(result.second)).toEqual(["Linh's iPhone"]);
+    expect(names(result.third)).toEqual(["iPhone"]);
+    expect(result.second[0]?.id).toBe(result.first[0]?.id);
+    expect(result.third[0]?.id).toBe(result.first[0]?.id);
+    expect(result.first.length).toBe(1);
+    expect(result.second.length).toBe(1);
+    expect(result.third.length).toBe(1);
   });
 
   it("a start and its end become one Activity, an open start closes at the next record", async () => {
@@ -563,7 +645,7 @@ describe("importer", () => {
     });
   });
 
-  it("a second run imports nothing new and passes since", async () => {
+  it("a second run imports nothing new and passes each Device's Progress", async () => {
     // Given: the same devices and records imported twice
     // When
     const result = await run(
@@ -595,8 +677,44 @@ describe("importer", () => {
       offset: 108,
       ts: 1789834200,
     });
-    expect(result.since).toEqual(Option.some("1789834200"));
-    expect(result.sinces).toEqual([Option.none(), Option.some(1789834200)]);
+    expect(result.since).toEqual(Option.none());
+    expect(result.sinces).toEqual([
+      new Map(),
+      new Map([
+        [P2, 1789834260],
+        [P3, 1789834200],
+      ]),
+    ]);
+  });
+
+  it("a Device without Progress does not stop the others' incremental reads", async () => {
+    // Given: an iPhone with records and an iPad with none
+    // When: three import runs
+    const result = await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL.filter((r) => r.includes(P2)),
+      },
+      "27.0",
+      (ctx) =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          yield* importOnce("/stub");
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return {
+            sinces: yield* Ref.get(ctx.sinces),
+            progressP3: yield* store.getSetting(importProgressKey(P3)),
+          };
+        }),
+    );
+    // Then
+    expect(result.sinces).toEqual([
+      new Map(),
+      new Map([[P2, 1789834260]]),
+      new Map([[P2, 1789834260]]),
+    ]);
+    expect(result.progressP3).toEqual(Option.none());
   });
 
   it("an open start at the end of the stream is written once its end arrives", async () => {
@@ -802,5 +920,125 @@ describe("importer", () => {
         endedAt: "2026-09-19T16:10:00.000Z",
       },
     ]);
+  });
+
+  it("a failed Import batch leaves no Activities and the next run writes them once", async () => {
+    // Given: the first batch write fails
+    const batches = await Effect.runPromise(
+      Ref.make<ReadonlyArray<ImportBatch>>([]),
+    );
+    const failNext = await Effect.runPromise(Ref.make(true));
+    const result = await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL,
+        store: spyStore(batches, failNext),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          // When
+          const first = yield* Effect.either(importOnce("/stub"));
+          const store = yield* Store;
+          const afterFail = (yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          })).length;
+          const second = yield* Effect.either(importOnce("/stub"));
+          const afterRetry = (yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          })).length;
+          return { first, second, afterFail, afterRetry };
+        }),
+    );
+    const written = await Effect.runPromise(Ref.get(batches));
+    // Then
+    expect(Either.isLeft(result.first)).toBe(true);
+    if (Either.isLeft(result.first)) {
+      expect(result.first.left).toBeInstanceOf(StoreError);
+    }
+    expect(Either.isRight(result.second)).toBe(true);
+    expect(result.afterFail).toBe(0);
+    expect(result.afterRetry).toBe(3);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.activities).toHaveLength(3);
+  });
+
+  it("a run with no new records writes only the status", async () => {
+    // Given: a first run already imported every record
+    const batches = await Effect.runPromise(
+      Ref.make<ReadonlyArray<ImportBatch>>([]),
+    );
+    const failNext = await Effect.runPromise(Ref.make(false));
+    // When
+    await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL,
+        store: spyStore(batches, failNext),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          yield* importOnce("/stub");
+        }),
+    );
+    const written = await Effect.runPromise(Ref.get(batches));
+    // Then
+    expect(written).toHaveLength(2);
+    expect(written[1]?.activities).toEqual([]);
+    expect(written[1]?.settings.map((s) => s.key)).toEqual([importStatusKey]);
+  });
+
+  it("a failed Import batch records broken and keeps the prior sync data", async () => {
+    // Given: a successful run, then a failing batch write
+    const batches = await Effect.runPromise(
+      Ref.make<ReadonlyArray<ImportBatch>>([]),
+    );
+    const failNext = await Effect.runPromise(Ref.make(false));
+    const { status, count } = await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL,
+        store: spyStore(batches, failNext),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          // When
+          yield* Ref.set(failNext, true);
+          yield* importTick("/stub");
+          const store = yield* Store;
+          return {
+            status: yield* store.getSetting(importStatusKey),
+            count: (yield* store.readActivities({
+              from: t("2026-09-19T00:00:00.000Z"),
+              to: t("2026-09-20T00:00:00.000Z"),
+            })).length,
+          };
+        }),
+    );
+    // Then
+    expect(count).toBe(3);
+    expect(Option.isSome(status)).toBe(true);
+    if (Option.isSome(status)) {
+      const parsed = Schema.decodeUnknownSync(ImportResult)(status.value);
+      expect(parsed.state).toBe("broken");
+      if (parsed.state === "broken") {
+        expect(parsed.devices).toEqual([
+          {
+            externalId: P2,
+            lastSync: DateTime.unsafeMake("2026-09-19T17:00:00.000Z"),
+          },
+          {
+            externalId: P3,
+            lastSync: DateTime.unsafeMake("2026-09-17T17:00:00.000Z"),
+          },
+        ]);
+      }
+    }
   });
 });

@@ -102,12 +102,12 @@ const runAt = <A>(
 
 const seed = (store: Store) =>
   Effect.gen(function* () {
-    const iphone = yield* store.getOrInsertDevice({
+    const iphone = yield* store.upsertDevice({
       kind: "iphone",
       name: "iPhone",
       externalId: "P2",
     });
-    yield* store.getOrInsertDevice({
+    yield* store.upsertDevice({
       kind: "ipad",
       name: "Linh's iPad",
       externalId: "P3",
@@ -199,7 +199,7 @@ describe("status", () => {
       { installed: true, running: true, plist: null, installs: 0 },
       Effect.gen(function* () {
         const store = yield* Store;
-        const device = yield* store.getOrInsertDevice({
+        const device = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",

@@ -88,7 +88,7 @@ const t = (s: string) => DateTime.unsafeMake(s);
 // Studio: Code 08:00 to 09:30Z, then Chrome to 09:40Z; 01:00 to 02:40 in Los Angeles
 const seedDay = (store: StoreShape) =>
   Effect.gen(function* () {
-    const studio = yield* store.getOrInsertDevice({
+    const studio = yield* store.upsertDevice({
       kind: "mac",
       name: "Studio",
       externalId: "mac-1",
@@ -116,7 +116,7 @@ const seedDay = (store: StoreShape) =>
 
 const seedMany = (store: StoreShape, count: number) =>
   Effect.gen(function* () {
-    const studio = yield* store.getOrInsertDevice({
+    const studio = yield* store.upsertDevice({
       kind: "mac",
       name: "Studio",
       externalId: "mac-1",
@@ -138,7 +138,7 @@ const seedMany = (store: StoreShape, count: number) =>
 const seedTwoDevices = (store: StoreShape) =>
   Effect.gen(function* () {
     yield* seedDay(store);
-    const laptop = yield* store.getOrInsertDevice({
+    const laptop = yield* store.upsertDevice({
       kind: "mac",
       name: "Laptop",
       externalId: "mac-2",
@@ -1234,12 +1234,12 @@ describe("server", () => {
     // one Activity
     const seedIos = (store: StoreShape) =>
       Effect.gen(function* () {
-        yield* store.getOrInsertDevice({
+        yield* store.upsertDevice({
           kind: "ipad",
           name: "Linh's iPad",
           externalId: "P3",
         });
-        const iphone = yield* store.getOrInsertDevice({
+        const iphone = yield* store.upsertDevice({
           kind: "iphone",
           name: "iPhone",
           externalId: "P2",

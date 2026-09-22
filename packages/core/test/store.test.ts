@@ -55,7 +55,7 @@ describe("store", () => {
   it("a second open changes nothing", async () => {
     // Given: a first open that inserted one device and closed
     await useStore((store) =>
-      store.getOrInsertDevice({
+      store.upsertDevice({
         kind: "mac",
         name: "Studio",
         externalId: "mac-1",
@@ -105,18 +105,18 @@ describe("store", () => {
     expect(mode).toBe("wal");
   });
 
-  it("getOrInsertDevice inserts once and returns the same row", async () => {
+  it("upsertDevice keeps the id and takes the newest name and kind", async () => {
     // Given: an open store
     const { first, second, devices } = await useStore((store) =>
       Effect.gen(function* () {
-        // When: the same device is inserted twice
-        const first = yield* store.getOrInsertDevice({
+        // When: the same externalId is upserted twice with a new name and kind
+        const first = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
         });
-        const second = yield* store.getOrInsertDevice({
-          kind: "mac",
+        const second = yield* store.upsertDevice({
+          kind: "iphone",
           name: "Other",
           externalId: "mac-1",
         });
@@ -126,23 +126,23 @@ describe("store", () => {
     );
     // Then
     expect(second.id).toBe(first.id);
-    expect(first.id).toHaveLength(36);
-    expect(first.kind).toBe("mac");
     expect(first.name).toBe("Studio");
-    expect(first.externalId).toBe("mac-1");
+    expect(second.name).toBe("Other");
+    expect(second.kind).toBe("iphone");
     expect(devices).toHaveLength(1);
+    expect(devices[0]?.name).toBe("Other");
   });
 
   it("listDevices returns devices by name", async () => {
     // Given: an open store with two devices
     const devices = await useStore((store) =>
       Effect.gen(function* () {
-        yield* store.getOrInsertDevice({
+        yield* store.upsertDevice({
           kind: "ipad",
           name: "Pad",
           externalId: "ipad-1",
         });
-        yield* store.getOrInsertDevice({
+        yield* store.upsertDevice({
           kind: "iphone",
           name: "Fone",
           externalId: "iphone-1",
@@ -171,7 +171,7 @@ describe("store", () => {
   const t = (s: string) => DateTime.unsafeMake(s);
 
   const seedDevice = (store: StoreShape) =>
-    store.getOrInsertDevice({
+    store.upsertDevice({
       kind: "mac",
       name: "Studio",
       externalId: "mac-1",
@@ -279,7 +279,7 @@ describe("store", () => {
       Effect.gen(function* () {
         const d = yield* seedDevice(store);
         yield* seedActivities(store, d.id);
-        const e = yield* store.getOrInsertDevice({
+        const e = yield* store.upsertDevice({
           kind: "iphone",
           name: "Fone",
           externalId: "iphone-1",
@@ -395,7 +395,7 @@ describe("store", () => {
           startedAt: t("2026-09-18T11:00:00.000Z"),
           endedAt: t("2026-09-18T12:00:00.000Z"),
         });
-        const e = yield* store.getOrInsertDevice({
+        const e = yield* store.upsertDevice({
           kind: "iphone",
           name: "Fone",
           externalId: "iphone-1",
@@ -760,7 +760,7 @@ describe("store", () => {
     const devices = await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* Store;
-        yield* store.getOrInsertDevice({
+        yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -771,5 +771,130 @@ describe("store", () => {
     // Then
     expect(devices).toHaveLength(1);
     expect(existsSync(":memory:")).toBe(false);
+  });
+
+  it("writeImportBatch writes the Activities and the settings together", async () => {
+    // Given: an open store and one device
+    const { activities, progress, status } = await useStore((store) =>
+      Effect.gen(function* () {
+        const device = yield* store.upsertDevice({
+          kind: "iphone",
+          name: "iPhone",
+          externalId: "P2",
+        });
+        // When
+        yield* store.writeImportBatch({
+          activities: [
+            {
+              deviceId: device.id,
+              bundleId: "com.apple.mobilesafari",
+              appName: "com.apple.mobilesafari",
+              title: null,
+              url: null,
+              startedAt: t("2026-09-19T16:01:00.000Z"),
+              endedAt: t("2026-09-19T16:06:00.000Z"),
+            },
+            {
+              deviceId: device.id,
+              bundleId: "com.apple.mobilesafari",
+              appName: "com.apple.mobilesafari",
+              title: null,
+              url: null,
+              startedAt: t("2026-09-19T16:10:00.000Z"),
+              endedAt: t("2026-09-19T16:12:00.000Z"),
+            },
+          ],
+          settings: [
+            {
+              key: "importer.progress.P2",
+              value: '{"segment":"s","offset":1,"ts":1}',
+            },
+            { key: "importer.status", value: "ok" },
+          ],
+        });
+        return {
+          activities: yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          }),
+          progress: yield* store.getSetting("importer.progress.P2"),
+          status: yield* store.getSetting("importer.status"),
+        };
+      }),
+    );
+    // Then
+    expect(activities).toHaveLength(2);
+    expect(progress).toEqual(Option.some('{"segment":"s","offset":1,"ts":1}'));
+    expect(status).toEqual(Option.some("ok"));
+  });
+
+  it("writeImportBatch that fails leaves nothing behind", async () => {
+    // Given: an open store and one device
+    const { result, activities, status } = await useStore((store) =>
+      Effect.gen(function* () {
+        const device = yield* store.upsertDevice({
+          kind: "iphone",
+          name: "iPhone",
+          externalId: "P2",
+        });
+        // When: the batch holds one Activity on an unknown device
+        const result = yield* Effect.either(
+          store.writeImportBatch({
+            activities: [
+              {
+                deviceId: device.id,
+                bundleId: "com.apple.mobilesafari",
+                appName: "com.apple.mobilesafari",
+                title: null,
+                url: null,
+                startedAt: t("2026-09-19T16:01:00.000Z"),
+                endedAt: t("2026-09-19T16:06:00.000Z"),
+              },
+              {
+                deviceId: "00000000-0000-4000-8000-000000000009",
+                bundleId: "com.apple.mobilesafari",
+                appName: "com.apple.mobilesafari",
+                title: null,
+                url: null,
+                startedAt: t("2026-09-19T16:10:00.000Z"),
+                endedAt: t("2026-09-19T16:12:00.000Z"),
+              },
+            ],
+            settings: [{ key: "importer.status", value: "ok" }],
+          }),
+        );
+        return {
+          result,
+          activities: yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          }),
+          status: yield* store.getSetting("importer.status"),
+        };
+      }),
+    );
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("StoreError");
+    }
+    expect(activities).toEqual([]);
+    expect(status).toEqual(Option.none());
+  });
+
+  it("writeImportBatch with nothing new writes only the settings", async () => {
+    // Given: an open store
+    const status = await useStore((store) =>
+      Effect.gen(function* () {
+        // When
+        yield* store.writeImportBatch({
+          activities: [],
+          settings: [{ key: "importer.status", value: "ok" }],
+        });
+        return yield* store.getSetting("importer.status");
+      }),
+    );
+    // Then
+    expect(status).toEqual(Option.some("ok"));
   });
 });

@@ -15,7 +15,7 @@ export const registerDevice = (): Effect.Effect<
     const store = yield* Store;
     const name = yield* mac.name;
     const hardwareUuid = yield* mac.hardwareUuid;
-    return yield* store.getOrInsertDevice({
+    return yield* store.upsertDevice({
       kind: "mac",
       name,
       externalId: hardwareUuid,

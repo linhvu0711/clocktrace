@@ -19,7 +19,7 @@ const run = (lines: ReadonlyArray<string>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const store = yield* Store;
-      const device = yield* store.getOrInsertDevice({
+      const device = yield* store.upsertDevice({
         kind: "mac",
         name: "Studio",
         externalId: "mac-1",
@@ -174,7 +174,7 @@ describe("collector", () => {
     const rows = await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* Store;
-        const device = yield* store.getOrInsertDevice({
+        const device = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -419,7 +419,7 @@ describe("collector", () => {
     const rows = await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* Store;
-        const device = yield* store.getOrInsertDevice({
+        const device = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -474,7 +474,7 @@ describe("collector", () => {
     const rows = await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* Store;
-        const device = yield* store.getOrInsertDevice({
+        const device = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",

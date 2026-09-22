@@ -42,7 +42,7 @@ const t = (s: string) => DateTime.unsafeMake(s);
 
 const seedDay = (store: StoreShape) =>
   Effect.gen(function* () {
-    const studio = yield* store.getOrInsertDevice({
+    const studio = yield* store.upsertDevice({
       kind: "mac",
       name: "Studio",
       externalId: "mac-1",
@@ -99,7 +99,7 @@ const seedDay = (store: StoreShape) =>
 
 const seedIphone = (store: StoreShape, bundleId = "com.apple.mobilesafari") =>
   Effect.gen(function* () {
-    const iphone = yield* store.getOrInsertDevice({
+    const iphone = yield* store.upsertDevice({
       kind: "iphone",
       name: "iPhone",
       externalId: "iphone-1",
@@ -118,7 +118,7 @@ const seedIphone = (store: StoreShape, bundleId = "com.apple.mobilesafari") =>
 
 const seedLaptop = (store: StoreShape) =>
   Effect.gen(function* () {
-    const laptop = yield* store.getOrInsertDevice({
+    const laptop = yield* store.upsertDevice({
       kind: "mac",
       name: "Laptop",
       externalId: "mac-2",
@@ -339,7 +339,7 @@ describe("summary", () => {
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
-        const studio = yield* store.getOrInsertDevice({
+        const studio = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -554,7 +554,7 @@ describe("timeline", () => {
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
-        const studio = yield* store.getOrInsertDevice({
+        const studio = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -618,7 +618,7 @@ describe("timeline", () => {
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
-        const studio = yield* store.getOrInsertDevice({
+        const studio = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -687,12 +687,12 @@ describe("timeline", () => {
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
-        const studio = yield* store.getOrInsertDevice({
+        const studio = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
         });
-        const laptop = yield* store.getOrInsertDevice({
+        const laptop = yield* store.upsertDevice({
           kind: "mac",
           name: "Laptop",
           externalId: "mac-2",
@@ -745,7 +745,7 @@ describe("timeline", () => {
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
-        const studio = yield* store.getOrInsertDevice({
+        const studio = yield* store.upsertDevice({
           kind: "mac",
           name: "Studio",
           externalId: "mac-1",
@@ -835,7 +835,7 @@ describe("timeline", () => {
 
 const seedMany = (store: StoreShape, count: number) =>
   Effect.gen(function* () {
-    const studio = yield* store.getOrInsertDevice({
+    const studio = yield* store.upsertDevice({
       kind: "mac",
       name: "Studio",
       externalId: "mac-1",
