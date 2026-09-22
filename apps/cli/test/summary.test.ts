@@ -5,11 +5,14 @@ import {
   Store,
   type StoreShape,
 } from "@clocktrace/core";
-import { DateTime, Effect, Exit, Layer, Ref } from "effect";
+import { NodeContext } from "@effect/platform-node";
+import { Console, DateTime, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { fakePrompt, type Prompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
 import { printSummary } from "../src/summary.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -21,16 +24,25 @@ const runPrint = <A, E>(
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const prompt = yield* fakePrompt([], false);
+      const terminal = yield* MockTerminal.make(false);
+      const console = yield* MockConsole.make;
       const exit = yield* Effect.exit(
         Effect.scoped(
           body.pipe(
             DateTime.withCurrentZoneNamed("America/Los_Angeles"),
-            Effect.provide(Layer.merge(prompt.layer, EmptyStore)),
+            Effect.provide(
+              Layer.mergeAll(
+                Console.setConsole(console),
+                NodeContext.layer,
+                terminal.layer,
+                Prompt.Default,
+                EmptyStore,
+              ),
+            ),
           ),
         ),
       );
-      const output = yield* Ref.get(prompt.output);
+      const output = yield* console.getLines({ stripAnsi: true });
       return { exit, output };
     }),
   );

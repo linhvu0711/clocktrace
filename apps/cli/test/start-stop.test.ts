@@ -10,16 +10,27 @@ import {
   type LaunchdState,
 } from "@clocktrace/collector";
 import { openStore } from "@clocktrace/core";
+import type { Path, Terminal } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { ConfigProvider, DateTime, Effect, Exit, Layer, Ref } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  DateTime,
+  Effect,
+  Exit,
+  Layer,
+  Ref,
+} from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Style } from "../src/format.js";
 import { ReportedError } from "../src/output.js";
-import { fakePrompt, type Prompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import { start } from "../src/start.js";
 import { stop } from "../src/stop.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
 
 describe("start and stop", () => {
   let dir: string;
@@ -42,6 +53,8 @@ describe("start and stop", () => {
       E,
       | Prompt
       | Launchd
+      | Terminal.Terminal
+      | Path.Path
       | import("@effect/platform").FileSystem.FileSystem
       | Style
     >,
@@ -49,20 +62,23 @@ describe("start and stop", () => {
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt([], true);
+        const terminal = yield* MockTerminal.make(true);
+        const console = yield* MockConsole.make;
         const state = yield* Ref.make(launchdState);
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           (makeLaunchd ?? fakeLaunchd)(state),
           Helper.Test,
-          NodeContext.layer,
           Style.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
         return {
           exit,
-          output: yield* Ref.get(prompt.output),
-          errors: yield* Ref.get(prompt.errors),
+          output: yield* console.getLines({ stripAnsi: true }),
+          errors: yield* console.getErrorLines({ stripAnsi: true }),
           state: yield* Ref.get(state),
         };
       }).pipe(

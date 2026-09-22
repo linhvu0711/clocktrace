@@ -15,6 +15,7 @@ import { openStore } from "@clocktrace/core";
 import { NodeContext } from "@effect/platform-node";
 import {
   ConfigProvider,
+  Console,
   DateTime,
   Effect,
   Exit,
@@ -25,9 +26,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Style } from "../src/format.js";
-import { fakePrompt, type Prompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import { status } from "../src/status.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
 
 const helperStub = (p: Permissions) =>
   Layer.succeed(
@@ -118,17 +121,20 @@ describe("status", () => {
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt([], true);
+        const terminal = yield* MockTerminal.make(true);
+        const console = yield* MockConsole.make;
         const state = yield* Ref.make(launchdState);
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           helperStub(p),
-          NodeContext.layer,
           Style.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
-        const output = yield* Ref.get(prompt.output);
+        const output = yield* console.getLines({ stripAnsi: true });
         return { exit, output, state: yield* Ref.get(state) };
       }).pipe(
         Effect.withConfigProvider(
@@ -166,7 +172,8 @@ describe("status", () => {
     await Effect.runPromise(Effect.scoped(openStore(path)));
     const exit = await Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt([], true);
+        const terminal = yield* MockTerminal.make(true);
+        const console = yield* MockConsole.make;
         const state = yield* Ref.make<LaunchdState>({
           installed: true,
           running: true,
@@ -174,10 +181,12 @@ describe("status", () => {
           installs: 0,
         });
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           helperMissing("/stub"),
-          NodeContext.layer,
           Style.Test,
         );
         return yield* Effect.exit(status().pipe(Effect.provide(layers)));
@@ -207,7 +216,8 @@ describe("status", () => {
     await Effect.runPromise(Effect.scoped(openStore(path)));
     const exit = await Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt([], true);
+        const terminal = yield* MockTerminal.make(true);
+        const console = yield* MockConsole.make;
         const state = yield* Ref.make<LaunchdState>({
           installed: true,
           running: true,
@@ -215,10 +225,12 @@ describe("status", () => {
           installs: 0,
         });
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           helperExits("boom"),
-          NodeContext.layer,
           Style.Test,
         );
         return yield* Effect.exit(status().pipe(Effect.provide(layers)));
@@ -300,7 +312,8 @@ describe("status", () => {
     await Effect.runPromise(Effect.scoped(openStore(path)));
     const { exit, output } = await Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt([], true);
+        const terminal = yield* MockTerminal.make(true);
+        const console = yield* MockConsole.make;
         const state = yield* Ref.make<LaunchdState>({
           installed: true,
           running: true,
@@ -308,14 +321,16 @@ describe("status", () => {
           installs: 0,
         });
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           helperStub(allGranted),
-          NodeContext.layer,
           Layer.succeed(Style, new Style({ color: true, unicode: true })),
         );
         const exit = yield* Effect.exit(status().pipe(Effect.provide(layers)));
-        const output = yield* Ref.get(prompt.output);
+        const output = yield* console.getLines();
         return { exit, output };
       }).pipe(
         Effect.withConfigProvider(

@@ -7,7 +7,7 @@ import { isFriendlyError, run } from "./cli.js";
 import { Style } from "./format.js";
 import { Hosts } from "./hosts.js";
 import { ReportedError } from "./output.js";
-import { Prompt } from "./prompt.js";
+import { Prompt, StoppedError } from "./prompt.js";
 
 const layers = Layer.mergeAll(
   Helper.Default,
@@ -29,7 +29,7 @@ run(process.argv).pipe(
       ) {
         console.error((e as { message: string }).message);
       }
-      process.exitCode = 1;
+      process.exitCode = e instanceof StoppedError ? 130 : 1;
     }),
   ),
   Effect.provide(layers),

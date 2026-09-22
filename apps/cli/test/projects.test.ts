@@ -1,23 +1,37 @@
 import { type ProjectNotFoundError, Store, setProject } from "@clocktrace/core";
-import { Effect, Exit, Layer, Ref } from "effect";
+import { NodeContext } from "@effect/platform-node";
+import { Console, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   printProjects,
   printRemovedProject,
   printSetProject,
 } from "../src/projects.js";
-import { fakePrompt, type Prompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
 
 const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const prompt = yield* fakePrompt([], false);
+      const terminal = yield* MockTerminal.make(false);
+      const console = yield* MockConsole.make;
       const exit = yield* Effect.exit(
         Effect.scoped(
-          body.pipe(Effect.provide(Layer.merge(prompt.layer, Store.Test))),
+          body.pipe(
+            Effect.provide(
+              Layer.mergeAll(
+                Console.setConsole(console),
+                NodeContext.layer,
+                terminal.layer,
+                Prompt.Default,
+                Store.Test,
+              ),
+            ),
+          ),
         ),
       );
-      const output = yield* Ref.get(prompt.output);
+      const output = yield* console.getLines({ stripAnsi: true });
       return { exit, output };
     }),
   );

@@ -22,6 +22,7 @@ import { type Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import {
   ConfigProvider,
+  Console,
   DateTime,
   Effect,
   Exit,
@@ -36,8 +37,12 @@ import { parse } from "yaml";
 
 import { Style } from "../src/format.js";
 import { type HostName, Hosts, manualCommand } from "../src/hosts.js";
-import { fakePrompt } from "../src/prompt.js";
+import { Prompt, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
+
+type Key = { readonly key: string; readonly ctrl?: boolean } | string;
 
 const allGranted: Permissions = {
   accessibility: "granted",
@@ -145,17 +150,23 @@ describe("hosts", () => {
   const runSetup = (
     hosts: ReadonlyArray<HostName> | undefined,
     opts: {
-      readonly answers?: ReadonlyArray<string>;
+      readonly keys?: ReadonlyArray<Key>;
       readonly interactive?: boolean;
       readonly results?: Record<string, ExecResult>;
     } = {},
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt(
-          opts.answers ?? [],
-          opts.interactive ?? false,
-        );
+        const terminal = yield* MockTerminal.make(opts.interactive ?? false);
+        const console = yield* MockConsole.make;
+        for (const k of opts.keys ?? []) {
+          yield* typeof k === "string"
+            ? terminal.inputText(k)
+            : terminal.inputKey(
+                k.key,
+                k.ctrl === undefined ? {} : { ctrl: k.ctrl },
+              );
+        }
         const executor = yield* fakeExecutor(opts.results ?? {});
         const state = yield* Ref.make<LaunchdState>({
           installed: false,
@@ -164,11 +175,13 @@ describe("hosts", () => {
           installs: 0,
         });
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           helperStub(allGranted),
           Hosts.Default,
-          NodeContext.layer,
           executor.layer,
           Style.Test,
         );
@@ -177,8 +190,8 @@ describe("hosts", () => {
         );
         return {
           exit,
-          output: yield* Ref.get(prompt.output),
-          questions: yield* Ref.get(prompt.questions),
+          output: yield* console.getLines({ stripAnsi: true }),
+          shown: yield* terminal.shown,
           recorded: yield* Ref.get(executor.recorded),
         };
       }).pipe(
@@ -392,9 +405,69 @@ describe("hosts", () => {
 
   it("the checklist registers the ticked hosts", async () => {
     // Given: `which claude` exits 0, the others non-zero; no host config dirs
+    // When: down to Codex, space ticks it, enter registers claude and codex
+    const { exit, output, shown, recorded } = await runSetup(undefined, {
+      keys: [
+        { key: "down" },
+        { key: "down" },
+        { key: "down" },
+        { key: "space" },
+        { key: "enter" },
+      ],
+      interactive: true,
+      results: {
+        "which claude": { code: 0 },
+        "which codex": { code: 1 },
+        "which openclaw": { code: 1 },
+        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
+          code: 0,
+        },
+        "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
+      },
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain(
+      "? Hosts  ↑↓ move · space toggle · enter register ›",
+    );
+    expect(shown).toContain("  ☒ Claude Code - found");
+    expect(shown).toContain("  ☐ Codex");
+    expect(shown).toContain("  ☐ Hermes Agent");
+    expect(shown).toContain("  ☐ OpenClaw");
+    expect(shown).toContain("  ☒ Codex");
+    expect(recorded.slice(-2)).toEqual([
+      "claude mcp add --scope user clocktrace -- clocktrace mcp",
+      "codex mcp add clocktrace -- clocktrace mcp",
+    ]);
+    expect(output).toContain("claude code: registered");
+    expect(output).toContain("codex: registered");
+  });
+
+  it("ctrl-c at the checklist stops setup and registers nothing", async () => {
+    // Given: claude detected; ctrl-c arrives at the checklist
     // When
-    const { exit, output } = await runSetup(undefined, {
-      answers: [""],
+    const { exit, output, recorded } = await runSetup(undefined, {
+      keys: [{ key: "c", ctrl: true }],
+      interactive: true,
+      results: {
+        "which claude": { code: 0 },
+        "which codex": { code: 1 },
+        "which openclaw": { code: 1 },
+      },
+    });
+    // Then
+    expect(exit).toEqual(Exit.fail(new StoppedError()));
+    expect(recorded).not.toContain(
+      "claude mcp add --scope user clocktrace -- clocktrace mcp",
+    );
+    expect(output.every((line) => !line.endsWith("registered"))).toBe(true);
+  });
+
+  it("a key other than arrows, space, enter does nothing at the checklist", async () => {
+    // Given: claude detected; an unrelated key, then enter
+    // When
+    const { exit, output, shown } = await runSetup(undefined, {
+      keys: ["x", { key: "enter" }],
       interactive: true,
       results: {
         "which claude": { code: 0 },
@@ -407,14 +480,14 @@ describe("hosts", () => {
     });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toContain("1. [x] claude code");
+    expect(shown.split("Inverse Selection")).toHaveLength(2);
     expect(output).toContain("claude code: registered");
   });
 
   it("non-tty with --hosts registers the named without a checklist", async () => {
-    // Given: fakePrompt interactive: false; hosts = claude, codex
+    // Given: the mock terminal is not a TTY; hosts = claude, codex
     // When
-    const { exit, output, questions, recorded } = await runSetup(
+    const { exit, output, shown, recorded } = await runSetup(
       ["claude", "codex"],
       {
         interactive: false,
@@ -434,6 +507,6 @@ describe("hosts", () => {
     ]);
     expect(output).toContain("claude code: registered");
     expect(output).toContain("codex: registered");
-    expect(questions).toEqual([]);
+    expect(shown).not.toContain("Hosts");
   });
 });
