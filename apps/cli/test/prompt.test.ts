@@ -1,3 +1,4 @@
+import type { CommandExecutor, FileSystem, Path, Terminal } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Console, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
@@ -8,10 +9,19 @@ import * as MockTerminal from "./mock-terminal.js";
 
 type Key = { readonly key: string; readonly ctrl?: boolean } | string;
 
+type Provided =
+  | Prompt
+  | Stdin
+  | typeof Console
+  | Terminal.Terminal
+  | FileSystem.FileSystem
+  | Path.Path
+  | CommandExecutor.CommandExecutor;
+
 const run = <A, E>(
   keys: ReadonlyArray<Key>,
   tty: boolean,
-  effect: Effect.Effect<A, E, Prompt>,
+  effect: Effect.Effect<A, E, Provided>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -32,7 +42,9 @@ const run = <A, E>(
         Prompt.Default,
         Stdin.Test,
       );
-      const exit = yield* Effect.exit(effect.pipe(Effect.provide(layers)));
+      const exit = yield* Effect.exit(
+        effect.pipe(Effect.provide(layers)) as Effect.Effect<A, E>,
+      );
       return {
         exit,
         output: yield* console.getLines({ stripAnsi: true }),

@@ -53,7 +53,7 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
           tty
             ? t.display(label).pipe(
                 Effect.andThen(effect),
-                Effect.ensuring(t.display("\r\u001b[2K")),
+                Effect.ensuring(Effect.ignore(t.display("\r\u001b[2K"))),
               )
             : Console.log(label).pipe(Effect.andThen(effect)),
         ),
