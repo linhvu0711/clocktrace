@@ -113,20 +113,18 @@ const loadRange = (input: {
         >([]);
         // Serial lookups stay under Apple's rate limit; the whole pass is
         // bounded so a stalled network can't hang a query per bundle ID.
-        yield* Effect.race(
-          Effect.forEach(
-            iosBundleIds,
-            (bundleId) =>
-              Effect.flatMap(resolveAppName(bundleId), (app) =>
-                Ref.update(acc, (xs) => [
-                  ...xs,
-                  [bundleId, Option.getOrNull(app)] as const,
-                ]),
-              ),
-            { concurrency: 1 },
-          ),
-          Effect.sleep("15 seconds"),
-        );
+        // timeoutOption preserves a StoreError where race would hide it.
+        yield* Effect.forEach(
+          iosBundleIds,
+          (bundleId) =>
+            Effect.flatMap(resolveAppName(bundleId), (app) =>
+              Ref.update(acc, (xs) => [
+                ...xs,
+                [bundleId, Option.getOrNull(app)] as const,
+              ]),
+            ),
+          { concurrency: 1 },
+        ).pipe(Effect.timeoutOption("15 seconds"));
         return yield* Ref.get(acc);
       }),
     );
