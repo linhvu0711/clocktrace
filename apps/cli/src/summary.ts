@@ -14,6 +14,7 @@ import { Command, Options } from "@effect/cli";
 import { type DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import { Style } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
@@ -41,17 +42,25 @@ export const printSummary = (
 ): Effect.Effect<
   void,
   InvalidRangeError | StoreError | ParseError,
-  Store | Prompt | DateTime.CurrentTimeZone
+  Store | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
+    const look = yield* Style;
     const range = yield* usedRange(input.range);
     const result = yield* summary(input);
     const encoded = yield* Schema.encode(Summary)(result);
     const value = { range, ...encoded, ...emptyNote(encoded.rows) };
     yield* report(json, value, (v) =>
       v.note === undefined
-        ? [windowLine(v.range), ...v.rows.map(summaryLine), `total  ${v.total}`]
-        : [windowLine(v.range), v.note],
+        ? [
+            windowLine(input.range, v.range.zone, look, `by ${input.groupBy}`),
+            ...v.rows.map(summaryLine),
+            `total  ${v.total}`,
+          ]
+        : [
+            windowLine(input.range, v.range.zone, look, `by ${input.groupBy}`),
+            "no activity",
+          ],
     );
   });
 

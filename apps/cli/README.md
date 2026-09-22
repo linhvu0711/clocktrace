@@ -56,10 +56,10 @@ prints exactly what the tool returns, an empty list prints `none`, and
 a core error prints the tool's text and exits 1. A `compare` that holds
 a space is quoted: `--compare "ends with"`. A `<d>` is a local date
 `YYYY-MM-DD` or a local date-time `YYYY-MM-DDTHH:mm` in this Mac's zone;
-words like `today` are not accepted. Every question reply starts with the
-window used and its zone; an empty window prints `no activity in this
-range`; times in the lines are local minutes, the seconds are in
-`--json`.
+words like `today` are not accepted. Every report starts with the day as
+asked and its zone, `2026-09-22 whole day · Asia/Saigon`; an empty window
+prints `no activity`; a row shows the start minute and the length, the
+exact seconds and the ids are in `--json`.
 
 ## Settings
 

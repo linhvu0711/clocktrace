@@ -12,6 +12,7 @@ import { Command } from "@effect/cli";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import { Style } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
@@ -42,9 +43,10 @@ export const printTimeline = (
 ): Effect.Effect<
   void,
   InvalidRangeError | StoreError | ParseError,
-  Store | Prompt | DateTime.CurrentTimeZone
+  Store | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
+    const look = yield* Style;
     const zone = yield* DateTime.CurrentTimeZone;
     const range = yield* usedRange(input.range);
     const blocks = yield* timeline(input);
@@ -53,8 +55,8 @@ export const printTimeline = (
     const value = { range, rows, total: rows.length, ...emptyNote(rows) };
     yield* report(json, value, (v) =>
       v.note === undefined
-        ? [windowLine(v.range), ...lines]
-        : [windowLine(v.range), v.note],
+        ? [windowLine(input.range, v.range.zone, look), ...lines]
+        : [windowLine(input.range, v.range.zone, look), "no activity"],
     );
   });
 

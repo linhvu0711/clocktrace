@@ -9,6 +9,7 @@ import { Console, DateTime, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { printActivities } from "../src/activities.js";
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -19,7 +20,7 @@ const EmptyStore = Layer.scoped(
 );
 
 const runPrint = <A, E>(
-  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone>,
+  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone | Style>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -36,6 +37,7 @@ const runPrint = <A, E>(
                 terminal.layer,
                 Prompt.Default,
                 EmptyStore,
+                Style.Test,
               ),
             ),
           ),
@@ -98,7 +100,7 @@ const seedMany = (store: StoreShape, count: number) =>
     }
   });
 
-const window = "2026-09-18T00:00 to 2026-09-19T00:00 America/Los_Angeles";
+const window = "2026-09-18 whole day · America/Los_Angeles";
 
 describe("activities", () => {
   it("activities prints the window, then one line per row", async () => {
@@ -222,7 +224,7 @@ describe("activities", () => {
     expect(Object.keys(page)).toEqual(["range", "rows", "total", "hasMore"]);
   });
 
-  it("activities of an empty window prints the note", async () => {
+  it("activities of an empty window prints the window line and no activity", async () => {
     // Given: seedDay
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -238,8 +240,8 @@ describe("activities", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "2026-01-01T00:00 to 2026-01-02T00:00 America/Los_Angeles",
-      "no activity in this range",
+      "2026-01-01 whole day · America/Los_Angeles",
+      "no activity",
     ]);
   });
 

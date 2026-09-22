@@ -9,6 +9,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Console, DateTime, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import { printSummary } from "../src/summary.js";
 import * as MockConsole from "./mock-console.js";
@@ -20,7 +21,7 @@ const EmptyStore = Layer.scoped(
 );
 
 const runPrint = <A, E>(
-  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone>,
+  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone | Style>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -37,6 +38,7 @@ const runPrint = <A, E>(
                 terminal.layer,
                 Prompt.Default,
                 EmptyStore,
+                Style.Test,
               ),
             ),
           ),
@@ -98,10 +100,10 @@ const seedTwoDevices = (store: StoreShape) =>
     return studio;
   });
 
-const window = "2026-09-18T00:00 to 2026-09-19T00:00 America/Los_Angeles";
+const window = "2026-09-18 whole day · America/Los_Angeles";
 
 describe("summary", () => {
-  it("summary by app prints the window, one line per group, and the total", async () => {
+  it("summary by app prints the app name only", async () => {
     // Given: seedDay
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -117,7 +119,7 @@ describe("summary", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      window,
+      `${window} · by app`,
       "com.microsoft.VSCode  Code  5400",
       "com.google.Chrome  Google Chrome  600",
       "total  6000",
@@ -157,7 +159,7 @@ describe("summary", () => {
     if (Exit.isSuccess(exit)) {
       const coding = exit.value;
       expect(output).toEqual([
-        window,
+        `${window} · by category`,
         `${coding.id}  Coding  5400  productive`,
         "uncategorized  Uncategorized  600",
         "total  6000",
@@ -220,14 +222,14 @@ describe("summary", () => {
     if (Exit.isSuccess(exit)) {
       const studio = exit.value;
       expect(output).toEqual([
-        window,
+        `${window} · by device`,
         `${studio.id}  Studio  6000`,
         "total  6000",
       ]);
     }
   });
 
-  it("summary of an empty window prints the note", async () => {
+  it("summary of an empty window prints the window line and no activity", async () => {
     // Given: seedDay
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -243,8 +245,8 @@ describe("summary", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "2026-01-01T00:00 to 2026-01-02T00:00 America/Los_Angeles",
-      "no activity in this range",
+      "2026-01-01 whole day · America/Los_Angeles · by app",
+      "no activity",
     ]);
   });
 
