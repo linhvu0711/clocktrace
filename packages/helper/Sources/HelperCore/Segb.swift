@@ -1,10 +1,12 @@
 import Foundation
+import zlib
 
 public struct SegbEntry: Equatable {
   public var offset: Int
-  public var payload: Data
+  /// nil when the payload does not match the CRC32 in the entry header.
+  public var payload: Data?
 
-  public init(offset: Int, payload: Data) {
+  public init(offset: Int, payload: Data?) {
     self.offset = offset
     self.payload = payload
   }
@@ -51,9 +53,20 @@ public func readSegb(_ data: Data) -> SegbRead {
       pos += 4 - slot.endOffset % 4
     }
     if slot.state == 1 {
+      // Entry header: bytes 0-3 are the CRC32 of the payload, little-endian.
+      // entryStart is a multiple of 4, so it indexes the Int32 view.
+      let stored = UInt32(bitPattern: ints[entryStart / 4])
       let payload = data[(entryStart + 8)..<(entryStart + length)]
-      entries.append(SegbEntry(offset: entryStart, payload: payload))
+      let matches = payloadCrc32(payload) == stored
+      entries.append(SegbEntry(offset: entryStart, payload: matches ? payload : nil))
     }
   }
   return .entries(entries)
+}
+
+private func payloadCrc32(_ data: Data) -> UInt32 {
+  data.withUnsafeBytes { raw in
+    UInt32(
+      truncatingIfNeeded: crc32(0, raw.bindMemory(to: UInt8.self).baseAddress, uInt(raw.count)))
+  }
 }

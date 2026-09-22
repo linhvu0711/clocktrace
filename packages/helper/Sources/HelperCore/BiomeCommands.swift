@@ -5,7 +5,7 @@ public func decodeSegment(_ data: Data, device: String, segment: String) -> [Bio
     return [.parseError(BiomeParseErrorLine(segment: segment, offset: 0))]
   }
   return entries.map { entry in
-    guard let record = inFocusRecord(entry.payload) else {
+    guard let payload = entry.payload, let record = inFocusRecord(payload) else {
       return .parseError(BiomeParseErrorLine(segment: segment, offset: entry.offset))
     }
     return .record(
@@ -37,8 +37,18 @@ public func biomeRecords(
     emitError("no App.InFocus remote folder")
     return 4
   }
+  var failed = false
   for device in devices.sorted() {
-    for segment in reads.segments(device).sorted(by: { $0.name < $1.name }) {
+    let segments: [BiomeSegment]
+    switch reads.segments(device) {
+    case .listed(let listed):
+      segments = listed
+    case .failed(let message):
+      emitError("cannot list \(message)")
+      failed = true
+      continue
+    }
+    for segment in segments.sorted(by: { $0.name < $1.name }) {
       if let since, segment.modifiedAt < Double(since) { continue }
       guard let data = reads.segmentData(device, segment.name) else {
         emit(BiomeLine.parseError(BiomeParseErrorLine(segment: segment.name, offset: 0)).json())
@@ -49,7 +59,7 @@ public func biomeRecords(
       }
     }
   }
-  return 0
+  return failed ? 6 : 0
 }
 
 public func biomeDevices(
