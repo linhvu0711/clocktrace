@@ -33,7 +33,7 @@ import {
   UnknownHostError,
 } from "./hosts.js";
 import { walkPermissions } from "./permissions.js";
-import { Prompt, type StoppedError } from "./prompt.js";
+import { Prompt, type Stdin, type StoppedError } from "./prompt.js";
 import { withStore } from "./set-up.js";
 
 const printManualCommands: Effect.Effect<void, never, Prompt> = Effect.gen(
@@ -99,6 +99,7 @@ export const setup = (
   | LaunchdError
   | StoppedError,
   | Prompt
+  | Stdin
   | Helper
   | Launchd
   | Hosts

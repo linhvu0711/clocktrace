@@ -7,13 +7,14 @@ import { isFriendlyError, run } from "./cli.js";
 import { Style } from "./format.js";
 import { Hosts } from "./hosts.js";
 import { ReportedError } from "./output.js";
-import { Prompt, StoppedError } from "./prompt.js";
+import { Prompt, Stdin, StoppedError } from "./prompt.js";
 
 const layers = Layer.mergeAll(
   Helper.Default,
   Hosts.Default,
   Launchd.Default,
   Prompt.Default,
+  Stdin.Default,
   Style.Default,
   NodeContext.layer,
   DateTime.layerCurrentZoneLocal,

@@ -37,7 +37,7 @@ import {
   hostNames,
   manualCommand,
 } from "../src/hosts.js";
-import { Prompt } from "../src/prompt.js";
+import { Prompt, Stdin } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -116,6 +116,7 @@ describe("setup", () => {
       readonly hosts?: ReadonlyArray<HostName>;
       readonly keys?: ReadonlyArray<Key>;
       readonly interactive?: boolean;
+      readonly stdin?: boolean;
       readonly launchd?: {
         readonly failBootstrap?: boolean;
         readonly bootstrapStuck?: boolean;
@@ -141,6 +142,9 @@ describe("setup", () => {
           NodeContext.layer,
           terminal.layer,
           Prompt.Default,
+          (opts.stdin ?? true)
+            ? Stdin.Test
+            : Layer.succeed(Stdin, new Stdin({ isTTY: Effect.succeed(false) })),
           fakeLaunchd(state, opts.launchd),
           helperLayer,
           Hosts.Default,
@@ -274,6 +278,25 @@ describe("setup", () => {
       plist: null,
       installs: 0,
     });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(
+      output.filter((l) => l === "no terminal, skipping questions"),
+    ).toHaveLength(1);
+    expect(output).toEqual(expect.arrayContaining(manualLines));
+    expect(output).not.toContain("no host picked");
+    expect(shown).not.toContain("Hosts");
+  });
+
+  it("tty stdout with non-tty stdin prints no terminal once and the four commands", async () => {
+    // Given: the mock terminal is a TTY but stdin is not
+    // When
+    const { exit, output, shown } = await run(
+      helperStub(allGranted),
+      { installed: true, running: true, plist: null, installs: 0 },
+      "/stub",
+      { interactive: true, stdin: false },
+    );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(
