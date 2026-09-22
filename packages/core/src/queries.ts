@@ -1,4 +1,4 @@
-import { DateTime, Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Option, Ref, Schema } from "effect";
 
 import { Activity } from "./activity.js";
 import { type ResolvedApp, resolveAppName } from "./app-names.js";
@@ -107,25 +107,43 @@ const loadRange = (input: {
       ),
     ];
     const resolved = new Map<string, ResolvedApp | null>(
-      yield* Effect.forEach(
-        iosBundleIds,
-        (bundleId) =>
-          Effect.map(
-            resolveAppName(bundleId),
-            (app) => [bundleId, Option.getOrNull(app)] as const,
+      yield* Effect.gen(function* () {
+        const acc = yield* Ref.make<
+          ReadonlyArray<readonly [string, ResolvedApp | null]>
+        >([]);
+        // Serial lookups stay under Apple's rate limit; the whole pass is
+        // bounded so a stalled network can't hang a query per bundle ID.
+        yield* Effect.race(
+          Effect.forEach(
+            iosBundleIds,
+            (bundleId) =>
+              Effect.flatMap(resolveAppName(bundleId), (app) =>
+                Ref.update(acc, (xs) => [
+                  ...xs,
+                  [bundleId, Option.getOrNull(app)] as const,
+                ]),
+              ),
+            { concurrency: 1 },
           ),
-        { concurrency: 1 },
-      ),
+          Effect.sleep("15 seconds"),
+        );
+        return yield* Ref.get(acc);
+      }),
     );
     const categories = yield* store.listCategories();
     return {
       rows: stored.map((activity) => {
-        const info = resolved.get(activity.bundleId) ?? null;
+        const kind = deviceById.get(activity.deviceId)?.kind;
+        const info =
+          kind === "iphone" || kind === "ipad"
+            ? (resolved.get(activity.bundleId) ?? null)
+            : null;
+        const resolvedActivity =
+          info === null ? activity : { ...activity, appName: info.name };
         return {
-          activity:
-            info === null ? activity : { ...activity, appName: info.name },
+          activity: resolvedActivity,
           resolution: resolve(
-            activity,
+            resolvedActivity,
             rules,
             deviceById.get(activity.deviceId) ?? null,
             info?.genre ?? null,

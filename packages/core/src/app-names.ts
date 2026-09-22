@@ -50,6 +50,17 @@ export const resolveAppName = (
           Effect.succeed(Option.none<ResolvedApp>()),
         ),
       );
+    if (Option.isNone(found)) {
+      // A concurrent resolver may have stored a name while this lookup was
+      // in flight; a failed attempt must not erase it.
+      const recheck = yield* store.getAppName(bundleId);
+      if (Option.isSome(recheck) && recheck.value.name !== null) {
+        return Option.some({
+          name: recheck.value.name,
+          genre: recheck.value.genre,
+        });
+      }
+    }
     const now = yield* DateTime.now;
     yield* store.upsertAppName({
       bundleId,
