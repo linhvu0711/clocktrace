@@ -65,7 +65,9 @@ exits 0. The database and the logs stay unless `--purge` is given: on a
 terminal it asks before deleting the database, without one the flag is
 the consent, and the logs go either way. A failed Host remove prints
 the command to run by hand and exits 1. The `clocktrace` command itself
-is not removed.
+is not removed. A kept custom database is purged later with
+`CLOCKTRACE_DB=<path> clocktrace uninstall --purge`; the Done line
+prints that command, because the launch agent that knew the path is gone.
 
 `rules`, `categories`, `projects`, `summary`, `timeline`, `activities`, and `status --json` are the Twins of the MCP tools
 (ADR 0006): each calls the same core function as its tool, `--json`

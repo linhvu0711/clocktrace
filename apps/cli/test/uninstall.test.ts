@@ -222,7 +222,7 @@ describe("uninstall", () => {
       "✔ app removed",
       "✔ Claude Code unregistered",
       "",
-      `Done. Database kept at ${dbPath} (clocktrace uninstall --purge deletes it).`,
+      `Done. Database kept at ${dbPath} (CLOCKTRACE_DB=${dbPath} clocktrace uninstall --purge deletes it).`,
     ]);
     expect(state.installed).toBe(false);
     expect(state.running).toBe(false);
@@ -244,7 +244,7 @@ describe("uninstall", () => {
       "✔ app already removed",
       "○ no hosts found",
       "",
-      `Done. Database kept at ${dbPath} (clocktrace uninstall --purge deletes it).`,
+      `Done. Database kept at ${dbPath} (CLOCKTRACE_DB=${dbPath} clocktrace uninstall --purge deletes it).`,
     ];
     // When
     const first = await run({ agent: noAgent, app: false });
@@ -294,7 +294,7 @@ describe("uninstall", () => {
     expect(output).toContain("○ database kept");
     expect(output).toContain("✔ logs removed");
     expect(output.at(-1)).toBe(
-      `Done. Database kept at ${dbPath} (clocktrace uninstall --purge deletes it).`,
+      `Done. Database kept at ${dbPath} (CLOCKTRACE_DB=${dbPath} clocktrace uninstall --purge deletes it).`,
     );
   });
 
@@ -448,7 +448,7 @@ describe("uninstall", () => {
     expect(output.at(-1)).toBe("Done. Only the clocktrace command remains.");
   });
 
-  it("the Done line names the database the plist pointed at", async () => {
+  it("the Done line names the database the plist pointed at and the command that purges it later", async () => {
     // Given: no env var; the plist names a custom database; no --purge
     const custom = join(dir, "custom.db");
     // When
@@ -459,7 +459,7 @@ describe("uninstall", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output.at(-1)).toBe(
-      `Done. Database kept at ${custom} (clocktrace uninstall --purge deletes it).`,
+      `Done. Database kept at ${custom} (CLOCKTRACE_DB=${custom} clocktrace uninstall --purge deletes it).`,
     );
   });
 

@@ -204,6 +204,12 @@ export const uninstall = (options: {
       yield* done(hadLogs ? "logs removed" : "logs already removed");
     }
 
+    // The plist that named a custom database is gone now, so the later
+    // purge command carries the path itself.
+    const purgeCommand =
+      dbPath === defaultDbPath
+        ? "clocktrace uninstall --purge"
+        : `CLOCKTRACE_DB=${dbPath} clocktrace uninstall --purge`;
     yield* prompt.print("");
     yield* prompt.print(
       dbKept
@@ -212,7 +218,7 @@ export const uninstall = (options: {
               "Done. Database kept at ",
               span("dim", shortPath(dbPath, home)),
               " (",
-              span("head", "clocktrace uninstall --purge"),
+              span("head", purgeCommand),
               " deletes it).",
             ],
             look,
