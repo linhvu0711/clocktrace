@@ -92,6 +92,51 @@ describe("format", () => {
     ).toEqual(["\u001b[0;32m✔\u001b[0m a   x", "bbbb  y"]);
   });
 
+  it("columns align a wide-character cell with an ASCII one", () => {
+    // Given
+    const plain = { color: false, unicode: true };
+    // When / Then
+    expect(
+      columns(
+        [
+          ["漢字", "then"],
+          ["ab", "then"],
+        ],
+        plain,
+      ),
+    ).toEqual(["漢字  then", "ab    then"]);
+  });
+
+  it("columns align a cell with a combining mark", () => {
+    // Given
+    const plain = { color: false, unicode: true };
+    // When / Then
+    expect(
+      columns(
+        [
+          ["éx", "then"],
+          ["ab", "then"],
+        ],
+        plain,
+      ),
+    ).toEqual(["éx  then", "ab  then"]);
+  });
+
+  it("columns align a cell with an emoji ZWJ sequence", () => {
+    // Given
+    const plain = { color: false, unicode: true };
+    // When / Then
+    expect(
+      columns(
+        [
+          ["👩‍👩‍👧‍👦", "then"],
+          ["ab", "then"],
+        ],
+        plain,
+      ),
+    ).toEqual(["👩‍👩‍👧‍👦  then", "ab  then"]);
+  });
+
   it("shortPath puts ~ in place of the home folder at a path boundary", () => {
     // Given / When / Then
     expect([

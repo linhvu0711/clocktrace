@@ -3,6 +3,7 @@ import { Terminal } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Ansi, AnsiDoc } from "@effect/printer-ansi";
 import { Config, DateTime, Effect, Layer, Option } from "effect";
+import stringWidth from "string-width";
 
 export type Tone = "ok" | "warn" | "bad" | "dim" | "head";
 
@@ -73,7 +74,7 @@ export const shortPath = (path: string, home: string): string =>
       : path;
 
 const visible = (cell: Cell): number =>
-  spans(cell).reduce((n, s) => n + s.text.length, 0);
+  spans(cell).reduce((n, s) => n + stringWidth(s.text), 0);
 
 export const columns = (
   rows: ReadonlyArray<ReadonlyArray<Cell>>,
