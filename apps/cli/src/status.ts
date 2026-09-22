@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 
 import {
+  type DeviceStatus,
   type Helper,
   type HelperExitedError,
   type HelperNotFoundError,
@@ -65,6 +66,26 @@ const permissionRow = (p: PermissionLine, look: Look): ReadonlyArray<Cell> => {
   ];
 };
 
+const deviceRow = (
+  d: DeviceStatus,
+  look: Look,
+  now: DateTime.Zoned,
+): ReadonlyArray<Cell> => {
+  const tone = d.sync === "synced" ? "ok" : d.sync === "stale" ? "bad" : "warn";
+  const sync =
+    d.sync === "synced" && d.lastSync !== null
+      ? `last synced ${clock(d.lastSync, now)}`
+      : d.sync === "stale" && d.lastSync !== null
+        ? `not syncing since ${clock(d.lastSync, now)}`
+        : "never synced";
+  const activity =
+    d.lastActivity === null ? "none yet" : clock(d.lastActivity, now);
+  return [
+    ["  ", mark(tone, look), " ", d.name],
+    span(tone === "ok" ? "dim" : tone, `${sync} · last activity ${activity}`),
+  ];
+};
+
 const statusScreen = (
   s: Status,
   look: Look,
@@ -73,35 +94,64 @@ const statusScreen = (
 ): ReadonlyArray<string> => {
   const granted = s.permissions.filter((p) => p.state === "granted");
   const rest = s.permissions.filter((p) => p.state !== "granted");
-  const groups = columns(
-    [
-      [
-        span("head", "Collector"),
-        s.collector === "running"
-          ? [mark("ok", look), " running"]
-          : [mark("warn", look), " stopped · run clocktrace start"],
-      ],
-      [
-        span("head", "Permissions"),
-        span("dim", `${granted.length} of ${s.permissions.length} granted`),
-      ],
-      [
-        span("head", "Last activity"),
-        s.lastActivity === null ? "none yet" : clock(s.lastActivity, now),
-      ],
-      [span("head", "Database"), span("dim", shortPath(s.databasePath, home))],
-    ],
+  const collector: ReadonlyArray<Cell> = [
+    span("head", "Collector"),
+    s.collector === "running"
+      ? [mark("ok", look), " running"]
+      : [mark("warn", look), " stopped · run clocktrace start"],
+  ];
+  const permissions: ReadonlyArray<Cell> = [
+    span("head", "Permissions"),
+    span("dim", `${granted.length} of ${s.permissions.length} granted`),
+  ];
+  const ios: ReadonlyArray<Cell> | null =
+    s.iosImport === null
+      ? null
+      : [
+          span("head", "iOS import"),
+          s.iosImport.state === "ok"
+            ? [mark("ok", look), ` ok · ${clock(s.iosImport.at, now)}`]
+            : s.iosImport.state === "broken"
+              ? [mark("bad", look), ` broken · ${s.iosImport.reason}`]
+              : [
+                  mark("warn", look),
+                  ` not tested on macOS ${s.iosImport.macosVersion}`,
+                ],
+        ];
+  const last: ReadonlyArray<Cell> = [
+    span("head", "Last activity"),
+    s.lastActivity === null ? "none yet" : clock(s.lastActivity, now),
+  ];
+  const database: ReadonlyArray<Cell> = [
+    span("head", "Database"),
+    span("dim", shortPath(s.databasePath, home)),
+  ];
+  const groupRows = columns(
+    [collector, permissions, ...(ios !== null ? [ios] : []), last, database],
     look,
   );
+  const [g0, g1, gIos, gLast, gDb] =
+    ios !== null
+      ? [groupRows[0], groupRows[1], groupRows[2], groupRows[3], groupRows[4]]
+      : [groupRows[0], groupRows[1], undefined, groupRows[2], groupRows[3]];
   return [
-    groups[0] ?? "",
-    groups[1] ?? "",
+    g0 ?? "",
+    g1 ?? "",
     ...columns(
       [...granted, ...rest].map((p) => permissionRow(p, look)),
       look,
     ),
-    groups[2] ?? "",
-    groups[3] ?? "",
+    ...(ios !== null
+      ? [
+          gIos ?? "",
+          ...columns(
+            s.devices.map((d) => deviceRow(d, look, now)),
+            look,
+          ),
+        ]
+      : []),
+    gLast ?? "",
+    gDb ?? "",
   ];
 };
 
