@@ -142,10 +142,16 @@ describe("install cleanup (real service)", () => {
     vi.resetModules();
   });
 
-  // A launchctl stub that reports a chosen exit code for every command.
+  // A launchctl stub that reports a chosen exit code for every command,
+  // except `print` which answers like launchd does when the job is gone.
   const executor = (code: number): CommandExecutor.CommandExecutor => ({
     [CommandExecutor.TypeId]: CommandExecutor.TypeId,
-    exitCode: () => Effect.succeed(code as CommandExecutor.ExitCode),
+    exitCode: (command) =>
+      Effect.succeed(
+        (command._tag === "StandardCommand" && command.args[0] === "print"
+          ? 3
+          : code) as CommandExecutor.ExitCode,
+      ),
     start: () => Effect.die("unused"),
     string: () => Effect.succeed(""),
     lines: () => Effect.succeed([]),
