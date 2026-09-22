@@ -1,4 +1,6 @@
 import {
+  addRule,
+  type CategoryInUseError,
   type CategoryNotFoundError,
   openStore,
   Store,
@@ -323,9 +325,48 @@ describe("categories", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       const { c, categories } = exit.value;
-      expect(output).toEqual([`removed ${c.id}`]);
+      expect(output).toEqual([`✔ removed category ${c.id}`]);
       expect(categories).toEqual([]);
     }
+  });
+
+  it("remove of a Category in use names the count", async () => {
+    // Given: a Category with one Rule pointing at it
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const c = yield* setCategory({
+          id: null,
+          name: "Coding",
+          productive: true,
+        });
+        yield* addRule({
+          field: "domain",
+          compare: "ends with",
+          value: "github.com",
+          effect: "category",
+          target: c.id,
+        });
+        // When
+        const removeExit = yield* Effect.exit(
+          printRemovedCategory(c.id, false),
+        );
+        return { c, removeExit };
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const { c, removeExit } = exit.value;
+      expect(Exit.isFailure(removeExit)).toBe(true);
+      if (Exit.isFailure(removeExit) && removeExit.cause._tag === "Fail") {
+        const error = removeExit.cause.error as CategoryInUseError;
+        expect(error.message).toBe(
+          `category ${c.id} is used by 1 rules, remove them first`,
+        );
+      }
+    }
+    expect(output).toEqual([]);
   });
 
   it("remove of an unknown id names the id", async () => {

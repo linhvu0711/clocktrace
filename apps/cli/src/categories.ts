@@ -97,12 +97,15 @@ export const printRemovedCategory = (
 ): Effect.Effect<
   void,
   CategoryNotFoundError | CategoryInUseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
-  Effect.andThen(
-    removeCategory(id),
-    report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
-  );
+  Effect.gen(function* () {
+    const look = yield* Style;
+    yield* removeCategory(id);
+    yield* report(json, { removed: id }, ({ removed }) => [
+      line([mark("ok", look), ` removed category ${removed}`], look),
+    ]);
+  });
 
 const id = Options.text("id").pipe(
   Options.optional,
