@@ -27,6 +27,8 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
     }) =>
       CliPrompt.run(CliPrompt.multiSelect(options)).pipe(
         Effect.mapError(() => new StoppedError()),
+        // The last frame has no trailing newline; land errors on their own line.
+        Effect.tapError(() => Console.log("")),
       ),
     print: (line: string) => Console.log(line),
   },
