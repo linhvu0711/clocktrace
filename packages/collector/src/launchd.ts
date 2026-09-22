@@ -103,13 +103,9 @@ export const plistPath = join(
   `${collectorLabel}.plist`,
 );
 
-export const logPath = join(
-  homedir(),
-  "Library",
-  "Logs",
-  "clocktrace",
-  "collector.log",
-);
+export const logDir = join(homedir(), "Library", "Logs", "clocktrace");
+
+export const logPath = join(logDir, "collector.log");
 
 export const entryPath = fileURLToPath(new URL("./main.js", import.meta.url));
 
@@ -224,9 +220,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
         ),
       install: (plist: string) =>
         fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
-          Effect.andThen(
-            fs.makeDirectory(dirname(logPath), { recursive: true }),
-          ),
+          Effect.andThen(fs.makeDirectory(logDir, { recursive: true })),
           Effect.andThen(fs.writeFileString(plistPath, plist)),
           Effect.mapError(
             (e) =>

@@ -13,6 +13,7 @@ import { statusCommand } from "./status.js";
 import { stopCommand } from "./stop.js";
 import { summaryCommand } from "./summary.js";
 import { timelineCommand } from "./timeline.js";
+import { uninstallCommand } from "./uninstall.js";
 import { version } from "./version.js";
 import { MissingWindowError } from "./window.js";
 
@@ -20,6 +21,7 @@ export const command = Command.make("clocktrace").pipe(
   Command.withDescription("track where your time goes"),
   Command.withSubcommands([
     setupCommand,
+    uninstallCommand,
     startCommand,
     stopCommand,
     statusCommand,

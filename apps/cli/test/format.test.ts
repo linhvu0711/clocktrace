@@ -10,6 +10,7 @@ import {
   line,
   mark,
   Style,
+  shellQuote,
   shortDuration,
   shortPath,
   span,
@@ -419,5 +420,39 @@ describe("format", () => {
   it("text replaces control characters with a space", () => {
     // Given / When / Then
     expect(text("a\nb\tc\r")).toBe("a b c ");
+  });
+});
+
+describe("shellQuote", () => {
+  it("quotes a plain path", () => {
+    // Given: a path with nothing special
+    // When
+    const q = shellQuote("/Users/me/clocktrace.db");
+    // Then
+    expect(q).toBe("'/Users/me/clocktrace.db'");
+  });
+
+  it("keeps a space inside one word", () => {
+    // Given: a path with a space
+    // When
+    const q = shellQuote("/Users/me/Application Support/clocktrace.db");
+    // Then
+    expect(q).toBe("'/Users/me/Application Support/clocktrace.db'");
+  });
+
+  it("does not expand $HOME", () => {
+    // Given: a path holding a dollar sign
+    // When
+    const q = shellQuote("$HOME/clocktrace.db");
+    // Then
+    expect(q).toBe("'$HOME/clocktrace.db'");
+  });
+
+  it("writes an embedded single quote as '\\''", () => {
+    // Given: a path holding a single quote
+    // When
+    const q = shellQuote("/Users/me/it's/clocktrace.db");
+    // Then
+    expect(q).toBe("'/Users/me/it'\\''s/clocktrace.db'");
   });
 });

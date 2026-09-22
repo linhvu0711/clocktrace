@@ -5,7 +5,7 @@ import { Console, Data, Effect, Layer } from "effect";
 // biome-ignore lint/complexity/noBannedTypes: the error has no fields
 export class StoppedError extends Data.TaggedError("StoppedError")<{}> {
   override get message(): string {
-    return "stopped, run clocktrace setup to continue";
+    return "stopped";
   }
 }
 

@@ -1322,6 +1322,7 @@ describe("server", () => {
         install: () => Effect.succeed("written" as const),
         commit: () => Effect.void,
         rollback: () => Effect.void,
+        remove: () => Effect.succeed("absent" as const),
       }),
     );
     const { client, close } = await connect(

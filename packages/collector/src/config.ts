@@ -12,14 +12,14 @@ export const helperPathConfig = Config.string("CLOCKTRACE_HELPER").pipe(
   Config.withDefault(defaultHelperPath),
 );
 
+export const defaultDbPath = join(
+  homedir(),
+  "Library",
+  "Application Support",
+  "clocktrace",
+  "clocktrace.db",
+);
+
 export const dbPathConfig = Config.string("CLOCKTRACE_DB").pipe(
-  Config.withDefault(
-    join(
-      homedir(),
-      "Library",
-      "Application Support",
-      "clocktrace",
-      "clocktrace.db",
-    ),
-  ),
+  Config.withDefault(defaultDbPath),
 );

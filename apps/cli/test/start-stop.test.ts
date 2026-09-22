@@ -135,6 +135,7 @@ describe("start and stop", () => {
         install: () => Effect.succeed("written" as const),
         commit: () => Effect.void,
         rollback: () => Effect.void,
+        remove: () => Effect.succeed("absent" as const),
       }),
     );
     // When

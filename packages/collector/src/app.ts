@@ -92,6 +92,7 @@ export class App extends Effect.Service<App>()("App", {
     const fsError = (step: string) => (e: { readonly message: string }) =>
       new AppError({ step, detail: e.message });
     const rollback = `${appPath}.old`;
+    const staging = `${appPath}.new`;
     // Moves .old back over the live bundle; a no-op without .old. rename
     // refuses to replace a non-empty directory, so the live bundle moves
     // aside first and a failed .old rename puts it back.
@@ -142,7 +143,6 @@ export class App extends Effect.Service<App>()("App", {
           // embeds no path, so the staged bundle stays valid when it is
           // renamed over the live one, and a failure before the rename
           // leaves the old app untouched.
-          const staging = `${appPath}.new`;
           const stagingMain = join(staging, "Contents", "MacOS", "Clocktrace");
           const built = join(dirname(helperPath), "Clocktrace.app");
           const build = Effect.gen(function* () {
@@ -257,6 +257,30 @@ export class App extends Effect.Service<App>()("App", {
           .remove(rollback, { recursive: true, force: true })
           .pipe(Effect.mapError(fsError(`write ${rollback}`))),
       rollback: () => putBack,
+      // Unregister with Launch Services before the bundle goes, so the
+      // grants the app owned do not point at a missing path; a failed
+      // unregister is ignored, the bundle is removed either way. The
+      // .old and .new siblings an interrupted install leaves go too.
+      remove: (): Effect.Effect<"removed" | "absent", AppError> =>
+        Effect.gen(function* () {
+          const present = yield* fs
+            .exists(appPath)
+            .pipe(Effect.mapError(fsError(`read ${appPath}`)));
+          if (present) {
+            yield* Effect.ignore(
+              exit("lsregister", lsregisterPath, "-u", appPath),
+            );
+            yield* fs
+              .remove(appPath, { recursive: true, force: true })
+              .pipe(Effect.mapError(fsError(`remove ${appPath}`)));
+          }
+          for (const sibling of [rollback, staging]) {
+            yield* fs
+              .remove(sibling, { recursive: true, force: true })
+              .pipe(Effect.mapError(fsError(`remove ${sibling}`)));
+          }
+          return present ? "removed" : "absent";
+        }),
     };
   }),
   dependencies: [NodeContext.layer],
@@ -269,6 +293,7 @@ export class App extends Effect.Service<App>()("App", {
       install: () => Effect.succeed("written" as const),
       commit: () => Effect.void,
       rollback: () => Effect.void,
+      remove: () => Effect.succeed("removed" as const),
     }),
   );
 }

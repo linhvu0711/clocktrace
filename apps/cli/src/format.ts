@@ -82,6 +82,10 @@ export const line = (cells: ReadonlyArray<Cell>, look: Look): string =>
     .map((s) => renderSpan(s, look))
     .join("");
 
+/** One POSIX shell word: single-quoted, an embedded ' written as '\\''. */
+export const shellQuote = (value: string): string =>
+  `'${value.replaceAll("'", "'\\''")}'`;
+
 export const shortPath = (path: string, home: string): string =>
   path === home
     ? "~"

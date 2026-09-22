@@ -417,4 +417,32 @@ describe("App.install", () => {
     // Then
     expect(result).toEqual(Exit.succeed({ before: false, after: true }));
   });
+
+  it("remove deletes the bundle, .old, and .new, and unregisters it", async () => {
+    // Given: an installed app, a parked .old bundle, and a stale .new one
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    const { mod } = await runApp(ADHOC, (app) => app.isInstalled());
+    mkdirSync(join(`${mod.appPath}.old`, "Contents"), { recursive: true });
+    mkdirSync(join(`${mod.appPath}.new`, "Contents"), { recursive: true });
+    // When
+    const { result, commands } = await runApp(ADHOC, (app) => app.remove());
+    // Then
+    expect(result).toEqual(Exit.succeed("removed"));
+    expect(existsSync(mod.appPath)).toBe(false);
+    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
+    expect(existsSync(`${mod.appPath}.new`)).toBe(false);
+    expect(commands).toEqual([[mod.lsregisterPath, "-u", mod.appPath]]);
+  });
+
+  it("remove without a bundle is absent and runs nothing", async () => {
+    // Given: nothing at the app path
+    // When
+    const { result, commands, mod } = await runApp(ADHOC, (app) =>
+      app.remove(),
+    );
+    // Then
+    expect(result).toEqual(Exit.succeed("absent"));
+    expect(existsSync(mod.appPath)).toBe(false);
+    expect(commands).toEqual([]);
+  });
 });
