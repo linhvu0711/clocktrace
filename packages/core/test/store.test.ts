@@ -746,4 +746,131 @@ describe("store", () => {
     expect(devices).toHaveLength(1);
     expect(existsSync(":memory:")).toBe(false);
   });
+
+  it("writeImportBatch writes the Activities and the settings together", async () => {
+    // Given: an open store and one device
+    const { activities, progress, status } = await useStore((store) =>
+      Effect.gen(function* () {
+        const device = yield* store.upsertDevice({
+          kind: "iphone",
+          name: "iPhone",
+          externalId: "P2",
+        });
+        // When
+        yield* store.writeImportBatch({
+          activities: [
+            {
+              deviceId: device.id,
+              bundleId: "com.apple.mobilesafari",
+              appName: "com.apple.mobilesafari",
+              title: null,
+              url: null,
+              startedAt: t("2026-09-19T16:01:00.000Z"),
+              endedAt: t("2026-09-19T16:06:00.000Z"),
+            },
+            {
+              deviceId: device.id,
+              bundleId: "com.apple.mobilesafari",
+              appName: "com.apple.mobilesafari",
+              title: null,
+              url: null,
+              startedAt: t("2026-09-19T16:10:00.000Z"),
+              endedAt: t("2026-09-19T16:12:00.000Z"),
+            },
+          ],
+          settings: [
+            {
+              key: "importer.progress.P2",
+              value: '{"segment":"s","offset":1,"ts":1}',
+            },
+            { key: "importer.status", value: "ok" },
+          ],
+        });
+        return {
+          activities: yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          }),
+          progress: yield* store.getSetting("importer.progress.P2"),
+          status: yield* store.getSetting("importer.status"),
+        };
+      }),
+    );
+    // Then
+    expect(activities).toHaveLength(2);
+    expect(progress).toEqual(
+      Option.some('{"segment":"s","offset":1,"ts":1}'),
+    );
+    expect(status).toEqual(Option.some("ok"));
+  });
+
+  it("writeImportBatch that fails leaves nothing behind", async () => {
+    // Given: an open store and one device
+    const { result, activities, status } = await useStore((store) =>
+      Effect.gen(function* () {
+        const device = yield* store.upsertDevice({
+          kind: "iphone",
+          name: "iPhone",
+          externalId: "P2",
+        });
+        // When: the batch holds one Activity on an unknown device
+        const result = yield* Effect.either(
+          store.writeImportBatch({
+            activities: [
+              {
+                deviceId: device.id,
+                bundleId: "com.apple.mobilesafari",
+                appName: "com.apple.mobilesafari",
+                title: null,
+                url: null,
+                startedAt: t("2026-09-19T16:01:00.000Z"),
+                endedAt: t("2026-09-19T16:06:00.000Z"),
+              },
+              {
+                deviceId: "00000000-0000-4000-8000-000000000009",
+                bundleId: "com.apple.mobilesafari",
+                appName: "com.apple.mobilesafari",
+                title: null,
+                url: null,
+                startedAt: t("2026-09-19T16:10:00.000Z"),
+                endedAt: t("2026-09-19T16:12:00.000Z"),
+              },
+            ],
+            settings: [{ key: "importer.status", value: "ok" }],
+          }),
+        );
+        return {
+          result,
+          activities: yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          }),
+          status: yield* store.getSetting("importer.status"),
+        };
+      }),
+    );
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("StoreError");
+    }
+    expect(activities).toEqual([]);
+    expect(status).toEqual(Option.none());
+  });
+
+  it("writeImportBatch with nothing new writes only the settings", async () => {
+    // Given: an open store
+    const status = await useStore((store) =>
+      Effect.gen(function* () {
+        // When
+        yield* store.writeImportBatch({
+          activities: [],
+          settings: [{ key: "importer.status", value: "ok" }],
+        });
+        return yield* store.getSetting("importer.status");
+      }),
+    );
+    // Then
+    expect(status).toEqual(Option.some("ok"));
+  });
 });

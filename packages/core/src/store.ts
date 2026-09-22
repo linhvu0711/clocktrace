@@ -5,6 +5,7 @@ import type { Activity, NewActivity } from "./activity.js";
 import type { Category, NewCategory } from "./category.js";
 import type { Device, NewDevice } from "./device.js";
 import type { StoreError } from "./errors.js";
+import type { ImportBatch } from "./import-batch.js";
 import type { NewProject, Project } from "./project.js";
 import type { NewRule, Rule } from "./rule.js";
 import { openStore } from "./sqlite-store.js";
@@ -71,6 +72,10 @@ export interface StoreShape {
    * when the flag is already set. A write that fails leaves nothing behind.
    */
   readonly seedStarterSet: () => Effect.Effect<void, StoreError>;
+  /** Writes one Import batch in one transaction. A write that fails leaves nothing behind. */
+  readonly writeImportBatch: (
+    batch: ImportBatch,
+  ) => Effect.Effect<void, ParseError | StoreError>;
 }
 
 export class Store extends Effect.Service<Store>()("Store", {
