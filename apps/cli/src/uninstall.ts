@@ -20,7 +20,7 @@ import {
 } from "@effect/platform";
 import { Config, Data, Effect, Either, Option } from "effect";
 
-import { line, mark, Style, shortPath, span } from "./format.js";
+import { line, mark, Style, shellQuote, shortPath, span } from "./format.js";
 import {
   type HostName,
   HostRemoveError,
@@ -209,7 +209,7 @@ export const uninstall = (options: {
     const purgeCommand =
       dbPath === defaultDbPath
         ? "clocktrace uninstall --purge"
-        : `CLOCKTRACE_DB=${dbPath} clocktrace uninstall --purge`;
+        : `CLOCKTRACE_DB=${shellQuote(dbPath)} clocktrace uninstall --purge`;
     yield* prompt.print("");
     yield* prompt.print(
       dbKept
