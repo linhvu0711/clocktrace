@@ -6,7 +6,6 @@ import {
   type LaunchdError,
   readStatus,
   Status,
-  statusLines,
 } from "@clocktrace/collector";
 import {
   ActivitiesPage,
@@ -396,24 +395,21 @@ export const makeServer = async (
     "status",
     {
       description:
-        "Whether the Collector runs, each permission with its state and what is lost while denied, the last Activity time, the database path, and imports (not built yet). lines is the same text clocktrace status prints.",
+        "Whether the Collector runs, each permission with its state and what is lost while denied, the last Activity time, and the database path.",
       inputSchema: {},
       outputSchema: {
         collector: z.enum(["running", "stopped"]),
         permissions: z.array(PermissionLineOut),
         lastActivity: z.string().nullable(),
         databasePath: z.string(),
-        imports: z.literal("not built yet"),
-        lines: z.array(z.string()),
       },
     },
     () =>
       run(
         Effect.gen(function* () {
           const s = yield* readStatus();
-          const lines = yield* statusLines(s);
           const encoded = yield* Schema.encode(Status)(s);
-          return { ...encoded, imports: "not built yet" as const, lines };
+          return encoded;
         }),
       ),
   );
