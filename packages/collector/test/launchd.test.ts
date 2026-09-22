@@ -66,6 +66,18 @@ describe("LaunchdError", () => {
     // Then
     expect(message).toBe(`launchctl bootstrap: exit 1 · see ${logPath}`);
   });
+
+  it("omits the log path for a filesystem failure", () => {
+    // Given: a plist write failure, which never reaches the collector log
+    const error = new LaunchdError({
+      step: "write /tmp/clocktrace.plist",
+      detail: "permission denied",
+    });
+    // When
+    const message = error.message;
+    // Then
+    expect(message).toBe("write /tmp/clocktrace.plist: permission denied");
+  });
 });
 
 describe("fakeLaunchd failBootstrap", () => {

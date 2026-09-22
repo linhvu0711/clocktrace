@@ -80,7 +80,13 @@ export class LaunchdError extends Data.TaggedError("LaunchdError")<{
   readonly detail: string;
 }> {
   override get message(): string {
-    return `${this.step}: ${this.detail} · see ${logPath}`;
+    const base = `${this.step}: ${this.detail}`;
+    // Only launchctl failures land in the collector log; a plist write or
+    // remove failure happens before the Collector runs, so its cause is in
+    // the step and detail, not the log.
+    return this.step.startsWith("launchctl")
+      ? `${base} · see ${logPath}`
+      : base;
   }
 }
 
