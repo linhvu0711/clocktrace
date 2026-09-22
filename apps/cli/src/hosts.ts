@@ -68,37 +68,161 @@ export class HostRemoveError extends Data.TaggedError("HostRemoveError")<{
   }
 }
 
-const addArgv: Record<Exclude<HostName, "hermes">, ReadonlyArray<string>> = {
-  claude: [
-    "mcp",
-    "add",
-    "--scope",
-    "user",
-    "clocktrace",
-    "--",
-    serverNode,
-    serverEntry,
-    "mcp",
-  ],
-  codex: ["mcp", "add", "clocktrace", "--", serverNode, serverEntry, "mcp"],
-  openclaw: [
-    "mcp",
-    "add",
-    "clocktrace",
-    "--command",
-    serverNode,
-    "--arg",
-    serverEntry,
-    "--arg",
-    "mcp",
-  ],
+type CliHost = Exclude<HostName, "hermes">;
+
+const addArgvFor = (
+  host: CliHost,
+  command: string,
+  args: ReadonlyArray<string>,
+): ReadonlyArray<string> =>
+  host === "claude"
+    ? ["mcp", "add", "--scope", "user", "clocktrace", "--", command, ...args]
+    : host === "codex"
+      ? ["mcp", "add", "clocktrace", "--", command, ...args]
+      : [
+          "mcp",
+          "add",
+          "clocktrace",
+          "--command",
+          command,
+          ...args.flatMap((a) => ["--arg", a]),
+        ];
+
+const addArgv: Record<CliHost, ReadonlyArray<string>> = {
+  claude: addArgvFor("claude", serverNode, [serverEntry, "mcp"]),
+  codex: addArgvFor("codex", serverNode, [serverEntry, "mcp"]),
+  openclaw: addArgvFor("openclaw", serverNode, [serverEntry, "mcp"]),
 };
 
-const removeArgv: Record<Exclude<HostName, "hermes">, ReadonlyArray<string>> = {
+const removeArgv: Record<CliHost, ReadonlyArray<string>> = {
   claude: ["mcp", "remove", "clocktrace", "--scope", "user"],
   codex: ["mcp", "remove", "clocktrace"],
   openclaw: ["mcp", "unset", "clocktrace"],
 };
+
+// A failed add must not strand a working registration: before removing we
+// read the entry the host already has, so it can go back through the same
+// add command. The files are read-only here — only the host CLI writes.
+type PriorRegistration = {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+};
+
+const dig = (doc: unknown, path: ReadonlyArray<string>): unknown =>
+  path.reduce<unknown>(
+    (acc, key) =>
+      typeof acc === "object" && acc !== null
+        ? (acc as Record<string, unknown>)[key]
+        : undefined,
+    doc,
+  );
+
+// Only stdio entries can go back through an argv add; url-based ones have
+// no command to re-add.
+const stdioPrior = (value: unknown): PriorRegistration | null => {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const entry = value as { command?: unknown; args?: unknown };
+  if (typeof entry.command !== "string") {
+    return null;
+  }
+  const args = Array.isArray(entry.args)
+    ? entry.args.filter((a): a is string => typeof a === "string")
+    : [];
+  return { command: entry.command, args };
+};
+
+const jsonPrior =
+  (path: ReadonlyArray<string>) =>
+  (text: string): PriorRegistration | null => {
+    try {
+      return stdioPrior(dig(JSON.parse(text), path));
+    } catch {
+      return null;
+    }
+  };
+
+const unescapeToml = (s: string): string =>
+  s.replace(/\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/gs, (_, e: string) => {
+    switch (e[0]) {
+      case "u":
+      case "U":
+        return String.fromCodePoint(Number.parseInt(e.slice(1), 16));
+      case "n":
+        return "\n";
+      case "t":
+        return "\t";
+      case "r":
+        return "\r";
+      case "b":
+        return "\b";
+      case "f":
+        return "\f";
+      default:
+        return e;
+    }
+  });
+
+const tomlString = /"((?:[^"\\]|\\.)*)"/g;
+
+// Codex writes a [mcp_servers.clocktrace] table; read back only the
+// command and args strings of that one table.
+const codexPrior = (text: string): PriorRegistration | null => {
+  const header = /^[ \t]*\[mcp_servers\.clocktrace\][ \t]*$/m.exec(text);
+  if (header === null) {
+    return null;
+  }
+  const rest = text.slice(header.index + header[0].length);
+  const next = /^[ \t]*\[/m.exec(rest);
+  const block = next === null ? rest : rest.slice(0, next.index);
+  const command = /^[ \t]*command[ \t]*=[ \t]*"((?:[^"\\]|\\.)*)"/m.exec(
+    block,
+  )?.[1];
+  if (command === undefined) {
+    return null;
+  }
+  const args = /^[ \t]*args[ \t]*=[ \t]*\[([\s\S]*?)\]/m.exec(block)?.[1];
+  return {
+    command: unescapeToml(command),
+    args:
+      args === undefined
+        ? []
+        : [...args.matchAll(tomlString)].flatMap((m) =>
+            m[1] === undefined ? [] : [unescapeToml(m[1])],
+          ),
+  };
+};
+
+const priorConfig: Record<
+  CliHost,
+  { file: string; read: (text: string) => PriorRegistration | null }
+> = {
+  claude: {
+    file: ".claude.json",
+    read: jsonPrior(["mcpServers", "clocktrace"]),
+  },
+  codex: {
+    file: join(".codex", "config.toml"),
+    read: codexPrior,
+  },
+  openclaw: {
+    file: join(".openclaw", "openclaw.json"),
+    read: jsonPrior(["mcp", "servers", "clocktrace"]),
+  },
+};
+
+const readPrior = (
+  host: CliHost,
+): Effect.Effect<PriorRegistration | null, never, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const { file, read } = priorConfig[host];
+    const text = yield* fs
+      .readFileString(join(homedir(), file))
+      .pipe(Effect.catchAll(() => Effect.succeed("")));
+    return text === "" ? null : read(text);
+  });
 
 export type UnregisterOutcome = "unregistered" | "not registered" | "no cli";
 
@@ -269,14 +393,18 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
     register: (host: HostName): Effect.Effect<string, never, Borders> =>
       host === "hermes"
         ? registerHermes
-        : runHost(host, removeArgv[host]).pipe(
-            Effect.andThen(runHost(host, addArgv[host])),
-            Effect.map(({ code }) =>
-              code === 0
-                ? `${hostLabel[host]}: registered`
-                : `${hostLabel[host]}: failed. run by hand: ${manualCommand[host]}`,
-            ),
-          ),
+        : Effect.gen(function* () {
+            const prior = yield* readPrior(host);
+            yield* runHost(host, removeArgv[host]);
+            const { code } = yield* runHost(host, addArgv[host]);
+            if (code === 0) {
+              return `${hostLabel[host]}: registered`;
+            }
+            if (prior !== null) {
+              yield* runHost(host, addArgvFor(host, prior.command, prior.args));
+            }
+            return `${hostLabel[host]}: failed. run by hand: ${manualCommand[host]}`;
+          }),
     unregister: (
       host: HostName,
     ): Effect.Effect<UnregisterOutcome, HostRemoveError, Borders> =>

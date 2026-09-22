@@ -328,7 +328,7 @@ describe("hosts", () => {
   });
 
   it("a failed add shows the manual command", async () => {
-    // Given: codex exits 1 printing "boom"
+    // Given: codex exits 1 printing "boom", and no prior registration
     const executor = await Effect.runPromise(
       fakeExecutor({
         [addCodex]: {
@@ -339,10 +339,100 @@ describe("hosts", () => {
     );
     // When
     const line = await register("codex", executor.layer);
-    // Then
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: remove then add, nothing more to put back
+    expect(recorded).toEqual([removeCodex, addCodex]);
     expect(line).toBe(
       `codex: failed. run by hand: codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
     );
+  });
+
+  it("a failed add puts back the previous claude registration", async () => {
+    // Given: ~/.claude.json holds the legacy bare-word entry; the add fails
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          clocktrace: { type: "stdio", command: "clocktrace", args: ["mcp"] },
+        },
+      }),
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addClaude]: { code: 1, output: "boom" },
+        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
+          code: 0,
+        },
+      }),
+    );
+    // When
+    const line = await register("claude", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: remove, add, restore the old entry
+    expect(recorded).toEqual([
+      removeClaude,
+      addClaude,
+      "claude mcp add --scope user clocktrace -- clocktrace mcp",
+    ]);
+    expect(line).toContain("claude code: failed");
+  });
+
+  it("a failed add puts back the previous codex registration", async () => {
+    // Given: config.toml holds a stale [mcp_servers.clocktrace] table
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.clocktrace]\ncommand = "/old/node"\nargs = ["/old/entry.js", "mcp"]\n',
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addCodex]: { code: 1, output: "boom" },
+        "codex mcp add clocktrace -- /old/node /old/entry.js mcp": {
+          code: 0,
+        },
+      }),
+    );
+    // When
+    const line = await register("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then
+    expect(recorded).toEqual([
+      removeCodex,
+      addCodex,
+      "codex mcp add clocktrace -- /old/node /old/entry.js mcp",
+    ]);
+    expect(line).toContain("codex: failed");
+  });
+
+  it("a failed add puts back the previous openclaw registration", async () => {
+    // Given: openclaw.json holds the legacy bare-word entry; the add fails
+    mkdirSync(join(home, ".openclaw"), { recursive: true });
+    writeFileSync(
+      join(home, ".openclaw", "openclaw.json"),
+      JSON.stringify({
+        mcp: {
+          servers: { clocktrace: { command: "clocktrace", args: ["mcp"] } },
+        },
+      }),
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addOpenclaw]: { code: 1, output: "boom" },
+        "openclaw mcp add clocktrace --command clocktrace --arg mcp": {
+          code: 0,
+        },
+      }),
+    );
+    // When
+    const line = await register("openclaw", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then
+    expect(recorded).toEqual([
+      removeOpenclaw,
+      addOpenclaw,
+      "openclaw mcp add clocktrace --command clocktrace --arg mcp",
+    ]);
+    expect(line).toContain("openclaw: failed");
   });
 
   it("manual commands quote the node and entry paths", () => {
