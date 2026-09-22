@@ -1,7 +1,11 @@
 import { DateTime, Effect, Option, Ref, Schema } from "effect";
 
 import { Activity } from "./activity.js";
-import { type ResolvedApp, resolveAppName } from "./app-names.js";
+import {
+  needsLookup,
+  type ResolvedApp,
+  resolveAppName,
+} from "./app-names.js";
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";
@@ -111,20 +115,22 @@ const loadRange = (input: {
         const acc = yield* Ref.make<
           ReadonlyArray<readonly [string, ResolvedApp | null]>
         >([]);
-        // Serial lookups stay under Apple's rate limit; the whole pass is
-        // bounded so a stalled network can't hang a query per bundle ID.
+        const collect = (bundleId: string) =>
+          Effect.flatMap(resolveAppName(bundleId), (app) =>
+            Ref.update(acc, (xs) => [
+              ...xs,
+              [bundleId, Option.getOrNull(app)] as const,
+            ]),
+          );
+        // Map and cache hits resolve first so a stalled network cannot skip
+        // them; only App Store work counts against the budget, and
         // timeoutOption preserves a StoreError where race would hide it.
-        yield* Effect.forEach(
-          iosBundleIds,
-          (bundleId) =>
-            Effect.flatMap(resolveAppName(bundleId), (app) =>
-              Ref.update(acc, (xs) => [
-                ...xs,
-                [bundleId, Option.getOrNull(app)] as const,
-              ]),
-            ),
-          { concurrency: 1 },
-        ).pipe(Effect.timeoutOption("15 seconds"));
+        const misses = yield* Effect.filter(iosBundleIds, needsLookup);
+        const hits = iosBundleIds.filter((id) => !misses.includes(id));
+        yield* Effect.forEach(hits, collect, { concurrency: 1 });
+        yield* Effect.forEach(misses, collect, { concurrency: 1 }).pipe(
+          Effect.timeoutOption("15 seconds"),
+        );
         return yield* Ref.get(acc);
       }),
     );

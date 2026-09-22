@@ -19,6 +19,26 @@ export const AppName = Schema.Struct({
 
 export const lookupRetryAfterMillis = 24 * 60 * 60 * 1000;
 
+export const needsLookup = (
+  bundleId: string,
+): Effect.Effect<boolean, StoreError, Store> =>
+  Effect.gen(function* () {
+    if (iosAppNames[bundleId] !== undefined) {
+      return false;
+    }
+    const store = yield* Store;
+    const stored = yield* store.getAppName(bundleId);
+    if (Option.isNone(stored)) {
+      return true;
+    }
+    const row = stored.value;
+    if (row.name !== null) {
+      return false;
+    }
+    const now = yield* DateTime.now;
+    return now.epochMillis - row.fetchedAt.epochMillis >= lookupRetryAfterMillis;
+  });
+
 export const resolveAppName = (
   bundleId: string,
 ): Effect.Effect<Option.Option<ResolvedApp>, StoreError, Store | AppStore> =>
