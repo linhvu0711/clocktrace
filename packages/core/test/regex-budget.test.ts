@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { checkSync } from "recheck";
+import { describe, expect, it, vi } from "vitest";
 
 import { exceedsBacktrackBudget } from "../src/index.js";
+
+vi.mock("recheck", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("recheck")>();
+  return { ...actual, checkSync: vi.fn(actual.checkSync) };
+});
 
 describe("regex-budget", () => {
   it("(a+)+$ exceeds the budget", () => {
@@ -19,6 +25,36 @@ describe("regex-budget", () => {
     // Given: a slow-growing pattern, cheap at 24 chars but seconds at 40 (#49)
     // When / Then
     expect(exceedsBacktrackBudget("(a|aa)+$")).toBe(true);
+  });
+
+  it("a lookahead-gated pattern exceeds the budget within the bound", () => {
+    // Given: a catastrophic branch behind a minimum-length gate (#125)
+    // When
+    const start = performance.now();
+    const over = exceedsBacktrackBudget("(?=a{64})(a+)+$");
+    const elapsed = performance.now() - start;
+    // Then
+    expect(over).toBe(true);
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  it("(?=a{40})(a+)+$ exceeds the budget", () => {
+    // Given: the same gate at a lower minimum length
+    // When / Then
+    expect(exceedsBacktrackBudget("(?=a{40})(a+)+$")).toBe(true);
+  });
+
+  it("a pattern the checker cannot decide is rejected (fail-closed)", () => {
+    // Given: the analyzer reports unknown — a timeout, unsupported syntax,
+    // or an analyzer error on a pattern that does compile
+    vi.mocked(checkSync).mockReturnValueOnce({
+      source: "a+",
+      flags: "i",
+      status: "unknown",
+      error: { kind: "timeout" },
+    });
+    // When / Then
+    expect(exceedsBacktrackBudget("a+")).toBe(true);
   });
 
   it("github\\.com stays within the budget", () => {

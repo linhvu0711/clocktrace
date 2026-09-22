@@ -1,43 +1,28 @@
-import { performance } from "node:perf_hooks";
-
-export const budgetMs = 10;
-export const probeLengths = [16, 24, 32, 40, 48, 56, 64] as const;
+import { checkSync } from "recheck";
 
 /**
- * A bound, not a proof: a probe that never matches is what triggers the
- * exponential path, so each probe ends in a tail the pattern cannot match
- * (Node.js, "Don't block the event loop"). The pattern's own letters are
- * probed because e.g. `(x+x+)+y` is fast on `a` probes. V8 runs a regex's
- * first execution in its interpreter, about five times slower than the
- * native code it tiers up to, so one warm-up run precedes the timed probes.
+ * Static analysis, not a timing probe: recheck reads the pattern's shape,
+ * so a catastrophic branch counts even when no probe input could reach it —
+ * e.g. `(?=a{64})(a+)+$`, whose blow-up is gated behind a minimum input
+ * length and blocked inside `RegExp.test` forever (issue #125, follow-up to
+ * #49/#123). On Node, `checkSync` runs through a `synckit` worker, so the
+ * analysis itself cannot block this process past its bound.
  *
- * Catastrophic backtracking grows super-linearly with the input, so a single
- * short probe misses a pattern that is cheap at 24 chars but stalls on a
- * longer title, e.g. `(a|aa)+$` (issue #49). Each pattern is timed at rising
- * lengths and rejected on the first that crosses the budget. The lengths
- * ascend and the scan short-circuits, so the probe stops at the first slow
- * length and never itself reaches the multi-second case.
+ * Fail-closed: any verdict short of proven-safe — `vulnerable`, or
+ * `unknown` on a timeout, unsupported syntax, or analyzer error — reports
+ * over budget. A rejected rule fails loudly in `addRule`; an accepted
+ * catastrophic pattern would hang `resolve` on a later title instead.
+ * `timeout` bounds one check at about half a second; a typical pattern
+ * takes single-digit ms.
+ *
+ * A pattern that does not compile returns `false`: syntax errors are
+ * `addRule`'s own `not a valid regex` check, not a budget problem.
  */
 export const exceedsBacktrackBudget = (pattern: string): boolean => {
-  let re: RegExp;
   try {
-    re = new RegExp(pattern, "i");
+    new RegExp(pattern, "i");
   } catch {
     return false;
   }
-  re.test("");
-  const letters = pattern
-    .toLowerCase()
-    .split("")
-    .filter((ch) => /[a-z0-9]/.test(ch));
-  const probes = [...new Set([...letters, "a", "/", " ", "-", "1"])];
-  return probes.some((ch) =>
-    ["!", "\n"].some((tail) =>
-      probeLengths.some((length) => {
-        const start = performance.now();
-        re.test(ch.repeat(length) + tail);
-        return performance.now() - start > budgetMs;
-      }),
-    ),
-  );
+  return checkSync(pattern, "i", { timeout: 500 }).status !== "safe";
 };

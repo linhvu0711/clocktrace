@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
-    "effect": "^3.22.2"
+    "effect": "^3.22.2",
+    "recheck": "^4.5.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0"
