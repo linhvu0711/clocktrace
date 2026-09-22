@@ -161,13 +161,7 @@ export const printStatus = (
 ): Effect.Effect<
   void,
   HelperExitedError | ParseError | StoreError | LaunchdError,
-  | Prompt
-  | Launchd
-  | Helper
-  | App
-  | Store
-  | DateTime.CurrentTimeZone
-  | Style
+  Prompt | Launchd | Helper | App | Store | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
     const status = yield* readStatus();

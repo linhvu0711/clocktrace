@@ -9,7 +9,7 @@ import {
   Either,
   Layer,
   Option,
-  Scope,
+  type Scope,
   Stream,
 } from "effect";
 

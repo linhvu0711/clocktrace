@@ -267,9 +267,7 @@ describe("permissions", () => {
       appMissing,
     );
     // Then
-    expect(exit).toEqual(
-      Exit.fail(new AppMissingError({ path: appPath })),
-    );
+    expect(exit).toEqual(Exit.fail(new AppMissingError({ path: appPath })));
     if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
       expect((exit.cause.error as AppMissingError).message).toBe(
         "app: missing, run clocktrace setup",

@@ -6,12 +6,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Chunk, Data, Effect, Layer, Stream } from "effect";
 
 export const appPath = join(homedir(), "Applications", "Clocktrace.app");
-export const appMainPath = join(
-  appPath,
-  "Contents",
-  "MacOS",
-  "Clocktrace",
-);
+export const appMainPath = join(appPath, "Contents", "MacOS", "Clocktrace");
 export const appBundleId = "com.clocktrace.app";
 export const lsregisterPath =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
@@ -41,9 +36,7 @@ export const infoPlist = (): string => `<?xml version="1.0" encoding="UTF-8"?>
 export const hasDeveloperIdSignature = (
   codesignLines: ReadonlyArray<string>,
 ): boolean =>
-  codesignLines.some((l) =>
-    l.startsWith("Authority=Developer ID Application"),
-  );
+  codesignLines.some((l) => l.startsWith("Authority=Developer ID Application"));
 
 export class AppError extends Data.TaggedError("AppError")<{
   readonly step: string;
@@ -93,14 +86,11 @@ export class App extends Effect.Service<App>()("App", {
         ),
       ).pipe(
         Effect.mapError(
-          (e) =>
-            new AppError({ step: "codesign -dv", detail: String(e) }),
+          (e) => new AppError({ step: "codesign -dv", detail: String(e) }),
         ),
       );
-    const fsError =
-      (step: string) =>
-      (e: { readonly message: string }) =>
-        new AppError({ step, detail: e.message });
+    const fsError = (step: string) => (e: { readonly message: string }) =>
+      new AppError({ step, detail: e.message });
     return {
       isInstalled: () => fs.exists(appMainPath).pipe(Effect.orDie),
       install: (helperPath: string) =>

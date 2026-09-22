@@ -100,9 +100,7 @@ const fakeApp = (installs: Ref.Ref<number>) =>
     new App({
       isInstalled: () => Effect.map(Ref.get(installs), (n) => n > 0),
       install: () =>
-        Ref.update(installs, (n) => n + 1).pipe(
-          Effect.as("written" as const),
-        ),
+        Ref.update(installs, (n) => n + 1).pipe(Effect.as("written" as const)),
     }),
   );
 
@@ -458,9 +456,7 @@ describe("setup", () => {
       new App({
         isInstalled: () => Effect.succeed(false),
         install: () =>
-          Effect.fail(
-            new AppError({ step: "codesign", detail: "exit 1" }),
-          ),
+          Effect.fail(new AppError({ step: "codesign", detail: "exit 1" })),
       }),
     );
     // When

@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 
 import { Command, CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect, Either, Exit, Layer, Ref, Scope, Stream } from "effect";
+import { Effect, Either, Exit, Layer, Ref, type Scope, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -87,9 +87,9 @@ const runHelper = <A>(
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
-      const recorded = yield* Ref.make<
-        ReadonlyArray<ReadonlyArray<string>>
-      >([]);
+      const recorded = yield* Ref.make<ReadonlyArray<ReadonlyArray<string>>>(
+        [],
+      );
       const layer = Helper.DefaultWithoutDependencies.pipe(
         Layer.provide(
           Layer.merge(

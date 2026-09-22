@@ -13,7 +13,11 @@ import { describe, expect, it } from "vitest";
 
 import { App } from "../src/app.js";
 import { Helper } from "../src/helper.js";
-import { fakeLaunchd, Launchd, type LaunchdState } from "../src/launchd.js";
+import {
+  fakeLaunchd,
+  type Launchd,
+  type LaunchdState,
+} from "../src/launchd.js";
 import type { Permissions } from "../src/permissions.js";
 import { readStatus, statusLines } from "../src/status.js";
 
@@ -45,11 +49,7 @@ const runWith = <A>(
   inside: Effect.Effect<
     A,
     unknown,
-    | Store
-    | Helper
-    | Launchd
-    | App
-    | DateTime.CurrentTimeZone
+    Store | Helper | Launchd | App | DateTime.CurrentTimeZone
   >,
   appLayer: Layer.Layer<App> = App.Test,
 ) =>

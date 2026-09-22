@@ -91,7 +91,9 @@ const runApp = async <A>(
   exitCodeFor?: (command: Command.Command) => number,
 ) => {
   const mod = await import("../src/app.js");
-  const recorded = await Effect.runPromise(Ref.make<ReadonlyArray<ReadonlyArray<string>>>([]));
+  const recorded = await Effect.runPromise(
+    Ref.make<ReadonlyArray<ReadonlyArray<string>>>([]),
+  );
   const layer = mod.App.DefaultWithoutDependencies.pipe(
     Layer.provide(
       Layer.merge(
@@ -195,9 +197,9 @@ describe("App.install", () => {
     // Then
     expect(result).toEqual(Exit.succeed("written"));
     const appHome = join(home, "Applications", "Clocktrace.app");
-    expect(
-      readFileSync(join(appHome, "Contents", "Info.plist"), "utf8"),
-    ).toBe(mod.infoPlist());
+    expect(readFileSync(join(appHome, "Contents", "Info.plist"), "utf8")).toBe(
+      mod.infoPlist(),
+    );
     const mainFile = join(appHome, "Contents", "MacOS", "Clocktrace");
     expect(readFileSync(mainFile, "utf8")).toBe("helper-bytes");
     expect(statSync(mainFile).mode & 0o777).toBe(0o755);
@@ -248,7 +250,10 @@ describe("App.install", () => {
       recursive: true,
     });
     writeFileSync(join(built, "Contents", "Info.plist"), "<built>");
-    writeFileSync(join(built, "Contents", "MacOS", "Clocktrace"), "built-bytes");
+    writeFileSync(
+      join(built, "Contents", "MacOS", "Clocktrace"),
+      "built-bytes",
+    );
     writeFileSync(
       join(built, "Contents", "_CodeSignature", "CodeResources"),
       "sig",
