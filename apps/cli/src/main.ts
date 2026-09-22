@@ -6,6 +6,7 @@ import { DateTime, Effect, Layer } from "effect";
 import { isFriendlyError, run } from "./cli.js";
 import { Style } from "./format.js";
 import { Hosts } from "./hosts.js";
+import { ReportedError } from "./output.js";
 import { Prompt } from "./prompt.js";
 
 const layers = Layer.mergeAll(
@@ -21,7 +22,11 @@ const layers = Layer.mergeAll(
 run(process.argv).pipe(
   Effect.catchAll((e) =>
     Effect.sync(() => {
-      if (!ValidationError.isValidationError(e) && !isFriendlyError(e)) {
+      if (
+        !ValidationError.isValidationError(e) &&
+        !isFriendlyError(e) &&
+        !(e instanceof ReportedError)
+      ) {
         console.error((e as { message: string }).message);
       }
       process.exitCode = 1;

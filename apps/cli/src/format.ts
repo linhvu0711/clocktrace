@@ -71,6 +71,13 @@ export const line = (
     .map((s) => renderSpan(s, look))
     .join("");
 
+export const shortPath = (path: string, home: string): string =>
+  path === home
+    ? "~"
+    : path.startsWith(`${home}/`)
+      ? `~${path.slice(home.length)}`
+      : path;
+
 export class Style extends Effect.Service<Style>()("Style", {
   effect: Effect.gen(function* () {
     const terminal = yield* Terminal.Terminal;
