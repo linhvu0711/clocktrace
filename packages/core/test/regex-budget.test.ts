@@ -67,17 +67,39 @@ describe("regex-budget", () => {
     expect(exceedsBacktrackBudget("a+")).toBe(true);
   });
 
-  it("a pattern past the analyzer's bound is rejected without analysis", () => {
-    // Given: a valid pattern longer than recheck's maxPatternSize — the
-    // checker could only answer unknown, after seconds of parsing
+  it("a long but analyzable pattern is still checked", () => {
+    // Given: a valid pattern over 1500 chars — a generated alternation of
+    // bundle IDs — that the analyzer can prove safe in ms
+    const alternation = Array.from(
+      { length: 150 },
+      (_, i) => `com\\.example\\.app${i}`,
+    ).join("|");
+    // When / Then
+    expect(exceedsBacktrackBudget(alternation)).toBe(false);
+  });
+
+  it("a pattern past the analysis bound is rejected without analysis", () => {
+    // Given: a valid pattern too long to analyze within the timeout —
+    // the checker could only answer unknown, after seconds of parsing
     // When / Then
     expect(exceedsBacktrackBudget("a".repeat(maxPatternLength + 1))).toBe(true);
   });
 
-  it("a pattern at the analyzer's bound is still checked", () => {
-    // Given: a benign pattern exactly maxPatternLength long
+  it("a pattern at the analysis bound is still checked", () => {
+    // Given: a benign pattern exactly maxPatternLength long — mocked, so
+    // the test proves it reaches the analyzer instead of racing the
+    // timeout on a quarter-million-char parse
+    const pattern = "a".repeat(maxPatternLength);
+    vi.mocked(checkSync).mockReturnValueOnce({
+      source: pattern,
+      flags: "i",
+      status: "safe",
+      checker: "automaton",
+      complexity: { type: "linear", summary: "linear", isFuzz: false },
+    });
     // When / Then
-    expect(exceedsBacktrackBudget("a".repeat(maxPatternLength))).toBe(false);
+    expect(exceedsBacktrackBudget(pattern)).toBe(false);
+    expect(checkSync).toHaveBeenCalledWith(pattern, "i", { timeout: 500 });
   });
 
   it("github\\.com stays within the budget", () => {

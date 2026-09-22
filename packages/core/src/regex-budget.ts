@@ -1,11 +1,14 @@
 import { checkSync } from "recheck";
 
 /**
- * Patterns past this length are rejected without analysis: it is recheck's
- * own `maxPatternSize` bound, and a pattern over it could only come back
- * `unknown` — after seconds of parsing on this thread.
+ * Patterns past this length are rejected without analysis. Parse and NFA
+ * build time scale with source size outside what `timeout` bounds —
+ * measured: a 200K-char alternation analyzes `safe` in ~334 ms, but ~338K
+ * chars exceeds the 500 ms budget (`unknown`) and megabyte-size inputs
+ * block this thread for seconds. 256K sits under the knee; past it the
+ * verdict could only be `unknown` anyway.
  */
-export const maxPatternLength = 1500;
+export const maxPatternLength = 256_000;
 
 /**
  * Static analysis, not a timing probe: recheck reads the pattern's shape,
