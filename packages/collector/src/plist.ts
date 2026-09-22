@@ -3,6 +3,20 @@ export const collectorLabel = "com.clocktrace.collector";
 const escapeXml = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
+const unescapeXml = (text: string): string =>
+  text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+
+// The string value that follows `<key>name</key>` in a plist written by
+// collectorPlist, or null when the key is absent.
+export const plistEnv = (text: string, name: string): string | null => {
+  const key = name.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(
+    `<key>${key}</key>\\s*<string>([^<]*)</string>`,
+  ).exec(text);
+  const value = match?.[1];
+  return value === undefined ? null : unescapeXml(value);
+};
+
 export const collectorPlist = (input: {
   readonly app: string;
   readonly node: string;

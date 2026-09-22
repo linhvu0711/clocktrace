@@ -4,10 +4,11 @@ import { dirname } from "node:path";
 import {
   App,
   appBundleId,
-  dbPathConfig,
+  appPath as defaultAppPath,
   defaultDbPath,
   logDir as defaultLogDir,
   Launchd,
+  plistEnv,
 } from "@clocktrace/collector";
 import { Command, Options } from "@effect/cli";
 import {
@@ -17,7 +18,7 @@ import {
   Command as PlatformCommand,
   type Terminal,
 } from "@effect/platform";
-import { Data, Effect, Either } from "effect";
+import { Config, Data, Effect, Either, Option } from "effect";
 
 import { line, mark, Style, shortPath, span } from "./format.js";
 import {
@@ -53,8 +54,9 @@ export const purgeTargets = (
 
 export const uninstall = (options: {
   readonly purge: boolean;
-  /** Test seam: the real log dir is fixed at import from the home dir. */
+  /** Test seams: the real paths are fixed at import from the home dir. */
   readonly logDir?: string;
+  readonly appPath?: string;
 }): Effect.Effect<
   void,
   ReportedError | StoppedError,
@@ -78,6 +80,7 @@ export const uninstall = (options: {
     const look = yield* Style;
     const home = homedir();
     const logDir = options.logDir ?? defaultLogDir;
+    const appPath = options.appPath ?? defaultAppPath;
     const done = (text: string) =>
       prompt.print(line([mark("ok", look), ` ${text}`], look));
     const skipped = (text: string) =>
@@ -95,7 +98,20 @@ export const uninstall = (options: {
           Effect.mapError((e) => new PurgeError({ path, detail: e.message })),
         );
 
+    // setup bakes CLOCKTRACE_DB into the agent's plist, so a custom
+    // database is found there even when the env var is not set now; an
+    // env var set for this run still wins. Read it before the plist goes.
     const hadAgent = yield* launchd.isInstalled();
+    const plist = hadAgent ? yield* reportLaunchd(launchd.readPlist()) : null;
+    const envDb = yield* Effect.orDie(
+      Config.option(Config.string("CLOCKTRACE_DB")),
+    );
+    const dbPath = Option.getOrElse(
+      envDb,
+      () =>
+        (plist === null ? null : plistEnv(plist, "CLOCKTRACE_DB")) ??
+        defaultDbPath,
+    );
     yield* reportLaunchd(launchd.uninstall());
     yield* done(
       hadAgent ? "launch agent removed" : "launch agent already removed",
@@ -105,8 +121,10 @@ export const uninstall = (options: {
     // tccutil refuses an id it cannot resolve, and after the bundle is
     // deleted it never can. Best effort beyond that: tccutil is not always
     // allowed to reset another bundle's grants; the user can drop them in
-    // System Settings. Nothing to reset when the app is already gone.
-    if (yield* app.isInstalled()) {
+    // System Settings. Nothing to reset when the app is already gone; the
+    // bundle folder is the guard, not the executable: a damaged bundle
+    // still owns its grants.
+    if (yield* reportStep(exists(appPath))) {
       const reset = yield* PlatformCommand.make(
         "tccutil",
         "reset",
@@ -157,7 +175,6 @@ export const uninstall = (options: {
       }
     }
 
-    const dbPath = yield* Effect.orDie(dbPathConfig);
     let dbKept = true;
     if (options.purge) {
       // On a terminal the question is the consent; without one the flag is.

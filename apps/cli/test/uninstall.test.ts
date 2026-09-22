@@ -11,6 +11,8 @@ import { join } from "node:path";
 
 import {
   App,
+  collectorPlist,
+  defaultDbPath,
   fakeLaunchd,
   Launchd,
   LaunchdError,
@@ -97,14 +99,27 @@ describe("uninstall", () => {
   let home: string;
   let dbPath: string;
   let logDir: string;
+  let appPath: string;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "clocktrace-"));
     home = mkdtempSync(join(tmpdir(), "clocktrace-home-"));
     dbPath = join(dir, "clocktrace.db");
     logDir = join(dir, "logs");
+    appPath = join(home, "Applications", "Clocktrace.app");
     vi.stubEnv("HOME", home);
   });
+
+  // The plist setup would write for a database at `databasePath`.
+  const plistFor = (databasePath: string) =>
+    collectorPlist({
+      app: join(appPath, "Contents", "MacOS", "Clocktrace"),
+      node: "/usr/local/bin/node",
+      entry: "/repo/main.js",
+      databasePath,
+      helperPath: "/stub",
+      logPath: join(logDir, "collector.log"),
+    });
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
@@ -128,7 +143,10 @@ describe("uninstall", () => {
     readonly interactive?: boolean;
     readonly keys?: ReadonlyArray<Key>;
     readonly launchd?: (state: Ref.Ref<LaunchdState>) => Layer.Layer<Launchd>;
-    readonly db?: string;
+    /** The CLOCKTRACE_DB env var; null leaves it unset. */
+    readonly db?: string | null;
+    /** A bundle folder on disk without its executable. */
+    readonly damaged?: boolean;
   }) =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -145,6 +163,14 @@ describe("uninstall", () => {
         const executor = yield* fakeExecutor(opts.results ?? {});
         const state = yield* Ref.make(opts.agent ?? installedAgent);
         const appPresent = yield* Ref.make(opts.app ?? true);
+        // The disk mirrors the fake: the bundle folder exists when the
+        // app is present or damaged, the executable only when present.
+        if ((opts.app ?? true) || opts.damaged) {
+          mkdirSync(join(appPath, "Contents", "MacOS"), { recursive: true });
+        }
+        if (opts.app ?? true) {
+          writeFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "x");
+        }
         const layers = Layer.mergeAll(
           Console.setConsole(console),
           NodeContext.layer,
@@ -158,7 +184,7 @@ describe("uninstall", () => {
           Style.Test,
         );
         const exit = yield* Effect.exit(
-          uninstall({ purge: opts.purge ?? false, logDir }).pipe(
+          uninstall({ purge: opts.purge ?? false, logDir, appPath }).pipe(
             Effect.provide(layers),
           ),
         );
@@ -173,7 +199,9 @@ describe("uninstall", () => {
       }).pipe(
         Effect.withConfigProvider(
           ConfigProvider.fromMap(
-            new Map([["CLOCKTRACE_DB", opts.db ?? dbPath]]),
+            new Map(
+              opts.db === null ? [] : [["CLOCKTRACE_DB", opts.db ?? dbPath]],
+            ),
           ),
         ),
       ),
@@ -383,6 +411,70 @@ describe("uninstall", () => {
       "○ Claude Code: claude not on PATH · run by hand: claude mcp remove clocktrace --scope user",
     );
     expect(recorded).not.toContain("claude mcp remove clocktrace --scope user");
+  });
+
+  it("--purge takes the database path from the agent's plist when the env var is unset", async () => {
+    // Given: the plist names a custom database; CLOCKTRACE_DB is not set
+    const custom = join(dir, "custom.db");
+    writeFileSync(custom, "db");
+    const hadDefault = existsSync(defaultDbPath);
+    // When
+    const { exit, output } = await run({
+      purge: true,
+      db: null,
+      agent: { ...installedAgent, plist: plistFor(custom) },
+    });
+    // Then: the plist's database is gone and the default one is untouched
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(existsSync(custom)).toBe(false);
+    expect(existsSync(defaultDbPath)).toBe(hadDefault);
+    expect(output).toContain("✔ database removed");
+  });
+
+  it("CLOCKTRACE_DB set for the run wins over the plist", async () => {
+    // Given: the plist names one database, the env var another
+    const fromPlist = join(dir, "plist.db");
+    writeFileSync(fromPlist, "db");
+    writeFileSync(dbPath, "db");
+    // When
+    const { exit, output } = await run({
+      purge: true,
+      agent: { ...installedAgent, plist: plistFor(fromPlist) },
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(existsSync(dbPath)).toBe(false);
+    expect(existsSync(fromPlist)).toBe(true);
+    expect(output.at(-1)).toBe("Done. Only the clocktrace command remains.");
+  });
+
+  it("the Done line names the database the plist pointed at", async () => {
+    // Given: no env var; the plist names a custom database; no --purge
+    const custom = join(dir, "custom.db");
+    // When
+    const { exit, output } = await run({
+      db: null,
+      agent: { ...installedAgent, plist: plistFor(custom) },
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.at(-1)).toBe(
+      `Done. Database kept at ${custom} (clocktrace uninstall --purge deletes it).`,
+    );
+  });
+
+  it("a bundle without its executable still gets its grants reset", async () => {
+    // Given: the bundle folder exists but the executable is gone
+    // When
+    const { exit, output, recorded } = await run({
+      app: false,
+      damaged: true,
+      results: tccReset,
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(recorded).toContain("tccutil reset All com.clocktrace.app");
+    expect(output).toContain("✔ permissions reset");
   });
 
   it("a failed tccutil is a skip line, not an error", async () => {

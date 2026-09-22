@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { collectorPlist } from "../src/plist.js";
+import { collectorPlist, plistEnv } from "../src/plist.js";
 
 const input = {
   app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
@@ -70,5 +70,27 @@ describe("collectorPlist", () => {
     );
     // Then
     expect(has).toBe(false);
+  });
+});
+
+describe("plistEnv", () => {
+  it("reads an environment value back, including an escaped &", () => {
+    // Given: a plist with a database path holding & and <
+    const databasePath = "/Users/me/Work & <Play>/clocktrace.db";
+    const plist = collectorPlist({ ...input, databasePath });
+    // When
+    const db = plistEnv(plist, "CLOCKTRACE_DB");
+    const helper = plistEnv(plist, "CLOCKTRACE_HELPER");
+    // Then
+    expect(db).toBe(databasePath);
+    expect(helper).toBe(input.helperPath);
+  });
+
+  it("is null for a key the plist does not hold", () => {
+    // Given: the default plist
+    // When
+    const value = plistEnv(collectorPlist(input), "CLOCKTRACE_NOPE");
+    // Then
+    expect(value).toBe(null);
   });
 });
