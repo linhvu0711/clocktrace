@@ -24,6 +24,7 @@ import {
   Exit,
   Layer,
   Ref,
+  Schedule,
   Stream,
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,6 +34,7 @@ import { permissions } from "../src/permissions.js";
 import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import * as MockConsole from "./mock-console.js";
+import { type ExecResult, fakeExecutor } from "./mock-executor.js";
 import * as MockTerminal from "./mock-terminal.js";
 
 type Key = { readonly key: string; readonly ctrl?: boolean } | string;
@@ -67,6 +69,8 @@ describe("permissions", () => {
       readonly outcome?: RequestOutcome;
       readonly requestError?: (grant: GrantRequest) => HelperExitedError | null;
       readonly appLayer?: Layer.Layer<App>;
+      readonly commands?: Record<string, ExecResult>;
+      readonly openRetry?: Schedule.Schedule<unknown, unknown>;
     } = {},
   ) =>
     Effect.runPromise(
@@ -76,6 +80,7 @@ describe("permissions", () => {
         const terminal = yield* MockTerminal.make(interactive);
         const console = yield* MockConsole.make;
         const state = yield* Ref.make(options.launchdState ?? installedRunning);
+        const exec = yield* fakeExecutor(options.commands ?? {});
         for (const k of keys) {
           yield* typeof k === "string"
             ? terminal.inputText(k)
@@ -118,15 +123,17 @@ describe("permissions", () => {
           helper,
           options.appLayer ?? App.Test,
           Style.Test,
+          exec.layer,
         );
         const exit = yield* Effect.exit(
-          permissions().pipe(Effect.provide(layers)),
+          permissions(options.openRetry).pipe(Effect.provide(layers)),
         );
         return {
           exit,
           output: yield* console.getLines({ stripAnsi: true }),
           shown: yield* terminal.shown,
           requests: yield* Ref.get(requests),
+          commands: yield* Ref.get(exec.recorded),
         };
       }).pipe(
         Effect.withConfigProvider(
@@ -395,5 +402,108 @@ describe("permissions", () => {
     // Then
     expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
     expect(output).toEqual([]);
+  });
+
+  it("a closed browser opens on y and is asked once running", async () => {
+    // Given
+    const p = {
+      accessibility: "granted" as const,
+      automation: { "com.apple.Safari": "notRunning" as const },
+      fullDiskAccess: "granted" as const,
+    };
+    // When
+    const { exit, output, commands, requests } = await run(
+      [
+        p,
+        { ...p, automation: { "com.apple.Safari": "notAsked" } },
+        { ...p, automation: { "com.apple.Safari": "granted" } },
+      ],
+      ["y", { key: "enter" }, { key: "enter" }],
+      true,
+      { commands: { "open -b com.apple.Safari": { code: 0 } } },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["open -b com.apple.Safari"]);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "com.apple.Safari" },
+    ]);
+    expect(output).toEqual([
+      "Permissions   2 of 3 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "  ○ Automation · Safari  URLs in Safari  Safari is closed",
+      "  ✔ Automation · Safari  granted",
+    ]);
+  });
+
+  it("n at the open offer prints the later line and opens nothing", async () => {
+    // Given
+    const p = {
+      accessibility: "granted" as const,
+      automation: { "com.apple.Safari": "notRunning" as const },
+      fullDiskAccess: "granted" as const,
+    };
+    // When
+    const { exit, output, commands, requests } = await run(
+      [p],
+      ["n", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(output[output.length - 1]).toBe(
+      "  later: open the browser, then run clocktrace permissions",
+    );
+  });
+
+  it("a browser that fails to open shows the warn line", async () => {
+    // Given
+    const p = {
+      accessibility: "granted" as const,
+      automation: { "com.apple.Safari": "notRunning" as const },
+      fullDiskAccess: "granted" as const,
+    };
+    // When
+    const { exit, output, commands, requests } = await run(
+      [p],
+      ["y", { key: "enter" }],
+      true,
+      { commands: { "open -b com.apple.Safari": { code: 1 } } },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["open -b com.apple.Safari"]);
+    expect(requests).toEqual([]);
+    expect(output[output.length - 1]).toBe(
+      "  ○ Automation · Safari  Safari did not open · open it, then run clocktrace permissions",
+    );
+  });
+
+  it("a browser that stays closed after polling shows the warn line", async () => {
+    // Given
+    const p = {
+      accessibility: "granted" as const,
+      automation: { "com.apple.Safari": "notRunning" as const },
+      fullDiskAccess: "granted" as const,
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [p],
+      ["y", { key: "enter" }],
+      true,
+      {
+        commands: { "open -b com.apple.Safari": { code: 0 } },
+        openRetry: Schedule.recurs(2),
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([]);
+    expect(output[output.length - 1]).toBe(
+      "  ○ Automation · Safari  Safari did not open · open it, then run clocktrace permissions",
+    );
   });
 });

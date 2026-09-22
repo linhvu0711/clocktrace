@@ -12,8 +12,14 @@ import {
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
 import { Command } from "@effect/cli";
-import type { FileSystem, Path, Terminal } from "@effect/platform";
-import { Effect, type Schedule } from "effect";
+import {
+  type CommandExecutor,
+  type FileSystem,
+  type Path,
+  Command as PlatformCommand,
+  type Terminal,
+} from "@effect/platform";
+import { Data, Effect, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { type Cell, columns, line, mark, Style, span } from "./format.js";
@@ -33,13 +39,26 @@ const itemPane = (item: PermissionItem): string =>
 const deniedFix = (item: PermissionItem): string =>
   `denied · turn it on in System Settings › Privacy › ${itemPane(item)}`;
 
+class BrowserNotRunning extends Data.TaggedError("BrowserNotRunning")<{
+  readonly bundleId: string;
+}> {}
+
+const defaultOpenRetry = Schedule.recurs(20).pipe(
+  Schedule.addDelay(() => "500 millis"),
+);
+
+const joinNames = (names: ReadonlyArray<string>): string =>
+  names.length <= 2
+    ? names.join(" and ")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
+
 const askable = (item: PermissionItem, state: GrantState): boolean =>
   item.request.kind === "automation"
     ? state === "notAsked"
     : state === "denied";
 
 export const walkPermissions = (
-  _options: {
+  options: {
     readonly openRetry?: Schedule.Schedule<unknown, unknown> | undefined;
   } = {},
 ): Effect.Effect<
@@ -52,6 +71,7 @@ export const walkPermissions = (
   | Terminal.Terminal
   | FileSystem.FileSystem
   | Path.Path
+  | CommandExecutor.CommandExecutor
   | Style
 > =>
   Effect.gen(function* () {
@@ -139,6 +159,65 @@ export const walkPermissions = (
       yield* prompt.print("no terminal, skipping questions");
       return;
     }
+    const openRetry = options.openRetry ?? defaultOpenRetry;
+    const closed = perms.filter(
+      (p) => p.state === "notRunning" && p.item.request.kind === "automation",
+    );
+    if (closed.length > 0) {
+      const openThem = yield* prompt.confirm({
+        message: `Open ${joinNames(
+          closed.map((p) =>
+            p.item.request.kind === "automation"
+              ? browserName(p.item.request.bundleId)
+              : p.item.name,
+          ),
+        )} now and ask?`,
+        initial: false,
+      });
+      if (!openThem) {
+        yield* prompt.print(
+          "  later: open the browser, then run clocktrace permissions",
+        );
+      } else {
+        yield* Effect.forEach(closed, (perm) =>
+          Effect.gen(function* () {
+            const { item } = perm;
+            if (item.request.kind !== "automation") {
+              return;
+            }
+            const bundleId = item.request.bundleId;
+            const code = yield* PlatformCommand.exitCode(
+              PlatformCommand.make("open", "-b", bundleId),
+            ).pipe(Effect.orElseSucceed(() => 1));
+            const state =
+              code === 0
+                ? yield* Effect.scoped(helper.permissions(appPath)).pipe(
+                    Effect.flatMap((after) =>
+                      after.automation[bundleId] === undefined ||
+                      after.automation[bundleId] === "notRunning"
+                        ? Effect.fail(new BrowserNotRunning({ bundleId }))
+                        : Effect.succeed(after.automation[bundleId]),
+                    ),
+                    Effect.retry({ schedule: openRetry }),
+                    Effect.orElseSucceed(() => null),
+                  )
+                : null;
+            if (state === null) {
+              perm.row = [
+                lead("warn", item),
+                span(
+                  "warn",
+                  `${browserName(bundleId)} did not open · open it, then run clocktrace permissions`,
+                ),
+              ];
+              yield* printRow(perm);
+              return;
+            }
+            perm.state = state;
+          }),
+        );
+      }
+    }
     yield* Effect.forEach(
       perms.filter((p) => askable(p.item, p.state)),
       (perm) =>
@@ -204,6 +283,7 @@ export const permissions = (
   | FileSystem.FileSystem
   | Terminal.Terminal
   | Path.Path
+  | CommandExecutor.CommandExecutor
   | Style
 > =>
   requireSetUp.pipe(Effect.andThen(withStore(walkPermissions({ openRetry }))));
