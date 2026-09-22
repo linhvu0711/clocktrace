@@ -1,7 +1,7 @@
 import { DateTime } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { Device, NewActivity, Rule } from "../src/index.js";
+import type { Category, Device, NewActivity, Rule } from "../src/index.js";
 import { resolve } from "../src/index.js";
 
 const deviceId = "00000000-0000-4000-8000-000000000001";
@@ -334,5 +334,70 @@ describe("matcher", () => {
     const resolution = resolve(chrome, rules, device);
     // Then
     expect(resolution.private).toBe(false);
+  });
+
+  it("a genre lands in its Category when no Rule matches", () => {
+    // Given: a Social category and the Social Networking genre
+    const social: Category = {
+      id: "00000000-0000-4000-8000-0000000000aa",
+      name: "Social",
+      productive: false,
+    };
+    // When
+    const resolution = resolve(chrome, [], device, "Social Networking", [
+      social,
+    ]);
+    // Then
+    expect(resolution.categoryId).toBe(social.id);
+  });
+
+  it("a Rule still wins over the genre", () => {
+    // Given: a Rule pointing at Coding and a Social Networking genre
+    const coding: Category = {
+      id: "00000000-0000-4000-8000-0000000000bb",
+      name: "Coding",
+      productive: true,
+    };
+    const social: Category = {
+      id: "00000000-0000-4000-8000-0000000000aa",
+      name: "Social",
+      productive: false,
+    };
+    const rules = [
+      rule(0, "app", "is", "com.google.Chrome", "category", coding.id),
+    ];
+    // When
+    const resolution = resolve(chrome, rules, device, "Social Networking", [
+      coding,
+      social,
+    ]);
+    // Then
+    expect(resolution.categoryId).toBe(coding.id);
+  });
+
+  it("an unknown genre leaves categoryId null", () => {
+    // Given: a genre outside the map
+    const social: Category = {
+      id: "00000000-0000-4000-8000-0000000000aa",
+      name: "Social",
+      productive: false,
+    };
+    // When
+    const resolution = resolve(chrome, [], device, "Utilities", [social]);
+    // Then
+    expect(resolution.categoryId).toBeNull();
+  });
+
+  it("a null genre leaves categoryId null", () => {
+    // Given: no genre
+    const social: Category = {
+      id: "00000000-0000-4000-8000-0000000000aa",
+      name: "Social",
+      productive: false,
+    };
+    // When
+    const resolution = resolve(chrome, [], device, null, [social]);
+    // Then
+    expect(resolution.categoryId).toBeNull();
   });
 });

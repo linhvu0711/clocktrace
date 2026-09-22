@@ -1,4 +1,5 @@
 import {
+  type AppStore,
   emptyNote,
   type InvalidRangeError,
   type Store,
@@ -83,7 +84,7 @@ export const printTimeline = (
 ): Effect.Effect<
   void,
   InvalidRangeError | StoreError | ParseError,
-  Store | Prompt | DateTime.CurrentTimeZone | Style
+  Store | AppStore | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
     const look = yield* Style;

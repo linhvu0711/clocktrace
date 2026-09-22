@@ -1,7 +1,7 @@
-import { DateTime, Effect, ManagedRuntime } from "effect";
+import { DateTime, Effect, Layer, ManagedRuntime } from "effect";
 import { expect, test } from "vitest";
 
-import { Store, summary } from "../src/index.js";
+import { AppStore, Store, summary } from "../src/index.js";
 
 // Target: summary over one year of 100 000 Activities runs under 2 seconds on a
 // Mac. This is a benchmark run by hand (`pnpm --filter core bench`), never in
@@ -10,7 +10,7 @@ test("summary over one year of 100 000 Activities", async ({ bench }) => {
   // A ManagedRuntime keeps the seeded store alive across every bench
   // iteration; the store closes its db on scope exit, so re-providing the
   // layer per run would drop the 100 000 inserts.
-  const runtime = ManagedRuntime.make(Store.Test);
+  const runtime = ManagedRuntime.make(Layer.merge(Store.Test, AppStore.Test));
 
   // Given: the Starter set (seeded by Store.Test), one Device, and a year of
   // synthetic Activities at 315 360 ms steps across ten apps and ten sites.

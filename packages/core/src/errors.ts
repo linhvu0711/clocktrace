@@ -4,6 +4,10 @@ export class StoreError extends Data.TaggedError("StoreError")<{
   readonly cause: unknown;
 }> {}
 
+export class AppStoreError extends Data.TaggedError("AppStoreError")<{
+  readonly cause: unknown;
+}> {}
+
 export class InvalidRuleError extends Data.TaggedError("InvalidRuleError")<{
   readonly field: "value" | "target";
   readonly reason: string;

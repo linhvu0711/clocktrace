@@ -26,7 +26,7 @@ describe("store", () => {
   ): Promise<A> =>
     Effect.runPromise(Effect.scoped(Effect.flatMap(openStore(path), f)));
 
-  it("creates the file, six tables, and schema version 1", async () => {
+  it("creates the file, seven tables, and schema version 2", async () => {
     // Given: the file does not exist
     // When
     await Effect.runPromise(Effect.scoped(openStore(path)));
@@ -40,9 +40,10 @@ describe("store", () => {
     db.close();
     // Then
     expect(existsSync(path)).toBe(true);
-    expect(version).toBe(1);
+    expect(version).toBe(2);
     expect(tables.map((row) => row.name)).toEqual([
       "activities",
+      "app_names",
       "categories",
       "devices",
       "projects",
@@ -68,7 +69,7 @@ describe("store", () => {
     // Then
     expect(devices).toHaveLength(1);
     expect(devices[0]?.externalId).toBe("mac-1");
-    expect(version).toBe(1);
+    expect(version).toBe(2);
   });
 
   it("fails when the file is newer than the code", async () => {
@@ -86,10 +87,10 @@ describe("store", () => {
       const error = result.left as DatabaseNewerError;
       expect(error._tag).toBe("DatabaseNewerError");
       expect(error.message).toBe(
-        "database was written by clocktrace 99, this is 1 · upgrade clocktrace",
+        "database was written by clocktrace 99, this is 2 · upgrade clocktrace",
       );
       expect(error.fileVersion).toBe(99);
-      expect(error.codeVersion).toBe(1);
+      expect(error.codeVersion).toBe(2);
     }
   });
 
@@ -477,6 +478,31 @@ describe("store", () => {
     if (Either.isLeft(result)) {
       expect(result.left._tag).toBe("StoreError");
     }
+  });
+
+  it("app_names round-trips name, genre, and fetched_at", async () => {
+    // Given: an open store
+    const result = await useStore((store) =>
+      Effect.gen(function* () {
+        yield* store.upsertAppName({
+          bundleId: "com.x",
+          name: "X",
+          genre: "Utilities",
+          fetchedAt: DateTime.unsafeMake("2026-09-18T12:00:00.000Z"),
+        });
+        // When
+        return yield* store.getAppName("com.x");
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Option.some({
+        bundleId: "com.x",
+        name: "X",
+        genre: "Utilities",
+        fetchedAt: DateTime.unsafeMake("2026-09-18T12:00:00.000Z"),
+      }),
+    );
   });
 
   it("insertCategory and listCategories", async () => {

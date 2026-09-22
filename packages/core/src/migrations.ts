@@ -40,6 +40,15 @@ CREATE TABLE settings (
 );
 `;
 
-export const migrations: ReadonlyArray<string> = [v1];
+const v2 = `
+CREATE TABLE app_names (
+  bundle_id TEXT PRIMARY KEY,
+  name TEXT,
+  genre TEXT,
+  fetched_at TEXT NOT NULL
+);
+`;
+
+export const migrations: ReadonlyArray<string> = [v1, v2];
 
 export const schemaVersion: number = migrations.length;
