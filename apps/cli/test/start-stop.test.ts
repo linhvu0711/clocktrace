@@ -164,6 +164,7 @@ describe("start and stop", () => {
         Launchd,
         new Launchd({
           isInstalled: () => Effect.succeed(true),
+          readPlist: () => Effect.succeed(null),
           install: () => Effect.void,
           bootstrap: () => Effect.void,
           uninstall: () => Effect.void,

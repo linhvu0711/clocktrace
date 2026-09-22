@@ -1205,6 +1205,7 @@ describe("server", () => {
       Launchd,
       new Launchd({
         isInstalled: () => Effect.succeed(true),
+        readPlist: () => Effect.succeed(null),
         install: () => Effect.void,
         bootstrap: () => Effect.void,
         bootout: () => Effect.void,

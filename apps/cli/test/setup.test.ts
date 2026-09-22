@@ -370,7 +370,7 @@ describe("setup", () => {
     expect(state.installs).toBe(1);
   });
 
-  it("setup fails when the load reports success but the Collector stays stopped", async () => {
+  it("a rewrite that never starts puts the previous agent back", async () => {
     // Given: the plist present, not loaded; the load returns success but the
     // Collector never comes up (launchctl bootstrap exit 5 on a bad plist)
     const { exit, output, state } = await run(
@@ -379,7 +379,7 @@ describe("setup", () => {
       "/stub",
       { launchd: { bootstrapStuck: true } },
     );
-    // Then: setup fails loudly and removes the plist that never started
+    // Then: setup fails loudly and restores the previous agent
     expect(exit).toEqual(
       Exit.fail(
         new LaunchdError({
@@ -392,8 +392,9 @@ describe("setup", () => {
       `app: written ${appPath}`,
       `launchd agent: written ${plistPath}`,
     ]);
-    expect(state.plist).toBe(null);
-    expect(state.installed).toBe(false);
+    expect(state.plist).toBe("<plist>");
+    expect(state.installed).toBe(true);
+    expect(state.installs).toBe(3);
   });
 
   it("setup tolerates a slow startup and then succeeds", async () => {

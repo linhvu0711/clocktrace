@@ -133,34 +133,43 @@ export const setup = (
         const written = yield* app.install(helperPath);
         yield* prompt.print(`app: ${written} ${appPath}`);
         const installed = yield* launchd.isInstalled();
+        const previous = installed ? yield* launchd.readPlist() : null;
         if (installed) {
           yield* launchd.bootout();
         }
-        yield* launchd.install(
-          collectorPlist({
-            app: appMainPath,
-            node: process.execPath,
-            entry: entryPath,
-            databasePath,
-            helperPath,
-            logPath,
-          }),
-        );
-        yield* prompt.print(`launchd agent: written ${plistPath}`);
-        yield* launchd.state().pipe(
-          Effect.flatMap((collector) =>
-            collector === "running"
-              ? Effect.void
-              : new LaunchdError({
-                  step: "launchctl bootstrap",
-                  detail: "collector did not start",
-                }),
-          ),
-          Effect.retry({ schedule: loadRetry }),
-          // A plist that does not start is removed so the next run
-          // rewrites it.
-          Effect.tapError(() => launchd.uninstall().pipe(Effect.ignore)),
-        );
+        // A fresh install that fails is removed; a rewrite that fails
+        // puts the previous agent back, unloading the new one first so
+        // the old plist is the one launchd runs.
+        const restore =
+          previous === null
+            ? launchd.uninstall()
+            : launchd
+                .uninstall()
+                .pipe(Effect.andThen(launchd.install(previous)));
+        yield* Effect.gen(function* () {
+          yield* launchd.install(
+            collectorPlist({
+              app: appMainPath,
+              node: process.execPath,
+              entry: entryPath,
+              databasePath,
+              helperPath,
+              logPath,
+            }),
+          );
+          yield* prompt.print(`launchd agent: written ${plistPath}`);
+          yield* launchd.state().pipe(
+            Effect.flatMap((collector) =>
+              collector === "running"
+                ? Effect.void
+                : new LaunchdError({
+                    step: "launchctl bootstrap",
+                    detail: "collector did not start",
+                  }),
+            ),
+            Effect.retry({ schedule: loadRetry }),
+          );
+        }).pipe(Effect.tapError(() => restore.pipe(Effect.ignore)));
         const interactive = yield* prompt.interactive;
         if (!interactive) {
           yield* prompt.print("no terminal, skipping questions");
