@@ -13,6 +13,7 @@ import {
   printRemovedCategory,
   printSetCategory,
 } from "../src/categories.js";
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -24,7 +25,7 @@ const EmptyStore = Layer.scoped(
 
 const runPrint = <A, E, ELayer>(
   layer: Layer.Layer<Store, ELayer, Scope.Scope>,
-  body: Effect.Effect<A, E, Store | Prompt>,
+  body: Effect.Effect<A, E, Store | Prompt | Style>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -40,6 +41,7 @@ const runPrint = <A, E, ELayer>(
                 terminal.layer,
                 Prompt.Default,
                 layer,
+                Style.Test,
               ),
             ),
           ),
@@ -51,22 +53,36 @@ const runPrint = <A, E, ELayer>(
   );
 
 describe("categories", () => {
-  it("list prints the Starter set", async () => {
-    // Given: Store.Test seeded with the six Starter Categories
-    // When
-    const { exit, output } = await runPrint(Store.Test, printCategories(false));
+  it("list prints a header, one row per Category with the id last, and the count", async () => {
+    // Given: two Categories, one productive and one not
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const coding = yield* setCategory({
+          id: null,
+          name: "Coding",
+          productive: true,
+        });
+        const social = yield* setCategory({
+          id: null,
+          name: "Social",
+          productive: false,
+        });
+        // When
+        yield* printCategories(false);
+        return { coding, social };
+      }),
+    );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output.map((l) => l.slice(38))).toEqual([
-      "Coding  productive",
-      "Communication  productive",
-      "Design  productive",
-      "Entertainment  not productive",
-      "Social  not productive",
-      "Writing  productive",
-    ]);
-    for (const l of output) {
-      expect(l.slice(0, 36)).toHaveLength(36);
+    if (Exit.isSuccess(exit)) {
+      const { coding, social } = exit.value;
+      expect(output).toEqual([
+        "  name    productive      id",
+        `  Coding  productive      ${coding.id}`,
+        `  Social  not productive  ${social.id}`,
+        "  2 categories",
+      ]);
     }
   });
 
@@ -175,9 +191,12 @@ describe("categories", () => {
     // Then: set and list both show it still productive
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      const line = `${exit.value.id}  Code  productive`;
-      expect(output[0]).toBe(line);
-      expect(output.slice(1)).toEqual([line]);
+      expect(output).toEqual([
+        `${exit.value.id}  Code  productive`,
+        "  name  productive  id",
+        `  Code  productive  ${exit.value.id}`,
+        "  1 category",
+      ]);
     }
   });
 

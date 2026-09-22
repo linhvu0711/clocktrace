@@ -12,6 +12,7 @@ import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import { type Cell, columns, count, line, span, Style } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
@@ -19,14 +20,42 @@ import { whenSetUp } from "./set-up.js";
 export const categoryLine = (c: Category): string =>
   `${c.id}  ${c.name}  ${c.productive ? "productive" : "not productive"}`;
 
+const categoryRow = (c: Category): ReadonlyArray<Cell> => [
+  `  ${c.name}`,
+  c.productive ? "productive" : "not productive",
+  span("dim", c.id),
+];
+
 export const printCategories = (
   json: boolean,
-): Effect.Effect<void, StoreError, Store | Prompt> =>
+): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
+    const look = yield* Style;
     const categories = yield* store.listCategories();
+    const header = [
+      span("dim", "  name"),
+      span("dim", "productive"),
+      span("dim", "id"),
+    ];
     yield* report(json, { categories }, ({ categories }) =>
-      categories.length === 0 ? ["none"] : categories.map(categoryLine),
+      categories.length === 0
+        ? ["none"]
+        : [
+            ...columns(
+              [header, ...categories.map(categoryRow)],
+              look,
+            ),
+            line(
+              [
+                span(
+                  "dim",
+                  `  ${count(categories.length, "category", "categories")}`,
+                ),
+              ],
+              look,
+            ),
+          ],
     );
   });
 
