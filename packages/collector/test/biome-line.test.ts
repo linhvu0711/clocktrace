@@ -3,14 +3,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   BiomeLine,
-  decodeBiomeLine,
   DevicePeerLine,
+  decodeBiomeLine,
 } from "../src/biome-line.js";
 
 const R3 =
   '{"bundleId":"com.apple.mobilesafari","device":"00000000-0000-4000-8000-000000000002","focus":"start","offset":184,"segment":"000000000000001","ts":1789833660,"appVersion":null,"build":null,"reason":null}';
-const E1 =
-  '{"error":"parse","offset":148,"segment":"000000000000001"}';
+const E1 = '{"error":"parse","offset":148,"segment":"000000000000001"}';
 const D_PAD =
   '{"deviceIdentifier":"00000000-0000-4000-8000-000000000003","lastSyncDate":1789664400,"me":false,"model":"24A437","name":"Linh\'s iPad","platform":1}';
 

@@ -77,11 +77,10 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
           return yield* biomeResult(code, lines, stderr);
         }),
       ).pipe(
-        Effect.mapError(
-          (cause) =>
-            cause instanceof BiomeExitError
-              ? cause
-              : new HelperExitedError({ cause }),
+        Effect.mapError((cause) =>
+          cause instanceof BiomeExitError
+            ? cause
+            : new HelperExitedError({ cause }),
         ),
       );
     return {
