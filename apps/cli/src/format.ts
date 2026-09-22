@@ -189,9 +189,11 @@ const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
       let rest = token;
       while (rest.length > 0) {
         const chunk = take(rest, room);
-        const piece = chunk.length > 0 ? chunk : rest.slice(0, 1);
-        lines.push(piece);
-        rest = rest.slice(piece.length);
+        // A grapheme wider than the room can never fit: drop it, as cut does.
+        if (chunk.length > 0) {
+          lines.push(chunk);
+        }
+        rest = rest.slice(Math.max(chunk.length, 1));
       }
     } else if (open.length === 0) {
       open = [...token];

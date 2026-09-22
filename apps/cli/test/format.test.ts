@@ -287,6 +287,15 @@ describe("format", () => {
     ]);
   });
 
+  it("wrap drops a grapheme wider than the room", () => {
+    // Given: one column of room, a two-column grapheme
+    const look = { color: false, unicode: true, width: 5 };
+    // When / Then
+    expect(columns([["ab", "漢"]], look, { overflow: "wrap" })).toEqual([
+      "ab  ",
+    ]);
+  });
+
   it("a right-aligned column pads before its text", () => {
     // Given
     const look = { color: false, unicode: true, width: 0 };
