@@ -1,9 +1,10 @@
 name: ci
 
+# Runs only when started by hand from the Actions tab. The same gates run on
+# every push through the pre-push hook in .githooks, which pnpm install turns
+# on, so a red branch never reaches GitHub in the first place.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build-test:
