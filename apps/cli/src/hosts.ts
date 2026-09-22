@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
@@ -26,6 +27,15 @@ export const hostLabel: Record<HostName, string> = {
   hermes: "hermes agent",
   openclaw: "openclaw",
 };
+
+// A Host started from the Dock sees only the system PATH, so every
+// Registration names the running node and the bin by absolute path —
+// the same shape the launchd plist uses (ADR 0008).
+export const serverNode = process.execPath;
+
+export const serverEntry = fileURLToPath(
+  new URL("../bin/clocktrace.js", import.meta.url),
+);
 
 export const hostTitle: Record<HostName, string> = {
   claude: "Claude Code",
