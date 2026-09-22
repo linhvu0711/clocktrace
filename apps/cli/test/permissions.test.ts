@@ -26,7 +26,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Style } from "../src/format.js";
 import { permissions } from "../src/permissions.js";
-import { Prompt, StoppedError } from "../src/prompt.js";
+import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -85,6 +85,7 @@ describe("permissions", () => {
           NodeContext.layer,
           terminal.layer,
           Prompt.Default,
+          Stdin.Test,
           fakeLaunchd(state),
           helper,
           Style.Test,

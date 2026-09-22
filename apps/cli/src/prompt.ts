@@ -9,9 +9,20 @@ export class StoppedError extends Data.TaggedError("StoppedError")<{}> {
   }
 }
 
+export class Stdin extends Effect.Service<Stdin>()("Stdin", {
+  succeed: { isTTY: Effect.sync(() => Boolean(process.stdin.isTTY)) },
+}) {
+  // biome-ignore lint/style/useNamingConvention: layers are PascalCase
+  static Test = Layer.succeed(this, new Stdin({ isTTY: Effect.succeed(true) }));
+}
+
 export class Prompt extends Effect.Service<Prompt>()("Prompt", {
   succeed: {
-    interactive: Effect.flatMap(Terminal.Terminal, (t) => t.isTTY),
+    interactive: Effect.flatMap(Terminal.Terminal, (t) =>
+      Effect.flatMap(Stdin, (s) =>
+        Effect.zipWith(t.isTTY, s.isTTY, (term, stdin) => term && stdin),
+      ),
+    ),
     ask: (question: string) =>
       CliPrompt.run(CliPrompt.text({ message: question })).pipe(
         Effect.mapError(() => new StoppedError()),

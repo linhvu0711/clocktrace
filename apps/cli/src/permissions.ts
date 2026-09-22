@@ -17,7 +17,7 @@ import { type DateTime, Effect } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import type { Style } from "./format.js";
-import { Prompt, type StoppedError } from "./prompt.js";
+import { Prompt, type Stdin, type StoppedError } from "./prompt.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
 import { printStatus } from "./status.js";
 
@@ -44,6 +44,7 @@ export const walkPermissions = (): Effect.Effect<
   | LaunchdError
   | StoppedError,
   | Prompt
+  | Stdin
   | Helper
   | Launchd
   | Store
@@ -91,6 +92,7 @@ export const permissions = (): Effect.Effect<
   | LaunchdError
   | StoppedError,
   | Prompt
+  | Stdin
   | Helper
   | Launchd
   | FileSystem.FileSystem

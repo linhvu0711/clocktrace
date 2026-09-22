@@ -37,7 +37,7 @@ import { parse } from "yaml";
 
 import { Style } from "../src/format.js";
 import { type HostName, Hosts, manualCommand } from "../src/hosts.js";
-import { Prompt, StoppedError } from "../src/prompt.js";
+import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -179,6 +179,7 @@ describe("hosts", () => {
           NodeContext.layer,
           terminal.layer,
           Prompt.Default,
+          Stdin.Test,
           fakeLaunchd(state),
           helperStub(allGranted),
           Hosts.Default,

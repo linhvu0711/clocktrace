@@ -28,7 +28,7 @@ import { BadLimitError, parseLimit } from "../src/activities.js";
 import { renderFriendly, run } from "../src/cli.js";
 import { Style } from "../src/format.js";
 import { Hosts } from "../src/hosts.js";
-import { Prompt } from "../src/prompt.js";
+import { Prompt, Stdin } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import { version } from "../src/version.js";
 import { MissingWindowError } from "../src/window.js";
@@ -84,6 +84,7 @@ describe("cli", () => {
           NodeContext.layer,
           terminal.layer,
           Prompt.Default,
+          Stdin.Test,
           fakeLaunchd(state),
           helperStub(allGranted),
           Hosts.Test,
