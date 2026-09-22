@@ -12,13 +12,18 @@ import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { type Cell, columns, count, line, span, Style } from "./format.js";
+import {
+  type Cell,
+  columns,
+  count,
+  line,
+  mark,
+  span,
+  Style,
+} from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
-
-export const categoryLine = (c: Category): string =>
-  `${c.id}  ${c.name}  ${c.productive ? "productive" : "not productive"}`;
 
 const categoryRow = (c: Category): ReadonlyArray<Cell> => [
   `  ${c.name}`,
@@ -65,11 +70,25 @@ export const printSetCategory = (
 ): Effect.Effect<
   void,
   CategoryNotFoundError | ParseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
   Effect.gen(function* () {
+    const look = yield* Style;
     const c = yield* setCategory(input);
-    yield* report(json, c, (c) => [categoryLine(c)]);
+    const verb = input.id === null ? "created" : "updated";
+    yield* report(json, c, (c) => [
+      line(
+        [
+          mark("ok", look),
+          ` ${verb} category ${c.name}  `,
+          span(
+            "dim",
+            `${c.productive ? "productive" : "not productive"} · ${c.id}`,
+          ),
+        ],
+        look,
+      ),
+    ]);
   });
 
 export const printRemovedCategory = (

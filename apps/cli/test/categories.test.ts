@@ -139,7 +139,9 @@ describe("categories", () => {
     if (Exit.isSuccess(exit)) {
       const categories = exit.value;
       expect(categories.length).toBe(1);
-      expect(output).toEqual([`${categories[0]?.id}  Research  productive`]);
+      expect(output).toEqual([
+        `✔ created category Research  productive · ${categories[0]?.id}`,
+      ]);
     }
   });
 
@@ -192,7 +194,7 @@ describe("categories", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       expect(output).toEqual([
-        `${exit.value.id}  Code  productive`,
+        `✔ updated category Code  productive · ${exit.value.id}`,
         "  name  productive  id",
         `  Code  productive  ${exit.value.id}`,
         "  1 category",
@@ -221,7 +223,9 @@ describe("categories", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      expect(output[0]).toBe(`${exit.value.id}  Code  not productive`);
+      expect(output[0]).toBe(
+        `✔ updated category Code  not productive · ${exit.value.id}`,
+      );
     }
   });
 
@@ -236,12 +240,21 @@ describe("categories", () => {
           { id: null, name: "Focus", productive: true },
           false,
         );
+        const store = yield* Store;
+        return yield* store.listCategories();
       }),
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output[0]?.slice(38)).toBe("Reading  not productive");
-    expect(output[1]?.slice(38)).toBe("Focus  productive");
+    if (Exit.isSuccess(exit)) {
+      const categories = exit.value;
+      const reading = categories.find((c) => c.name === "Reading");
+      const focus = categories.find((c) => c.name === "Focus");
+      expect(output).toEqual([
+        `✔ created category Reading  not productive · ${reading?.id}`,
+        `✔ created category Focus  productive · ${focus?.id}`,
+      ]);
+    }
   });
 
   it("set --id unknown with no flag names the id", async () => {
