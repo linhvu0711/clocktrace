@@ -444,8 +444,8 @@ describe("hosts", () => {
       "claude mcp add --scope user clocktrace -- clocktrace mcp",
       "codex mcp add clocktrace -- clocktrace mcp",
     ]);
-    expect(output).toContain("claude code: registered");
-    expect(output).toContain("codex: registered");
+    expect(output).toContain("  ✔ Claude Code registered");
+    expect(output).toContain("  ✔ Codex registered");
   });
 
   it("ctrl-c at the checklist stops setup and registers nothing", async () => {
@@ -486,7 +486,7 @@ describe("hosts", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(shown.split("Inverse Selection")).toHaveLength(2);
-    expect(output).toContain("claude code: registered");
+    expect(output).toContain("  ✔ Claude Code registered");
   });
 
   it("non-tty with --hosts registers the named without a checklist", async () => {
@@ -510,8 +510,8 @@ describe("hosts", () => {
       "claude mcp add --scope user clocktrace -- clocktrace mcp",
       "codex mcp add clocktrace -- clocktrace mcp",
     ]);
-    expect(output).toContain("claude code: registered");
-    expect(output).toContain("codex: registered");
+    expect(output).toContain("  ✔ Claude Code registered");
+    expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");
   });
 });
