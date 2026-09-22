@@ -58,7 +58,9 @@ export const renderFriendly = (
 
 // The library's built-in version option has no short alias; keep the old
 // parser's lone `-v`. On a friendly error, print the message here so the run
-// path (which the tests exercise) owns it; main.ts skips reprinting it.
+// path (which the tests exercise) owns it; main.ts skips reprinting it. Errors
+// go to stderr, like the library's own validation output, so stdout stays a
+// clean data channel for --json redirects.
 export const run: typeof cliRun = (args) =>
   cliRun(
     args.length === 3 && args[2] === "-v"
@@ -67,7 +69,7 @@ export const run: typeof cliRun = (args) =>
   ).pipe(
     Effect.tapError((e) =>
       isFriendlyError(e)
-        ? Console.log(renderFriendly(e).join("\n"))
+        ? Console.error(renderFriendly(e).join("\n"))
         : Effect.void,
     ),
   );
