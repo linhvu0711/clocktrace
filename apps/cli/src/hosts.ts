@@ -45,11 +45,10 @@ export const hostTitle: Record<HostName, string> = {
 };
 
 export const manualCommand: Record<HostName, string> = {
-  claude: "claude mcp add --scope user clocktrace -- clocktrace mcp",
-  codex: "codex mcp add clocktrace -- clocktrace mcp",
-  hermes:
-    'add mcp_servers.clocktrace with command "clocktrace" and args ["mcp"] to ~/.hermes/config.yaml',
-  openclaw: "openclaw mcp add clocktrace --command clocktrace --arg mcp",
+  claude: `claude mcp add --scope user clocktrace -- ${serverNode} ${serverEntry} mcp`,
+  codex: `codex mcp add clocktrace -- ${serverNode} ${serverEntry} mcp`,
+  hermes: `add mcp_servers.clocktrace with command "${serverNode}" and args ["${serverEntry}", "mcp"] to ~/.hermes/config.yaml`,
+  openclaw: `openclaw mcp add clocktrace --command ${serverNode} --arg ${serverEntry} --arg mcp`,
 };
 
 export const manualRemoveCommand: Record<HostName, string> = {
@@ -75,16 +74,19 @@ const addArgv: Record<Exclude<HostName, "hermes">, ReadonlyArray<string>> = {
     "user",
     "clocktrace",
     "--",
-    "clocktrace",
+    serverNode,
+    serverEntry,
     "mcp",
   ],
-  codex: ["mcp", "add", "clocktrace", "--", "clocktrace", "mcp"],
+  codex: ["mcp", "add", "clocktrace", "--", serverNode, serverEntry, "mcp"],
   openclaw: [
     "mcp",
     "add",
     "clocktrace",
     "--command",
-    "clocktrace",
+    serverNode,
+    "--arg",
+    serverEntry,
     "--arg",
     "mcp",
   ],
@@ -220,8 +222,8 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
       return `${hostLabel.hermes}: already registered`;
     }
     doc.setIn(["mcp_servers", "clocktrace"], {
-      command: "clocktrace",
-      args: ["mcp"],
+      command: serverNode,
+      args: [serverEntry, "mcp"],
     });
     yield* writeHermes(doc, exists);
     return `${hostLabel.hermes}: registered`;

@@ -44,6 +44,8 @@ import {
   Hosts,
   manualCommand,
   manualRemoveCommand,
+  serverEntry,
+  serverNode,
 } from "../src/hosts.js";
 import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
@@ -129,6 +131,10 @@ const fakeExecutor = (
       layer: Layer.succeed(CommandExecutor.CommandExecutor, executor),
     };
   });
+
+const addClaude = `claude mcp add --scope user clocktrace -- ${serverNode} ${serverEntry} mcp`;
+const addCodex = `codex mcp add clocktrace -- ${serverNode} ${serverEntry} mcp`;
+const addOpenclaw = `openclaw mcp add clocktrace --command ${serverNode} --arg ${serverEntry} --arg mcp`;
 
 const register = (
   host: HostName,
@@ -267,11 +273,9 @@ describe("hosts", () => {
     // Given: a recording CommandExecutor whose exits are 0
     const executor = await Effect.runPromise(
       fakeExecutor({
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": { code: 0 },
-        "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
-        "openclaw mcp add clocktrace --command clocktrace --arg mcp": {
-          code: 0,
-        },
+        [addClaude]: { code: 0 },
+        [addCodex]: { code: 0 },
+        [addOpenclaw]: { code: 0 },
       }),
     );
     // When
@@ -282,11 +286,7 @@ describe("hosts", () => {
     ];
     const recorded = await Effect.runPromise(Ref.get(executor.recorded));
     // Then
-    expect(recorded).toEqual([
-      "claude mcp add --scope user clocktrace -- clocktrace mcp",
-      "codex mcp add clocktrace -- clocktrace mcp",
-      "openclaw mcp add clocktrace --command clocktrace --arg mcp",
-    ]);
+    expect(recorded).toEqual([addClaude, addCodex, addOpenclaw]);
     expect(lines).toEqual([
       "claude code: registered",
       "codex: registered",
@@ -312,7 +312,7 @@ describe("hosts", () => {
       model: "nous-1",
       // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
       mcp_servers: {
-        clocktrace: { command: "clocktrace", args: ["mcp"] },
+        clocktrace: { command: serverNode, args: [serverEntry, "mcp"] },
       },
     });
   });
@@ -321,7 +321,7 @@ describe("hosts", () => {
     // Given: claude exits 1 printing "already exists"
     const executor = await Effect.runPromise(
       fakeExecutor({
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
+        [addClaude]: {
           code: 1,
           output: "error: already exists",
         },
@@ -337,7 +337,7 @@ describe("hosts", () => {
     // Given: codex exits 1 printing "boom"
     const executor = await Effect.runPromise(
       fakeExecutor({
-        "codex mcp add clocktrace -- clocktrace mcp": {
+        [addCodex]: {
           code: 1,
           output: "boom",
         },
@@ -346,9 +346,7 @@ describe("hosts", () => {
     // When
     const line = await register("codex", executor.layer);
     // Then
-    expect(line).toBe(
-      "codex: failed. run by hand: codex mcp add clocktrace -- clocktrace mcp",
-    );
+    expect(line).toBe(`codex: failed. run by hand: ${addCodex}`);
   });
 
   it("hermes already registered leaves the file unchanged", async () => {
@@ -449,10 +447,8 @@ describe("hosts", () => {
         "which claude": { code: 0 },
         "which codex": { code: 1 },
         "which openclaw": { code: 1 },
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-          code: 0,
-        },
-        "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
+        [addClaude]: { code: 0 },
+        [addCodex]: { code: 0 },
       },
     });
     // Then
@@ -465,10 +461,7 @@ describe("hosts", () => {
     expect(shown).toContain("  ☐ Hermes Agent");
     expect(shown).toContain("  ☐ OpenClaw");
     expect(shown).toContain("  ☒ Codex");
-    expect(recorded.slice(-2)).toEqual([
-      "claude mcp add --scope user clocktrace -- clocktrace mcp",
-      "codex mcp add clocktrace -- clocktrace mcp",
-    ]);
+    expect(recorded.slice(-2)).toEqual([addClaude, addCodex]);
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
   });
@@ -503,9 +496,7 @@ describe("hosts", () => {
         "which claude": { code: 0 },
         "which codex": { code: 1 },
         "which openclaw": { code: 1 },
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-          code: 0,
-        },
+        [addClaude]: { code: 0 },
       },
     });
     // Then
@@ -522,19 +513,14 @@ describe("hosts", () => {
       {
         interactive: false,
         results: {
-          "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-            code: 0,
-          },
-          "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
+          [addClaude]: { code: 0 },
+          [addCodex]: { code: 0 },
         },
       },
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(recorded).toEqual([
-      "claude mcp add --scope user clocktrace -- clocktrace mcp",
-      "codex mcp add clocktrace -- clocktrace mcp",
-    ]);
+    expect(recorded).toEqual([addClaude, addCodex]);
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");
