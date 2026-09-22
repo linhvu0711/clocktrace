@@ -16,6 +16,7 @@ import type { FileSystem, Path, Terminal } from "@effect/platform";
 import { type DateTime, Effect } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import type { Style } from "./format.js";
 import { Prompt, type StoppedError } from "./prompt.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
 import { printStatus } from "./status.js";
@@ -50,6 +51,7 @@ export const walkPermissions = (): Effect.Effect<
   | Terminal.Terminal
   | FileSystem.FileSystem
   | Path.Path
+  | Style
 > =>
   Effect.gen(function* () {
     const prompt = yield* Prompt;
@@ -95,6 +97,7 @@ export const permissions = (): Effect.Effect<
   | Terminal.Terminal
   | Path.Path
   | DateTime.CurrentTimeZone
+  | Style
 > => requireSetUp.pipe(Effect.andThen(withStore(walkPermissions())));
 
 export const permissionsCommand = Command.make("permissions", {}, () =>

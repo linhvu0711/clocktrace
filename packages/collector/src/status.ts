@@ -43,7 +43,7 @@ export const permissionLine = (item: PermissionItem): PermissionLine => {
     return {
       name: item.name,
       state: "not checked",
-      note: `${browser} is not running`,
+      note: `${browser} is closed`,
     };
   }
   return { name: item.name, state: "denied", note: item.loss };

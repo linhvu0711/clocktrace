@@ -25,6 +25,7 @@ import {
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import { status } from "../src/status.js";
@@ -70,6 +71,27 @@ const allGranted: Permissions = {
   fullDiskAccess: "granted",
 };
 
+const seedOne = (dbPath: string) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const store = yield* openStore(dbPath);
+      const device = yield* store.getOrInsertDevice({
+        kind: "mac",
+        name: "Studio",
+        externalId: "mac-1",
+      });
+      yield* store.insertActivity({
+        deviceId: device.id,
+        bundleId: "com.apple.finder",
+        appName: "Finder",
+        title: null,
+        url: null,
+        startedAt: DateTime.unsafeMake("2026-09-18T17:00:00.000Z"),
+        endedAt: DateTime.unsafeMake("2026-09-18T17:05:00.000Z"),
+      });
+    }),
+  );
+
 describe("status", () => {
   let dir: string;
   let path: string;
@@ -94,6 +116,7 @@ describe("status", () => {
       | Helper
       | import("@effect/platform").FileSystem.FileSystem
       | DateTime.CurrentTimeZone
+      | Style
     >,
   ) =>
     Effect.runPromise(
@@ -108,6 +131,7 @@ describe("status", () => {
           Prompt.Default,
           fakeLaunchd(state),
           helperStub(p),
+          Style.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
         const output = yield* console.getLines({ stripAnsi: true });
@@ -163,6 +187,7 @@ describe("status", () => {
           Prompt.Default,
           fakeLaunchd(state),
           helperMissing("/stub"),
+          Style.Test,
         );
         return yield* Effect.exit(status().pipe(Effect.provide(layers)));
       }).pipe(
@@ -206,6 +231,7 @@ describe("status", () => {
           Prompt.Default,
           fakeLaunchd(state),
           helperExits("boom"),
+          Style.Test,
         );
         return yield* Effect.exit(status().pipe(Effect.provide(layers)));
       }).pipe(
@@ -229,7 +255,7 @@ describe("status", () => {
     }
   });
 
-  it("status prints the view when set up", async () => {
+  it("status prints the groups with marks, the count, and the database path", async () => {
     // Given: the plist installed, the collector running, the database file
     await Effect.runPromise(Effect.scoped(openStore(path)));
     // When
@@ -241,11 +267,92 @@ describe("status", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "collector: running",
-      "accessibility: granted",
-      "full disk access: granted",
-      "last activity: none yet",
-      `database: ${path}`,
+      "Collector      ✔ running",
+      "Permissions    2 of 2 granted",
+      "  ✔ Accessibility     window titles",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "Last activity  none yet",
+      `Database       ${path}`,
+    ]);
+  });
+
+  it("status prints a closed browser, a denied one, and the last activity", async () => {
+    // Given: Safari not running, Chrome denied, one Activity
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    await Effect.runPromise(seedOne(path));
+    // When
+    const { exit, output } = await run(
+      {
+        accessibility: "granted",
+        automation: {
+          "com.apple.Safari": "notRunning",
+          "com.google.Chrome": "denied",
+        },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Collector      ✔ running",
+      "Permissions    2 of 4 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "  ○ Automation · Safari  Safari is closed",
+      "  ✘ Automation · Chrome  denied · turn it on in System Settings › Privacy › Automation",
+      "Last activity  2026-09-18 10:05",
+      `Database       ${path}`,
+    ]);
+  });
+
+  it("status paints the marks when color is on", async () => {
+    // Given: the same as the first case, but color on
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const { exit, output } = await Effect.runPromise(
+      Effect.gen(function* () {
+        const terminal = yield* MockTerminal.make(true);
+        const console = yield* MockConsole.make;
+        const state = yield* Ref.make<LaunchdState>({
+          installed: true,
+          running: true,
+          plist: null,
+          installs: 0,
+        });
+        const layers = Layer.mergeAll(
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
+          fakeLaunchd(state),
+          helperStub(allGranted),
+          Layer.succeed(Style, new Style({ color: true, unicode: true })),
+        );
+        const exit = yield* Effect.exit(status().pipe(Effect.provide(layers)));
+        const output = yield* console.getLines();
+        return { exit, output };
+      }).pipe(
+        Effect.withConfigProvider(
+          ConfigProvider.fromMap(
+            new Map([
+              ["CLOCKTRACE_HELPER", "/stub"],
+              ["CLOCKTRACE_DB", path],
+            ]),
+          ),
+        ),
+        DateTime.withCurrentZoneNamed("America/Los_Angeles"),
+      ),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "\u001b[0;1mCollector\u001b[0m      \u001b[0;32m✔\u001b[0m running",
+      "\u001b[0;1mPermissions\u001b[0m    \u001b[0;90m2 of 2 granted\u001b[0m",
+      "  \u001b[0;32m✔\u001b[0m Accessibility     \u001b[0;90mwindow titles\u001b[0m",
+      "  \u001b[0;32m✔\u001b[0m Full Disk Access  \u001b[0;90miPhone and iPad import\u001b[0m",
+      "\u001b[0;1mLast activity\u001b[0m  none yet",
+      `\u001b[0;1mDatabase\u001b[0m       \u001b[0;90m${path}\u001b[0m`,
     ]);
   });
 

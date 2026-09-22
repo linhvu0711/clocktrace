@@ -1,0 +1,3 @@
+{"appVersion":"1.2.3","build":"456","bundleId":"com.example.alpha","device":"fixture-device","focus":"start","offset":32,"reason":"com.example.reason","segment":"infocus.segb","ts":1758307200.5}
+{"appVersion":null,"build":null,"bundleId":"com.example.alpha","device":"fixture-device","focus":"end","offset":108,"reason":null,"segment":"infocus.segb","ts":1758307260.25}
+{"error":"parse","offset":148,"segment":"infocus.segb"}

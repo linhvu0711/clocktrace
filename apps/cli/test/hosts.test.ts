@@ -35,6 +35,7 @@ import { NodeInspectSymbol } from "effect/Inspectable";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
+import { Style } from "../src/format.js";
 import { type HostName, Hosts, manualCommand } from "../src/hosts.js";
 import { Prompt, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
@@ -182,6 +183,7 @@ describe("hosts", () => {
           helperStub(allGranted),
           Hosts.Default,
           executor.layer,
+          Style.Test,
         );
         const exit = yield* Effect.exit(
           setup(hosts).pipe(Effect.provide(layers)),

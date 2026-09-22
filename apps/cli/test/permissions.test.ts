@@ -24,6 +24,7 @@ import {
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { Style } from "../src/format.js";
 import { permissions } from "../src/permissions.js";
 import { Prompt, StoppedError } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
@@ -86,6 +87,7 @@ describe("permissions", () => {
           Prompt.Default,
           fakeLaunchd(state),
           helper,
+          Style.Test,
         );
         const exit = yield* Effect.exit(
           permissions().pipe(Effect.provide(layers)),
@@ -141,12 +143,13 @@ describe("permissions", () => {
       "full disk access: iPhone and iPad import",
       "  denied: iPhone and iPad time is not imported",
       "full disk access: skipped, iPhone and iPad time is not imported",
-      "collector: running",
-      "accessibility: denied, window titles are not tracked",
-      "automation Safari: granted",
-      "full disk access: denied, iPhone and iPad time is not imported",
-      "last activity: none yet",
-      `database: ${path}`,
+      "Collector      ✔ running",
+      "Permissions    1 of 3 granted",
+      "  ✔ Automation · Safari  URLs in Safari",
+      "  ✘ Accessibility        denied · turn it on in System Settings › Privacy › Accessibility",
+      "  ✘ Full Disk Access     denied · turn it on in System Settings › Privacy › Full Disk Access",
+      "Last activity  none yet",
+      `Database       ${path}`,
     ]);
     expect(shown).toContain("grant or skip?");
     expect(requests).toEqual([{ kind: "accessibility" }]);
@@ -177,12 +180,13 @@ describe("permissions", () => {
       "full disk access: iPhone and iPad import",
       "  denied: iPhone and iPad time is not imported",
       "full disk access: skipped, iPhone and iPad time is not imported",
-      "collector: running",
-      "accessibility: denied, window titles are not tracked",
-      "automation Safari: granted",
-      "full disk access: denied, iPhone and iPad time is not imported",
-      "last activity: none yet",
-      `database: ${path}`,
+      "Collector      ✔ running",
+      "Permissions    1 of 3 granted",
+      "  ✔ Automation · Safari  URLs in Safari",
+      "  ✘ Accessibility        denied · turn it on in System Settings › Privacy › Accessibility",
+      "  ✘ Full Disk Access     denied · turn it on in System Settings › Privacy › Full Disk Access",
+      "Last activity  none yet",
+      `Database       ${path}`,
     ]);
     expect(shown).not.toContain("grant or skip?");
     expect(requests).toEqual([]);
@@ -229,6 +233,20 @@ describe("permissions", () => {
     expect(output).toEqual([
       "accessibility: window titles",
       "  denied: window titles are not tracked",
+      "accessibility: granted",
+      "automation Safari: URLs in Safari",
+      "  denied: URLs in Safari are not tracked",
+      "automation Safari: Safari is not running, open it and retry",
+      "full disk access: iPhone and iPad import",
+      "  denied: iPhone and iPad time is not imported",
+      "full disk access: granted",
+      "Collector      ✔ running",
+      "Permissions    2 of 3 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "  ○ Automation · Safari  Safari is closed",
+      "Last activity  none yet",
+      `Database       ${path}`,
     ]);
   });
 

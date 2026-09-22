@@ -78,7 +78,7 @@ describe("status", () => {
     expect(lines).toEqual([
       "collector: stopped, run clocktrace start",
       "accessibility: denied, window titles are not tracked",
-      "automation Safari: not checked, Safari is not running",
+      "automation Safari: not checked, Safari is closed",
       "automation Chrome: denied, URLs in Chrome are not tracked",
       "full disk access: denied, iPhone and iPad time is not imported",
       "last activity: none yet",

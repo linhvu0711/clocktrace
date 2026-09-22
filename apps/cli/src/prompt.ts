@@ -31,6 +31,7 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
         Effect.tapError(() => Console.log("")),
       ),
     print: (line: string) => Console.log(line),
+    printError: (line: string) => Console.error(line),
   },
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
@@ -41,6 +42,7 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
       ask: () => Effect.succeed(""),
       checklist: () => Effect.succeed([]),
       print: () => Effect.void,
+      printError: () => Effect.void,
     }),
   );
 }

@@ -75,6 +75,51 @@ final class CommandTests: XCTestCase {
     XCTAssertEqual(command, .usage)
   }
 
+  func testParsesBiomeRecords() {
+    // Given: args ["biome", "records"]
+    let args = ["biome", "records"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .biomeRecords(since: nil))
+  }
+
+  func testParsesBiomeRecordsWithSince() {
+    // Given: args ["biome", "records", "--since", "1758307200"]
+    let args = ["biome", "records", "--since", "1758307200"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .biomeRecords(since: 1758307200))
+  }
+
+  func testReturnsUsageForABadSince() {
+    // Given: args ["biome", "records", "--since", "soon"]
+    let args = ["biome", "records", "--since", "soon"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .usage)
+  }
+
+  func testParsesBiomeDevices() {
+    // Given: args ["biome", "devices"]
+    let args = ["biome", "devices"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .biomeDevices)
+  }
+
+  func testReturnsUsageForBiomeAlone() {
+    // Given: args ["biome"]
+    let args = ["biome"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .usage)
+  }
+
   func testReturnsUsageForAnUnknownSubcommand() {
     // Given: args ["bogus"]
     let args = ["bogus"]

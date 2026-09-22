@@ -6,6 +6,11 @@ export interface MockConsole extends Console.Console {
       readonly stripAnsi: boolean;
     }>,
   ) => Effect.Effect<ReadonlyArray<string>>;
+  readonly getErrorLines: (
+    params?: Partial<{
+      readonly stripAnsi: boolean;
+    }>,
+  ) => Effect.Effect<ReadonlyArray<string>>;
 }
 
 export const MockConsole = Context.GenericTag<Console.Console, MockConsole>(
@@ -24,9 +29,15 @@ export const stripAnsi = (str: string) => str.replace(pattern, "");
 
 export const make = Effect.gen(function* () {
   const lines = yield* Ref.make<ReadonlyArray<string>>([]);
+  const errorLines = yield* Ref.make<ReadonlyArray<string>>([]);
 
   const getLines: MockConsole["getLines"] = (params = {}) =>
     Ref.get(lines).pipe(
+      Effect.map((ls) => (params.stripAnsi || false ? ls.map(stripAnsi) : ls)),
+    );
+
+  const getErrorLines: MockConsole["getErrorLines"] = (params = {}) =>
+    Ref.get(errorLines).pipe(
       Effect.map((ls) => (params.stripAnsi || false ? ls.map(stripAnsi) : ls)),
     );
 
@@ -36,6 +47,7 @@ export const make = Effect.gen(function* () {
   return MockConsole.of({
     [Console.TypeId]: Console.TypeId,
     getLines,
+    getErrorLines,
     log,
     unsafe: globalThis.console,
     assert: () => Effect.void,
@@ -47,7 +59,12 @@ export const make = Effect.gen(function* () {
     dirxml: () => Effect.void,
     // The CLI's error output (library validation messages) goes to
     // Console.error; capture it so tests can read what the user is shown.
-    error: log,
+    error: (...args) =>
+      log(...args).pipe(
+        Effect.andThen(
+          Ref.update(errorLines, (ls) => [...ls, ...args.map(String)]),
+        ),
+      ),
     group: () => Effect.void,
     groupEnd: Effect.void,
     info: () => Effect.void,
@@ -66,3 +83,12 @@ export const getLines = (
   }>,
 ): Effect.Effect<ReadonlyArray<string>> =>
   Effect.consoleWith((console) => (console as MockConsole).getLines(params));
+
+export const getErrorLines = (
+  params?: Partial<{
+    readonly stripAnsi?: boolean;
+  }>,
+): Effect.Effect<ReadonlyArray<string>> =>
+  Effect.consoleWith((console) =>
+    (console as MockConsole).getErrorLines(params),
+  );
