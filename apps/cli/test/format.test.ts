@@ -287,6 +287,54 @@ describe("format", () => {
     ]);
   });
 
+  it("a right-aligned column pads before its text", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 0 };
+    // When / Then
+    expect(
+      columns(
+        [
+          ["a", "x"],
+          ["bbb", "y"],
+        ],
+        look,
+        { align: ["right"] },
+      ),
+    ).toEqual(["  a  x", "bbb  y"]);
+  });
+
+  it("a right-aligned last column pads to its widest cell", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 0 };
+    // When / Then
+    expect(
+      columns(
+        [
+          ["a", "x"],
+          ["b", "yyy"],
+        ],
+        look,
+        { align: ["left", "right"] },
+      ),
+    ).toEqual(["a    x", "b  yyy"]);
+  });
+
+  it("columns without an align entry stay left-aligned", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 0 };
+    // When / Then
+    expect(
+      columns(
+        [
+          ["a", "x", "p"],
+          ["bbb", "y", "q"],
+        ],
+        look,
+        { align: ["right"] },
+      ),
+    ).toEqual(["  a  x  p", "bbb  y  q"]);
+  });
+
   it("shortPath puts ~ in place of the home folder at a path boundary", () => {
     // Given / When / Then
     expect([

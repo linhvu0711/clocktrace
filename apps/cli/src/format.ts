@@ -25,6 +25,8 @@ export type ColumnsOptions = {
    * to the column's start.
    */
   readonly overflow?: "truncate" | "wrap";
+  /** Per column, by index; a missing entry is `"left"`. */
+  readonly align?: ReadonlyArray<"left" | "right">;
 };
 
 const ansi: Record<Tone, Ansi.Ansi> = {
@@ -225,14 +227,18 @@ export const columns = (
     }
     const lead = r.slice(0, last);
     const start = lead.reduce((n, _, i) => n + widest(i) + 2, 0);
+    const right = (i: number): boolean => options.align?.[i] === "right";
     const head = lead
-      .map(
-        (c, i) => render(spans(c)) + " ".repeat(widest(i) - visible(c)) + "  ",
-      )
+      .map((c, i) => {
+        const pad = " ".repeat(widest(i) - visible(c));
+        const rendered = render(spans(c));
+        return (right(i) ? pad + rendered : rendered + pad) + "  ";
+      })
       .join("");
     const room = look.width - start;
     if (look.width === 0 || visible(cell) <= room) {
-      return [head + render(spans(cell))];
+      const pad = right(last) ? " ".repeat(widest(last) - visible(cell)) : "";
+      return [head + pad + render(spans(cell))];
     }
     if (room <= 0) {
       return [head];
