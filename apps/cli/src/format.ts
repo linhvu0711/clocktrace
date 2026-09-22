@@ -30,10 +30,7 @@ export const unicodeEnabled = (term: Option.Option<string>): boolean =>
 
 export const span = (tone: Tone, text: string): Span => ({ text, tone });
 
-export const mark = (
-  tone: "ok" | "warn" | "bad",
-  look: Look,
-): Span => {
+export const mark = (tone: "ok" | "warn" | "bad", look: Look): Span => {
   const text = look.unicode
     ? tone === "ok"
       ? "✔"
@@ -50,10 +47,9 @@ export const mark = (
 
 const renderSpan = (s: Span, look: Look): string =>
   look.color && s.tone !== undefined
-    ? AnsiDoc.render(
-        AnsiDoc.annotate(AnsiDoc.text(s.text), ansi[s.tone]),
-        { style: "pretty" },
-      )
+    ? AnsiDoc.render(AnsiDoc.annotate(AnsiDoc.text(s.text), ansi[s.tone]), {
+        style: "pretty",
+      })
     : s.text;
 
 const spans = (cell: Cell): ReadonlyArray<Span> =>
@@ -63,10 +59,7 @@ const spans = (cell: Cell): ReadonlyArray<Span> =>
       ? [cell]
       : cell.map((c) => (typeof c === "string" ? { text: c } : c));
 
-export const line = (
-  cells: ReadonlyArray<Cell>,
-  look: Look,
-): string =>
+export const line = (cells: ReadonlyArray<Cell>, look: Look): string =>
   cells
     .flatMap((cell) => spans(cell))
     .map((s) => renderSpan(s, look))
@@ -106,7 +99,9 @@ export const clock = (t: DateTime.Utc, now: DateTime.Zoned): string => {
   const at = isoMinute(DateTime.setZone(t, now.zone));
   const day = at.slice(0, 10);
   const time = at.slice(11);
-  return day === isoMinute(now).slice(0, 10) ? `today ${time}` : `${day} ${time}`;
+  return day === isoMinute(now).slice(0, 10)
+    ? `today ${time}`
+    : `${day} ${time}`;
 };
 
 export const duration = (seconds: number): string => {
@@ -117,9 +112,7 @@ export const duration = (seconds: number): string => {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
-  return h === 0
-    ? `${m}m ${pad(s)}s`
-    : `${h}h ${pad(m)}m ${pad(s)}s`;
+  return h === 0 ? `${m}m ${pad(s)}s` : `${h}h ${pad(m)}m ${pad(s)}s`;
 };
 
 export class Style extends Effect.Service<Style>()("Style", {

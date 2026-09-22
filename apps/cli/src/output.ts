@@ -4,7 +4,7 @@ import { type LaunchdError, logPath } from "@clocktrace/collector";
 import { Options } from "@effect/cli";
 import { Data, Effect } from "effect";
 
-import { line, mark, shortPath, span, Style } from "./format.js";
+import { line, mark, Style, shortPath, span } from "./format.js";
 import { Prompt } from "./prompt.js";
 
 export const jsonOption = Options.boolean("json").pipe(
