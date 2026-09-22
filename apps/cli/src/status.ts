@@ -33,11 +33,7 @@ export const printStatus = (
     const status = yield* readStatus();
     const lines = yield* statusLines(status);
     const encoded = yield* Schema.encode(Status)(status);
-    yield* report(
-      json,
-      { ...encoded, imports: "not built yet" as const, lines },
-      () => lines,
-    );
+    yield* report(json, encoded, () => lines);
   });
 
 export const status = (

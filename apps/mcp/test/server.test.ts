@@ -1118,15 +1118,14 @@ describe("server", () => {
     });
   });
 
-  it("status wraps readStatus: running, permissions, no Activity yet, imports not built yet", async () => {
+  it("status wraps readStatus: running, permissions, no Activity yet", async () => {
     // Given: an empty store, the Test Launchd (running) and Helper (all granted)
     const { client, close } = await connect(EmptyStore);
     // When
     const result = await callTool(client, { name: "status", arguments: {} });
     await close();
     // Then
-    expect(result.isError).toBeUndefined();
-    expect(result.structuredContent).toEqual({
+    const expected = {
       collector: "running",
       permissions: [
         { name: "accessibility", state: "granted", note: null },
@@ -1134,15 +1133,11 @@ describe("server", () => {
       ],
       lastActivity: null,
       databasePath: dbPath,
-      imports: "not built yet",
-      lines: [
-        "collector: running",
-        "accessibility: granted",
-        "full disk access: granted",
-        "last activity: none yet",
-        `database: ${dbPath}`,
-      ],
-    });
+    };
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual(expected);
+    // The text content mirrors the structured output: no lines, no imports.
+    expect(JSON.parse(text(result))).toEqual(expected);
   });
 
   it("status returns isError with the Helper failure text", async () => {
@@ -1179,10 +1174,8 @@ describe("server", () => {
     // Then
     const status = result.structuredContent as {
       lastActivity: string | null;
-      lines: ReadonlyArray<string>;
     };
     expect(status.lastActivity).toBe("2026-09-18T09:40:00.000Z");
-    expect(status.lines).toContain("last activity: 2026-09-18 02:40");
   });
 
   it("a stopped Collector: status says stopped, run clocktrace start, and summary still answers", async () => {
@@ -1209,10 +1202,8 @@ describe("server", () => {
     const s = status.structuredContent as {
       collector: string;
       permissions: ReadonlyArray<unknown>;
-      lines: ReadonlyArray<string>;
     };
     expect(s.collector).toBe("stopped");
-    expect(s.lines[0]).toBe("collector: stopped, run clocktrace start");
     expect(s.permissions[0]).toEqual({
       name: "accessibility",
       state: "denied",
