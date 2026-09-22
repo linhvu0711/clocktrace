@@ -528,6 +528,14 @@ describe("cli", () => {
     expect(Effect.runSync(parseLimit(Option.none()))).toEqual(Option.none());
   });
 
+  it("parseLimit rejects an empty or non-positive limit", () => {
+    for (const bad of ["", "   ", "0", "-3"]) {
+      expect(Effect.runSyncExit(parseLimit(Option.some(bad)))).toEqual(
+        Exit.fail(new BadLimitError()),
+      );
+    }
+  });
+
   it("a bad --limit is named", async () => {
     // Given
     const argv = ["node", "clocktrace", "activities", "--limit", "notanumber"];

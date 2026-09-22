@@ -29,7 +29,10 @@ import {
 export class BadLimitError extends Data.TaggedError("BadLimitError")<{}> {}
 
 // --limit is parsed as text so we own the error wording instead of the
-// library's "'x' is not a integer"; a non-integer value is a BadLimitError.
+// library's "'x' is not a integer". Only a positive whole number is valid:
+// Number("") and Number("  ") are 0, so an empty flag would otherwise slip
+// through as a zero-row page. This matches the MCP tool's z.number().int()
+// .positive().
 export const parseLimit = (
   limit: Option.Option<string>,
 ): Effect.Effect<Option.Option<number>, BadLimitError> =>
@@ -37,7 +40,7 @@ export const parseLimit = (
     onNone: () => Effect.succeed(Option.none()),
     onSome: (text) => {
       const n = Number(text);
-      return Number.isInteger(n)
+      return Number.isInteger(n) && n > 0
         ? Effect.succeed(Option.some(n))
         : Effect.fail(new BadLimitError());
     },
