@@ -313,9 +313,11 @@ export const importOnce = (
       ),
     );
 
-    yield* Effect.logInfo("iOS import done").pipe(
-      Effect.annotateLogs("activities", count),
-    );
+    if (devices.size > 0) {
+      yield* Effect.logInfo("iOS import done").pipe(
+        Effect.annotateLogs("activities", count),
+      );
+    }
   });
 
 export const importLoop = (

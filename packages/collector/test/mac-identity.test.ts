@@ -1,10 +1,7 @@
 import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 
-import {
-  parseHardwareUuid,
-  parseMacosMajor,
-} from "../src/mac-identity.js";
+import { parseHardwareUuid, parseMacosMajor } from "../src/mac-identity.js";
 
 describe("mac-identity", () => {
   it("parseHardwareUuid reads the UUID from ioreg output", () => {

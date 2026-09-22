@@ -6,6 +6,7 @@ import type { ParseError } from "effect/ParseResult";
 import { collect } from "./collector.js";
 import { helperPathConfig } from "./config.js";
 import { Helper, type HelperNotFoundError } from "./helper.js";
+import { importLoop } from "./importer.js";
 import type { MacIdentity, MacIdentityError } from "./mac-identity.js";
 import { registerDevice } from "./register-device.js";
 
@@ -30,6 +31,7 @@ export const runCollector = (): Effect.Effect<
     yield* Effect.logInfo("collector started").pipe(
       Effect.annotateLogs("deviceId", device.id),
     );
+    yield* Effect.fork(importLoop(helperPath));
     yield* collect(helper.lines(helperPath), device.id).pipe(
       Effect.tapError((e) =>
         e._tag === "HelperExitedError"

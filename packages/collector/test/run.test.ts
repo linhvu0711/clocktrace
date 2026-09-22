@@ -16,6 +16,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  BiomeExitError,
   Helper,
   HelperExitedError,
   HelperNotFoundError,
@@ -135,5 +136,102 @@ describe("run", () => {
       "helper exited, restarting",
       "helper exited, restarting",
     ]);
+  });
+
+  it("runs the import on start and again after 15 minutes through the watch path", async () => {
+    // Given: a stub helper whose biome calls succeed
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const imports = yield* Queue.unbounded<number>();
+        const count = yield* Ref.make(0);
+        const stubHelper = Layer.succeed(
+          Helper,
+          new Helper({
+            check: () => Effect.void,
+            permissions: () =>
+              Effect.succeed({
+                accessibility: "granted",
+                automation: {},
+                fullDiskAccess: "granted",
+              }),
+            request: () => Effect.succeed("asked"),
+            biomeDevices: () =>
+              Ref.updateAndGet(count, (n) => n + 1).pipe(
+                Effect.tap((n) => Queue.offer(imports, n)),
+                Effect.as([
+                  '{"deviceIdentifier":"00000000-0000-4000-8000-000000000002","lastSyncDate":null,"me":false,"model":"24A437","name":"","platform":2}',
+                ]),
+              ),
+            biomeRecords: () => Effect.succeed([]),
+            lines: () => Stream.never,
+          }),
+        );
+        const layers = Layer.mergeAll(stubHelper, Store.Test, MacIdentity.Test);
+        // When
+        const fiber = yield* Effect.fork(
+          runCollector().pipe(
+            Effect.provide(layers),
+            Effect.withConfigProvider(
+              ConfigProvider.fromMap(new Map([["CLOCKTRACE_HELPER", "/stub"]])),
+            ),
+          ),
+        );
+        const a = yield* Queue.take(imports);
+        yield* TestClock.adjust("15 minutes");
+        const b = yield* Queue.take(imports);
+        yield* Fiber.interrupt(fiber);
+        return { a, b };
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then
+    expect([result.a, result.b]).toEqual([1, 2]);
+  });
+
+  it("a failing import keeps the Mac tracking", async () => {
+    // Given: a stub helper whose biome devices call fails and whose lines
+    // stream runs forever
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const starts = yield* Queue.unbounded<number>();
+        const stubHelper = Layer.succeed(
+          Helper,
+          new Helper({
+            check: () => Effect.void,
+            permissions: () =>
+              Effect.succeed({
+                accessibility: "granted",
+                automation: {},
+                fullDiskAccess: "granted",
+              }),
+            request: () => Effect.succeed("asked"),
+            biomeDevices: () =>
+              Effect.fail(
+                new BiomeExitError({ code: 5, stderr: "remote gone" }),
+              ),
+            biomeRecords: () => Effect.succeed([]),
+            lines: () =>
+              Stream.fromEffect(Queue.offer(starts, 1)).pipe(
+                Stream.drain,
+                Stream.concat(Stream.never),
+              ),
+          }),
+        );
+        const layers = Layer.mergeAll(stubHelper, Store.Test, MacIdentity.Test);
+        // When
+        const fiber = yield* Effect.fork(
+          runCollector().pipe(
+            Effect.provide(layers),
+            Effect.withConfigProvider(
+              ConfigProvider.fromMap(new Map([["CLOCKTRACE_HELPER", "/stub"]])),
+            ),
+          ),
+        );
+        const a = yield* Queue.take(starts);
+        yield* Fiber.interrupt(fiber);
+        return { a };
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then: the helper watch stream started despite the failed import
+    expect(result.a).toBe(1);
   });
 });
