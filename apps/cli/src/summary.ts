@@ -19,6 +19,7 @@ import {
   columns,
   duration,
   type Look,
+  type Span,
   Style,
   span,
 } from "./format.js";
@@ -42,7 +43,7 @@ export const summaryScreen = (
     duration(total).length,
     ...rows.map((r) => duration(r.seconds).length),
   );
-  const bar = (share: number): ReadonlyArray<Cell> => {
+  const bar = (share: number): ReadonlyArray<string | Span> => {
     const filled = Math.round(share * 20);
     return look.unicode
       ? ["█".repeat(filled), span("dim", "░".repeat(20 - filled))]

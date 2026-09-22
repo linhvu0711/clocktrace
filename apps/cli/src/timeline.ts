@@ -12,7 +12,16 @@ import { Command } from "@effect/cli";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { Style } from "./format.js";
+import {
+  type Cell,
+  columns,
+  duration,
+  type Look,
+  line,
+  Style,
+  shortDuration,
+  span,
+} from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
@@ -25,17 +34,48 @@ import {
   windowLine,
 } from "./window.js";
 
-export const blockLine = (
-  block: TimelineBlock,
+export const timelineScreen = (
+  blocks: ReadonlyArray<TimelineBlock>,
   zone: DateTime.TimeZone,
-): string =>
-  [
-    localMinute(block.start, zone),
-    localMinute(block.end, zone),
-    block.app,
-    block.categoryName,
-    ...(block.projectName === null ? [] : [block.projectName]),
-  ].join("  ");
+  look: Look,
+): ReadonlyArray<string> => {
+  const secondsOf = (block: TimelineBlock) =>
+    Math.round((block.end.epochMillis - block.start.epochMillis) / 1000);
+  const widest = Math.max(
+    ...blocks.map((block) => shortDuration(secondsOf(block)).length),
+  );
+  const rows = columns(
+    blocks.map(
+      (block): ReadonlyArray<Cell> => [
+        `  ${localMinute(block.start, zone).slice(11)}`,
+        shortDuration(secondsOf(block)).padStart(widest),
+        block.app,
+        block.categoryName,
+        block.projectName ?? span("dim", "—"),
+      ],
+    ),
+    look,
+  );
+  const totalSeconds = Math.round(
+    blocks.reduce(
+      (sum, block) => sum + block.end.epochMillis - block.start.epochMillis,
+      0,
+    ) / 1000,
+  );
+  return [
+    ...rows,
+    line(
+      [
+        "  ",
+        span(
+          "dim",
+          `${blocks.length} ${blocks.length === 1 ? "block" : "blocks"} · ${duration(totalSeconds)}`,
+        ),
+      ],
+      look,
+    ),
+  ];
+};
 
 export const printTimeline = (
   input: TimelineInput,
@@ -51,7 +91,7 @@ export const printTimeline = (
     const range = yield* usedRange(input.range);
     const blocks = yield* timeline(input);
     const rows = yield* Schema.encode(Schema.Array(TimelineBlock))(blocks);
-    const lines = blocks.map((b) => blockLine(b, zone));
+    const lines = timelineScreen(blocks, zone, look);
     const value = { range, rows, total: rows.length, ...emptyNote(rows) };
     yield* report(json, value, (v) =>
       v.note === undefined

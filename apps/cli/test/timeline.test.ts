@@ -80,7 +80,7 @@ const seedDay = (store: StoreShape) =>
   });
 
 describe("timeline", () => {
-  it("timeline prints the window, then one line per block", async () => {
+  it("timeline prints the day, one row per block, then the total", async () => {
     // Given: seedDay; no Rules, so every block is Uncategorized
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -97,8 +97,32 @@ describe("timeline", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       "2026-09-18 whole day · America/Los_Angeles",
-      "2026-09-18T01:00  2026-09-18T02:30  Code  Uncategorized",
-      "2026-09-18T02:30  2026-09-18T02:40  Google Chrome  Uncategorized",
+      "  01:00  1h 30m  Code           Uncategorized  —",
+      "  02:30     10m  Google Chrome  Uncategorized  —",
+      "  2 blocks · 1h 40m 00s",
+    ]);
+  });
+
+  it("timeline of a partial window clips the blocks and the total", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printTimeline(
+          { range: { from: "2026-09-18T01:00", to: "2026-09-18T02:35" } },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "2026-09-18 01:00 to 02:35 · America/Los_Angeles",
+      "  01:00  1h 30m  Code           Uncategorized  —",
+      "  02:30      5m  Google Chrome  Uncategorized  —",
+      "  2 blocks · 1h 35m 00s",
     ]);
   });
 

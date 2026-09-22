@@ -8,6 +8,7 @@ import {
   duration,
   line,
   mark,
+  shortDuration,
   shortPath,
   unicodeEnabled,
 } from "../src/format.js";
@@ -124,6 +125,19 @@ describe("format", () => {
     expect(clock(DateTime.unsafeMake("2026-09-22T01:02:00Z"), now)).toBe(
       "2026-09-21 18:02",
     );
+  });
+
+  it("shortDuration prints <1m, whole minutes, and hours with padded minutes", () => {
+    // Given / When / Then
+    expect([
+      shortDuration(0),
+      shortDuration(59),
+      shortDuration(60),
+      shortDuration(119),
+      shortDuration(600),
+      shortDuration(5400),
+      shortDuration(3660),
+    ]).toEqual(["<1m", "<1m", "1m", "1m", "10m", "1h 30m", "1h 01m"]);
   });
 
   it("duration prints <1m, minutes with padded seconds, and hours", () => {
