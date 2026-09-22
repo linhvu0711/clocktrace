@@ -57,6 +57,16 @@ describe("regex-budget", () => {
     expect(exceedsBacktrackBudget("a+")).toBe(true);
   });
 
+  it("a throwing analyzer is rejected (fail-closed)", () => {
+    // Given: the checker throws before producing diagnostics — a worker
+    // failure or a bad RECHECK_SYNC_BACKEND
+    vi.mocked(checkSync).mockImplementationOnce(() => {
+      throw new Error("invalid sync backend");
+    });
+    // When / Then
+    expect(exceedsBacktrackBudget("a+")).toBe(true);
+  });
+
   it("github\\.com stays within the budget", () => {
     // Given: a plain domain pattern
     // When / Then
