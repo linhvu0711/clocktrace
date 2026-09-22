@@ -178,7 +178,7 @@ describe("rules", () => {
       const rules = exit.value;
       expect(rules.length).toBe(1);
       expect(output).toEqual([
-        `${rules[0]?.id}  0  domain ends with github.com  category Research`,
+        `✔ added rule 0  domain ends with "github.com"  category Research · ${rules[0]?.id}`,
       ]);
     }
   });

@@ -15,23 +15,18 @@ import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { type Cell, columns, count, line, span, Style } from "./format.js";
+import {
+  type Cell,
+  columns,
+  count,
+  line,
+  mark,
+  span,
+  Style,
+} from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
-
-export const ruleLine = (
-  rule: Rule,
-  names: ReadonlyMap<string, string>,
-): string =>
-  [
-    rule.id,
-    String(rule.position),
-    `${rule.field} ${rule.compare} ${rule.value}`,
-    rule.target === null
-      ? rule.effect
-      : `${rule.effect} ${names.get(rule.target) ?? rule.target}`,
-  ].join("  ");
 
 const ruleWhen = (r: Rule): string =>
   `${r.field} ${r.compare} "${r.value}"`;
@@ -100,9 +95,10 @@ export const printAddedRule = (
 ): Effect.Effect<
   void,
   InvalidRuleError | ParseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
   Effect.gen(function* () {
+    const look = yield* Style;
     const names: ReadonlyMap<string, string> = json
       ? new Map()
       : yield* Effect.flatMap(Store, (store) =>
@@ -112,7 +108,17 @@ export const printAddedRule = (
           ),
         );
     const rule = yield* addRule(input);
-    yield* report(json, rule, (r) => [ruleLine(r, names)]);
+    yield* report(json, rule, (r) => [
+      line(
+        [
+          mark("ok", look),
+          ` added rule ${r.position}  ${ruleWhen(r)}  `,
+          ruleThen(r, names),
+          span("dim", ` · ${r.id}`),
+        ],
+        look,
+      ),
+    ]);
   });
 
 export const printRemovedRule = (
