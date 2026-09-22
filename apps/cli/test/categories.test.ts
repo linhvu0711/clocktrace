@@ -1,4 +1,6 @@
 import {
+  addRule,
+  type CategoryInUseError,
   type CategoryNotFoundError,
   openStore,
   Store,
@@ -13,6 +15,7 @@ import {
   printRemovedCategory,
   printSetCategory,
 } from "../src/categories.js";
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -24,7 +27,7 @@ const EmptyStore = Layer.scoped(
 
 const runPrint = <A, E, ELayer>(
   layer: Layer.Layer<Store, ELayer, Scope.Scope>,
-  body: Effect.Effect<A, E, Store | Prompt>,
+  body: Effect.Effect<A, E, Store | Prompt | Style>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -40,6 +43,7 @@ const runPrint = <A, E, ELayer>(
                 terminal.layer,
                 Prompt.Default,
                 layer,
+                Style.Test,
               ),
             ),
           ),
@@ -51,22 +55,36 @@ const runPrint = <A, E, ELayer>(
   );
 
 describe("categories", () => {
-  it("list prints the Starter set", async () => {
-    // Given: Store.Test seeded with the six Starter Categories
-    // When
-    const { exit, output } = await runPrint(Store.Test, printCategories(false));
+  it("list prints a header, one row per Category with the id last, and the count", async () => {
+    // Given: two Categories, one productive and one not
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const coding = yield* setCategory({
+          id: null,
+          name: "Coding",
+          productive: true,
+        });
+        const social = yield* setCategory({
+          id: null,
+          name: "Social",
+          productive: false,
+        });
+        // When
+        yield* printCategories(false);
+        return { coding, social };
+      }),
+    );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output.map((l) => l.slice(38))).toEqual([
-      "Coding  productive",
-      "Communication  productive",
-      "Design  productive",
-      "Entertainment  not productive",
-      "Social  not productive",
-      "Writing  productive",
-    ]);
-    for (const l of output) {
-      expect(l.slice(0, 36)).toHaveLength(36);
+    if (Exit.isSuccess(exit)) {
+      const { coding, social } = exit.value;
+      expect(output).toEqual([
+        "  name    productive      id",
+        `  Coding  productive      ${coding.id}`,
+        `  Social  not productive  ${social.id}`,
+        "  2 categories",
+      ]);
     }
   });
 
@@ -123,7 +141,9 @@ describe("categories", () => {
     if (Exit.isSuccess(exit)) {
       const categories = exit.value;
       expect(categories.length).toBe(1);
-      expect(output).toEqual([`${categories[0]?.id}  Research  productive`]);
+      expect(output).toEqual([
+        `✔ created category Research  productive · ${categories[0]?.id}`,
+      ]);
     }
   });
 
@@ -175,9 +195,12 @@ describe("categories", () => {
     // Then: set and list both show it still productive
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      const line = `${exit.value.id}  Code  productive`;
-      expect(output[0]).toBe(line);
-      expect(output.slice(1)).toEqual([line]);
+      expect(output).toEqual([
+        `✔ updated category Code  productive · ${exit.value.id}`,
+        "  name  productive  id",
+        `  Code  productive  ${exit.value.id}`,
+        "  1 category",
+      ]);
     }
   });
 
@@ -202,7 +225,9 @@ describe("categories", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      expect(output[0]).toBe(`${exit.value.id}  Code  not productive`);
+      expect(output[0]).toBe(
+        `✔ updated category Code  not productive · ${exit.value.id}`,
+      );
     }
   });
 
@@ -217,12 +242,21 @@ describe("categories", () => {
           { id: null, name: "Focus", productive: true },
           false,
         );
+        const store = yield* Store;
+        return yield* store.listCategories();
       }),
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output[0]?.slice(38)).toBe("Reading  not productive");
-    expect(output[1]?.slice(38)).toBe("Focus  productive");
+    if (Exit.isSuccess(exit)) {
+      const categories = exit.value;
+      const reading = categories.find((c) => c.name === "Reading");
+      const focus = categories.find((c) => c.name === "Focus");
+      expect(output).toEqual([
+        `✔ created category Reading  not productive · ${reading?.id}`,
+        `✔ created category Focus  productive · ${focus?.id}`,
+      ]);
+    }
   });
 
   it("set --id unknown with no flag names the id", async () => {
@@ -291,9 +325,48 @@ describe("categories", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       const { c, categories } = exit.value;
-      expect(output).toEqual([`removed ${c.id}`]);
+      expect(output).toEqual([`✔ removed category ${c.id}`]);
       expect(categories).toEqual([]);
     }
+  });
+
+  it("remove of a Category in use names the count", async () => {
+    // Given: a Category with one Rule pointing at it
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const c = yield* setCategory({
+          id: null,
+          name: "Coding",
+          productive: true,
+        });
+        yield* addRule({
+          field: "domain",
+          compare: "ends with",
+          value: "github.com",
+          effect: "category",
+          target: c.id,
+        });
+        // When
+        const removeExit = yield* Effect.exit(
+          printRemovedCategory(c.id, false),
+        );
+        return { c, removeExit };
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const { c, removeExit } = exit.value;
+      expect(Exit.isFailure(removeExit)).toBe(true);
+      if (Exit.isFailure(removeExit) && removeExit.cause._tag === "Fail") {
+        const error = removeExit.cause.error as CategoryInUseError;
+        expect(error.message).toBe(
+          `category ${c.id} is used by 1 rules, remove them first`,
+        );
+      }
+    }
+    expect(output).toEqual([]);
   });
 
   it("remove of an unknown id names the id", async () => {

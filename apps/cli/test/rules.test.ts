@@ -10,6 +10,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Console, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import { printAddedRule, printRemovedRule, printRules } from "../src/rules.js";
 import * as MockConsole from "./mock-console.js";
@@ -20,7 +21,7 @@ const EmptyStore = Layer.scoped(
   Effect.map(openStore(":memory:"), (shape) => new Store(shape)),
 );
 
-const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
+const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* MockTerminal.make(false);
@@ -35,6 +36,7 @@ const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
                 terminal.layer,
                 Prompt.Default,
                 EmptyStore,
+                Style.Test,
               ),
             ),
           ),
@@ -60,7 +62,7 @@ const privateRule = {
 } as const;
 
 describe("rules", () => {
-  it("list prints one line per Rule with the target name", async () => {
+  it("list prints a header, one row per Rule with the target name, and the count", async () => {
     // Given: two Rules, one private, one pointing at a Category
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -83,8 +85,37 @@ describe("rules", () => {
     if (Exit.isSuccess(exit)) {
       const { r0, r1 } = exit.value;
       expect(output).toEqual([
-        `${r0.id}  0  title ends with (Incognito)  private`,
-        `${r1.id}  1  domain ends with github.com  category Research`,
+        "  #  when                           then               id",
+        `  0  title ends with "(Incognito)"  private            ${r0.id}`,
+        `  1  domain ends with "github.com"  category Research  ${r1.id}`,
+        "  2 rules",
+      ]);
+    }
+  });
+
+  it("list keeps a value with a control character on one line", async () => {
+    // Given: a Rule whose value holds a newline
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const r = yield* addRule({
+          field: "title",
+          compare: "ends with",
+          value: "a\nb",
+          effect: "private",
+          target: null,
+        });
+        // When
+        yield* printRules(false);
+        return r;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output).toEqual([
+        "  #  when                   then     id",
+        `  0  title ends with "a b"  private  ${exit.value.id}`,
+        "  1 rule",
       ]);
     }
   });
@@ -172,7 +203,7 @@ describe("rules", () => {
       const rules = exit.value;
       expect(rules.length).toBe(1);
       expect(output).toEqual([
-        `${rules[0]?.id}  0  domain ends with github.com  category Research`,
+        `✔ added rule 0  domain ends with "github.com"  category Research · ${rules[0]?.id}`,
       ]);
     }
   });
@@ -296,7 +327,7 @@ describe("rules", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       const { r0, rules } = exit.value;
-      expect(output).toEqual([`removed ${r0.id}`]);
+      expect(output).toEqual([`✔ removed rule ${r0.id}`]);
       expect(rules).toEqual([]);
     }
   });

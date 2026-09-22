@@ -12,20 +12,49 @@ import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import {
+  type Cell,
+  columns,
+  count,
+  type Look,
+  line,
+  mark,
+  Style,
+  span,
+  text,
+} from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 
-export const projectLine = (p: Project): string => `${p.id}  ${p.name}`;
+const projectRow = (p: Project): ReadonlyArray<Cell> => [
+  `  ${text(p.name)}`,
+  span("dim", p.id),
+];
 
 export const printProjects = (
   json: boolean,
-): Effect.Effect<void, StoreError, Store | Prompt> =>
+): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const projects = yield* store.listProjects();
+    const header = [span("dim", "  name"), span("dim", "id")];
     yield* report(json, { projects }, ({ projects }) =>
-      projects.length === 0 ? ["none"] : projects.map(projectLine),
+      projects.length === 0
+        ? ["none"]
+        : [
+            ...columns([header, ...projects.map(projectRow)], look),
+            line(
+              [
+                span(
+                  "dim",
+                  `  ${count(projects.length, "project", "projects")}`,
+                ),
+              ],
+              look,
+            ),
+          ],
     );
   });
 
@@ -35,11 +64,22 @@ export const printSetProject = (
 ): Effect.Effect<
   void,
   ProjectNotFoundError | ParseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
   Effect.gen(function* () {
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const p = yield* setProject(input);
-    yield* report(json, p, (p) => [projectLine(p)]);
+    const verb = input.id === null ? "created" : "updated";
+    yield* report(json, p, (p) => [
+      line(
+        [
+          mark("ok", look),
+          ` ${verb} project ${text(p.name)} `,
+          span("dim", `· ${p.id}`),
+        ],
+        look,
+      ),
+    ]);
   });
 
 export const printRemovedProject = (
@@ -48,12 +88,15 @@ export const printRemovedProject = (
 ): Effect.Effect<
   void,
   ProjectNotFoundError | ProjectInUseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
-  Effect.andThen(
-    removeProject(id),
-    report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
-  );
+  Effect.gen(function* () {
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    yield* removeProject(id);
+    yield* report(json, { removed: id }, ({ removed }) => [
+      line([mark("ok", look), ` removed project ${removed}`], look),
+    ]);
+  });
 
 const id = Options.text("id").pipe(
   Options.optional,

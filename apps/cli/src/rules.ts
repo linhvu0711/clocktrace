@@ -15,22 +15,38 @@ import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import {
+  type Cell,
+  columns,
+  count,
+  type Look,
+  line,
+  mark,
+  Style,
+  span,
+  text,
+} from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 
-export const ruleLine = (
-  rule: Rule,
+const ruleWhen = (r: Rule): string =>
+  `${r.field} ${r.compare} "${text(r.value)}"`;
+
+const ruleThen = (r: Rule, names: ReadonlyMap<string, string>): Cell =>
+  r.effect === "private"
+    ? span("warn", "private")
+    : `${r.effect} ${text(names.get(r.target ?? "") ?? r.target ?? "")}`;
+
+const ruleRow = (
+  r: Rule,
   names: ReadonlyMap<string, string>,
-): string =>
-  [
-    rule.id,
-    String(rule.position),
-    `${rule.field} ${rule.compare} ${rule.value}`,
-    rule.target === null
-      ? rule.effect
-      : `${rule.effect} ${names.get(rule.target) ?? rule.target}`,
-  ].join("  ");
+): ReadonlyArray<Cell> => [
+  `  ${r.position}`,
+  ruleWhen(r),
+  ruleThen(r, names),
+  span("dim", r.id),
+];
 
 const targetNames = (
   categories: ReadonlyArray<{ id: string; name: string }>,
@@ -40,19 +56,32 @@ const targetNames = (
 
 export const printRules = (
   json: boolean,
-): Effect.Effect<void, StoreError, Store | Prompt> =>
+): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const [rules, categories, projects] = yield* Effect.all([
       store.listRules(),
       store.listCategories(),
       store.listProjects(),
     ]);
     const names = targetNames(categories, projects);
+    const header = [
+      span("dim", "  #"),
+      span("dim", "when"),
+      span("dim", "then"),
+      span("dim", "id"),
+    ];
     yield* report(json, { rules }, ({ rules }) =>
       rules.length === 0
         ? ["none"]
-        : rules.map((rule) => ruleLine(rule, names)),
+        : [
+            ...columns([header, ...rules.map((r) => ruleRow(r, names))], look),
+            line(
+              [span("dim", `  ${count(rules.length, "rule", "rules")}`)],
+              look,
+            ),
+          ],
     );
   });
 
@@ -62,9 +91,10 @@ export const printAddedRule = (
 ): Effect.Effect<
   void,
   InvalidRuleError | ParseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
   Effect.gen(function* () {
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const names: ReadonlyMap<string, string> = json
       ? new Map()
       : yield* Effect.flatMap(Store, (store) =>
@@ -74,17 +104,34 @@ export const printAddedRule = (
           ),
         );
     const rule = yield* addRule(input);
-    yield* report(json, rule, (r) => [ruleLine(r, names)]);
+    yield* report(json, rule, (r) => [
+      line(
+        [
+          mark("ok", look),
+          ` added rule ${r.position}  ${ruleWhen(r)}  `,
+          ruleThen(r, names),
+          span("dim", ` · ${r.id}`),
+        ],
+        look,
+      ),
+    ]);
   });
 
 export const printRemovedRule = (
   id: string,
   json: boolean,
-): Effect.Effect<void, RuleNotFoundError | StoreError, Store | Prompt> =>
-  Effect.andThen(
-    removeRule(id),
-    report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
-  );
+): Effect.Effect<
+  void,
+  RuleNotFoundError | StoreError,
+  Store | Prompt | Style
+> =>
+  Effect.gen(function* () {
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    yield* removeRule(id);
+    yield* report(json, { removed: id }, ({ removed }) => [
+      line([mark("ok", look), ` removed rule ${removed}`], look),
+    ]);
+  });
 
 const field = Options.choice("field", RuleField.literals).pipe(
   Options.withDescription("the Activity field to test"),

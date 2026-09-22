@@ -2,6 +2,7 @@ import { type ProjectNotFoundError, Store, setProject } from "@clocktrace/core";
 import { NodeContext } from "@effect/platform-node";
 import { Console, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
+import { Style } from "../src/format.js";
 import {
   printProjects,
   printRemovedProject,
@@ -11,7 +12,7 @@ import { Prompt } from "../src/prompt.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
 
-const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
+const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* MockTerminal.make(false);
@@ -26,6 +27,7 @@ const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
                 terminal.layer,
                 Prompt.Default,
                 Store.Test,
+                Style.Test,
               ),
             ),
           ),
@@ -37,6 +39,27 @@ const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
   );
 
 describe("projects", () => {
+  it("list prints a header, one row per Project with the id last, and the count", async () => {
+    // Given: one Project
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const p = yield* setProject({ id: null, name: "Thesis" });
+        // When
+        yield* printProjects(false);
+        return p;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output).toEqual([
+        "  name    id",
+        `  Thesis  ${exit.value.id}`,
+        "  1 project",
+      ]);
+    }
+  });
+
   it("list of no Projects prints none", async () => {
     // Given: Store.Test, whose Starter set holds no Project
     // When
@@ -61,7 +84,24 @@ describe("projects", () => {
     if (Exit.isSuccess(exit)) {
       const projects = exit.value;
       expect(projects.length).toBe(1);
-      expect(output).toEqual([`${projects[0]?.id}  Thesis`]);
+      expect(output).toEqual([`✔ created project Thesis · ${projects[0]?.id}`]);
+    }
+  });
+
+  it("set --id renames and prints updated", async () => {
+    // Given: a Project named Thesis
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const p = yield* setProject({ id: null, name: "Thesis" });
+        // When
+        yield* printSetProject({ id: p.id, name: "Paper" }, false);
+        return p;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output).toEqual([`✔ updated project Paper · ${exit.value.id}`]);
     }
   });
 
@@ -119,7 +159,7 @@ describe("projects", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       const { p, projects } = exit.value;
-      expect(output).toEqual([`removed ${p.id}`]);
+      expect(output).toEqual([`✔ removed project ${p.id}`]);
       expect(projects).toEqual([]);
     }
   });
