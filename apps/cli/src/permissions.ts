@@ -4,6 +4,7 @@ import {
   appPath,
   browserName,
   type GrantState,
+  noAnswerNote,
   Helper,
   type HelperExitedError,
   type Launchd,
@@ -96,6 +97,7 @@ export const walkPermissions = (
       0,
       ...items.map((item) =>
         item.state === "notRunning" ||
+        item.state === "noAnswer" ||
         (item.state === "notAsked" && item.request.kind === "automation")
           ? item.gives.length
           : 0,
@@ -117,6 +119,13 @@ export const walkPermissions = (
             ? browserName(item.request.bundleId)
             : item.name;
         return [lead("warn", item), noteCell(item, `${browser} is closed`)];
+      }
+      if (state === "noAnswer") {
+        const browser =
+          item.request.kind === "automation"
+            ? browserName(item.request.bundleId)
+            : item.name;
+        return [lead("warn", item), noteCell(item, noAnswerNote(browser))];
       }
       if (state === "denied") {
         return [lead("bad", item), span("bad", deniedFix(item))];

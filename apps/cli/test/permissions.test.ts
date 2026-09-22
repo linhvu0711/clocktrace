@@ -276,6 +276,27 @@ describe("permissions", () => {
     expect(requests).toEqual([]);
   });
 
+  it("a browser that did not answer shows the fix and is not asked", async () => {
+    // Given: Chrome running but its probe never answered; interactive, no keys
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "com.google.Chrome": "noAnswer" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown, requests } = await run([p], [], true);
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Permissions   2 of 3 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "  ○ Automation · Chrome  URLs in Chrome  Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
+    ]);
+    expect(shown).toBe("");
+    expect(requests).toEqual([]);
+  });
+
   it("a helper failure during a request prints the cross and goes on", async () => {
     // Given: Chromium notAsked and full disk access denied; the Chromium
     // request dies in the helper, full disk access grants on re-read
