@@ -11,6 +11,7 @@ import {
   mark,
   shortDuration,
   shortPath,
+  text,
   unicodeEnabled,
 } from "../src/format.js";
 
@@ -161,5 +162,10 @@ describe("format", () => {
   it("count uses the plural otherwise", () => {
     // Given / When / Then
     expect(count(6, "category", "categories")).toBe("6 categories");
+  });
+
+  it("text replaces control characters with a space", () => {
+    // Given / When / Then
+    expect(text("a\nb\tc\r")).toBe("a b c ");
   });
 });

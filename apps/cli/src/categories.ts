@@ -16,17 +16,19 @@ import {
   type Cell,
   columns,
   count,
+  type Look,
   line,
   mark,
   Style,
   span,
+  text,
 } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 
 const categoryRow = (c: Category): ReadonlyArray<Cell> => [
-  `  ${c.name}`,
+  `  ${text(c.name)}`,
   c.productive ? "productive" : "not productive",
   span("dim", c.id),
 ];
@@ -36,7 +38,7 @@ export const printCategories = (
 ): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const categories = yield* store.listCategories();
     const header = [
       span("dim", "  name"),
@@ -70,14 +72,14 @@ export const printSetCategory = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const c = yield* setCategory(input);
     const verb = input.id === null ? "created" : "updated";
     yield* report(json, c, (c) => [
       line(
         [
           mark("ok", look),
-          ` ${verb} category ${c.name}  `,
+          ` ${verb} category ${text(c.name)}  `,
           span(
             "dim",
             `${c.productive ? "productive" : "not productive"} · ${c.id}`,
@@ -97,7 +99,7 @@ export const printRemovedCategory = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     yield* removeCategory(id);
     yield* report(json, { removed: id }, ({ removed }) => [
       line([mark("ok", look), ` removed category ${removed}`], look),

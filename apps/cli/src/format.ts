@@ -128,6 +128,8 @@ export const shortDuration = (seconds: number): string => {
 export const count = (n: number, one: string, many: string): string =>
   `${n} ${n === 1 ? one : many}`;
 
+export const text = (s: string): string => s.replace(/\p{Cc}/gu, " ");
+
 export class Style extends Effect.Service<Style>()("Style", {
   effect: Effect.gen(function* () {
     const terminal = yield* Terminal.Terminal;

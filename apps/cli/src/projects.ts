@@ -16,17 +16,19 @@ import {
   type Cell,
   columns,
   count,
+  type Look,
   line,
   mark,
   Style,
   span,
+  text,
 } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 
 const projectRow = (p: Project): ReadonlyArray<Cell> => [
-  `  ${p.name}`,
+  `  ${text(p.name)}`,
   span("dim", p.id),
 ];
 
@@ -35,7 +37,7 @@ export const printProjects = (
 ): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const projects = yield* store.listProjects();
     const header = [span("dim", "  name"), span("dim", "id")];
     yield* report(json, { projects }, ({ projects }) =>
@@ -65,14 +67,14 @@ export const printSetProject = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const p = yield* setProject(input);
     const verb = input.id === null ? "created" : "updated";
     yield* report(json, p, (p) => [
       line(
         [
           mark("ok", look),
-          ` ${verb} project ${p.name} `,
+          ` ${verb} project ${text(p.name)} `,
           span("dim", `· ${p.id}`),
         ],
         look,
@@ -89,7 +91,7 @@ export const printRemovedProject = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     yield* removeProject(id);
     yield* report(json, { removed: id }, ({ removed }) => [
       line([mark("ok", look), ` removed project ${removed}`], look),

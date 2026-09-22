@@ -19,21 +19,24 @@ import {
   type Cell,
   columns,
   count,
+  type Look,
   line,
   mark,
   Style,
   span,
+  text,
 } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 
-const ruleWhen = (r: Rule): string => `${r.field} ${r.compare} "${r.value}"`;
+const ruleWhen = (r: Rule): string =>
+  `${r.field} ${r.compare} "${text(r.value)}"`;
 
 const ruleThen = (r: Rule, names: ReadonlyMap<string, string>): Cell =>
   r.effect === "private"
     ? span("warn", "private")
-    : `${r.effect} ${names.get(r.target ?? "") ?? r.target}`;
+    : `${r.effect} ${text(names.get(r.target ?? "") ?? r.target ?? "")}`;
 
 const ruleRow = (
   r: Rule,
@@ -56,7 +59,7 @@ export const printRules = (
 ): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const [rules, categories, projects] = yield* Effect.all([
       store.listRules(),
       store.listCategories(),
@@ -91,7 +94,7 @@ export const printAddedRule = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     const names: ReadonlyMap<string, string> = json
       ? new Map()
       : yield* Effect.flatMap(Store, (store) =>
@@ -123,7 +126,7 @@ export const printRemovedRule = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look = yield* Style;
+    const look: Look = json ? { color: false, unicode: true } : yield* Style;
     yield* removeRule(id);
     yield* report(json, { removed: id }, ({ removed }) => [
       line([mark("ok", look), ` removed rule ${removed}`], look),

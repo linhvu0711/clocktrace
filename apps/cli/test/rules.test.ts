@@ -93,6 +93,33 @@ describe("rules", () => {
     }
   });
 
+  it("list keeps a value with a control character on one line", async () => {
+    // Given: a Rule whose value holds a newline
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const r = yield* addRule({
+          field: "title",
+          compare: "ends with",
+          value: "a\nb",
+          effect: "private",
+          target: null,
+        });
+        // When
+        yield* printRules(false);
+        return r;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output).toEqual([
+        "  #  when                   then     id",
+        `  0  title ends with "a b"  private  ${exit.value.id}`,
+        "  1 rule",
+      ]);
+    }
+  });
+
   it("list --json prints the list_rules JSON", async () => {
     // Given: the same two Rules
     const { exit, output } = await runPrint(
