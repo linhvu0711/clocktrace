@@ -8,6 +8,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Console, DateTime, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import { printTimeline } from "../src/timeline.js";
 import * as MockConsole from "./mock-console.js";
@@ -19,7 +20,7 @@ const EmptyStore = Layer.scoped(
 );
 
 const runPrint = <A, E>(
-  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone>,
+  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone | Style>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -36,6 +37,7 @@ const runPrint = <A, E>(
                 terminal.layer,
                 Prompt.Default,
                 EmptyStore,
+                Style.Test,
               ),
             ),
           ),
@@ -78,7 +80,7 @@ const seedDay = (store: StoreShape) =>
   });
 
 describe("timeline", () => {
-  it("timeline prints the window, then one line per block", async () => {
+  it("timeline prints the day, one row per block, then the total", async () => {
     // Given: seedDay; no Rules, so every block is Uncategorized
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -94,9 +96,33 @@ describe("timeline", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "2026-09-18T00:00 to 2026-09-19T00:00 America/Los_Angeles",
-      "2026-09-18T01:00  2026-09-18T02:30  Code  Uncategorized",
-      "2026-09-18T02:30  2026-09-18T02:40  Google Chrome  Uncategorized",
+      "2026-09-18 whole day · America/Los_Angeles",
+      "  01:00  1h 30m  Code           Uncategorized  —",
+      "  02:30     10m  Google Chrome  Uncategorized  —",
+      "  2 blocks · 1h 40m 00s",
+    ]);
+  });
+
+  it("timeline of a partial window clips the blocks and the total", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printTimeline(
+          { range: { from: "2026-09-18T01:00", to: "2026-09-18T02:35" } },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "2026-09-18 01:00 to 02:35 · America/Los_Angeles",
+      "  01:00  1h 30m  Code           Uncategorized  —",
+      "  02:30      5m  Google Chrome  Uncategorized  —",
+      "  2 blocks · 1h 35m 00s",
     ]);
   });
 
@@ -142,7 +168,7 @@ describe("timeline", () => {
     });
   });
 
-  it("timeline of an empty window prints the note", async () => {
+  it("timeline of an empty window prints the window line and no activity", async () => {
     // Given: seedDay
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -158,8 +184,8 @@ describe("timeline", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "2026-01-01T00:00 to 2026-01-02T00:00 America/Los_Angeles",
-      "no activity in this range",
+      "2026-01-01 whole day · America/Los_Angeles",
+      "no activity",
     ]);
   });
 

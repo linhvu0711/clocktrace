@@ -13,6 +13,15 @@ import { Command, Options } from "@effect/cli";
 import { Data, DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import {
+  type Cell,
+  columns,
+  type Look,
+  line,
+  Style,
+  shortDuration,
+  span,
+} from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
@@ -46,14 +55,29 @@ export const parseLimit = (
     },
   });
 
-export const activityLine = (a: Activity, zone: DateTime.TimeZone): string =>
-  [
-    localMinute(a.startedAt, zone),
-    localMinute(a.endedAt, zone),
-    a.appName,
-    a.title ?? "-",
-    a.url ?? "-",
-  ].join("  ");
+export const activitiesScreen = (
+  rows: ReadonlyArray<Activity>,
+  zone: DateTime.TimeZone,
+  look: Look,
+): ReadonlyArray<string> => {
+  const secondsOf = (a: Activity) =>
+    Math.round((a.endedAt.epochMillis - a.startedAt.epochMillis) / 1000);
+  const widest = Math.max(
+    ...rows.map((a) => shortDuration(secondsOf(a)).length),
+  );
+  return columns(
+    rows.map(
+      (a): ReadonlyArray<Cell> => [
+        `  ${localMinute(a.startedAt, zone).slice(11)}`,
+        shortDuration(secondsOf(a)).padStart(widest),
+        a.appName,
+        a.title ?? span("dim", "—"),
+        a.url ?? span("dim", "—"),
+      ],
+    ),
+    look,
+  );
+};
 
 export const printActivities = (
   input: ActivitiesInput,
@@ -61,25 +85,40 @@ export const printActivities = (
 ): Effect.Effect<
   void,
   InvalidRangeError | StoreError | ParseError,
-  Store | Prompt | DateTime.CurrentTimeZone
+  Store | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
+    const look = yield* Style;
     const zone = yield* DateTime.CurrentTimeZone;
     const range = yield* usedRange(input.range);
     const page = yield* activities(input);
     const encoded = yield* Schema.encode(ActivitiesPage)(page);
-    const lines = page.rows.map((a) => activityLine(a, zone));
+    const lines = activitiesScreen(page.rows, zone, look);
     const value = { range, ...encoded, ...emptyNote(encoded.rows) };
     yield* report(json, value, (v) =>
       v.note === undefined
         ? [
-            windowLine(v.range),
+            windowLine(input.range, v.range.zone, look),
             ...lines,
             ...(v.hasMore
-              ? [`${v.rows.length} of ${v.total}, use --limit`]
+              ? [
+                  line(
+                    [
+                      "  ",
+                      span(
+                        "dim",
+                        `showing ${v.rows.length} of ${v.total} · raise --limit (max 200), narrow the range, or add --app`,
+                      ),
+                    ],
+                    look,
+                  ),
+                ]
+              : []),
+            ...(input.limit !== undefined && input.limit > 200
+              ? [line(["  ", span("dim", "--limit capped at 200")], look)]
               : []),
           ]
-        : [windowLine(v.range), v.note],
+        : [windowLine(input.range, v.range.zone, look), "no activity"],
     );
   });
 

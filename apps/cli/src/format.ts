@@ -115,6 +115,16 @@ export const duration = (seconds: number): string => {
   return h === 0 ? `${m}m ${pad(s)}s` : `${h}h ${pad(m)}m ${pad(s)}s`;
 };
 
+export const shortDuration = (seconds: number): string => {
+  if (seconds < 60) {
+    return "<1m";
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h === 0 ? `${m}m` : `${h}h ${pad(m)}m`;
+};
+
 export class Style extends Effect.Service<Style>()("Style", {
   effect: Effect.gen(function* () {
     const terminal = yield* Terminal.Terminal;

@@ -9,6 +9,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Console, DateTime, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
+import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import { printSummary } from "../src/summary.js";
 import * as MockConsole from "./mock-console.js";
@@ -20,7 +21,7 @@ const EmptyStore = Layer.scoped(
 );
 
 const runPrint = <A, E>(
-  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone>,
+  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone | Style>,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -37,6 +38,7 @@ const runPrint = <A, E>(
                 terminal.layer,
                 Prompt.Default,
                 EmptyStore,
+                Style.Test,
               ),
             ),
           ),
@@ -98,10 +100,10 @@ const seedTwoDevices = (store: StoreShape) =>
     return studio;
   });
 
-const window = "2026-09-18T00:00 to 2026-09-19T00:00 America/Los_Angeles";
+const window = "2026-09-18 whole day · America/Los_Angeles";
 
 describe("summary", () => {
-  it("summary by app prints the window, one line per group, and the total", async () => {
+  it("summary by app prints the app name only", async () => {
     // Given: seedDay
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -117,14 +119,41 @@ describe("summary", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      window,
-      "com.microsoft.VSCode  Code  5400",
-      "com.google.Chrome  Google Chrome  600",
-      "total  6000",
+      `${window} · by app`,
+      "  Code           1h 30m 00s  ██████████████████░░   90%",
+      "  Google Chrome     10m 00s  ██░░░░░░░░░░░░░░░░░░   10%",
+      "  total          1h 40m 00s",
+    ]);
+    expect(output.some((l) => l.includes("com.microsoft.VSCode"))).toBe(false);
+  });
+
+  it("summary of a partial window prints the times and the clipped rows", async () => {
+    // Given: seedDay
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        yield* printSummary(
+          {
+            range: { from: "2026-09-18T01:00", to: "2026-09-18T02:35" },
+            groupBy: "app",
+          },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "2026-09-18 01:00 to 02:35 · America/Los_Angeles · by app",
+      "  Code           1h 30m 00s  ███████████████████░   95%",
+      "  Google Chrome      5m 00s  █░░░░░░░░░░░░░░░░░░░    5%",
+      "  total          1h 35m 00s",
     ]);
   });
 
-  it("summary by category prints productive and Uncategorized", async () => {
+  it("summary by category prints the day, a bar per row, the percent, and productive", async () => {
     // Given: seedDay plus a Coding Category the Code app maps to
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -155,12 +184,11 @@ describe("summary", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      const coding = exit.value;
       expect(output).toEqual([
-        window,
-        `${coding.id}  Coding  5400  productive`,
-        "uncategorized  Uncategorized  600",
-        "total  6000",
+        `${window} · by category`,
+        "  Coding         1h 30m 00s  ██████████████████░░   90%  productive",
+        "  Uncategorized     10m 00s  ██░░░░░░░░░░░░░░░░░░   10%",
+        "  total          1h 40m 00s",
       ]);
     }
   });
@@ -218,16 +246,15 @@ describe("summary", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      const studio = exit.value;
       expect(output).toEqual([
-        window,
-        `${studio.id}  Studio  6000`,
-        "total  6000",
+        `${window} · by device`,
+        "  Studio  1h 40m 00s  ████████████████████  100%",
+        "  total   1h 40m 00s",
       ]);
     }
   });
 
-  it("summary of an empty window prints the note", async () => {
+  it("summary of an empty window prints the window line and no activity", async () => {
     // Given: seedDay
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -243,8 +270,8 @@ describe("summary", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "2026-01-01T00:00 to 2026-01-02T00:00 America/Los_Angeles",
-      "no activity in this range",
+      "2026-01-01 whole day · America/Los_Angeles · by app",
+      "no activity",
     ]);
   });
 
