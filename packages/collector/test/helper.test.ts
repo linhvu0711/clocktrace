@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 
-import { Command, CommandExecutor } from "@effect/platform";
+import { CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Either, Exit, Layer, Ref, type Scope, Stream } from "effect";
 import { describe, expect, it } from "vitest";
@@ -67,7 +67,10 @@ const openExecutor = (
         Effect.sync(() => {
           if (command._tag === "StandardCommand") {
             const at = command.args.indexOf("--stdout");
-            writeFileSync(command.args[at + 1]!, stdoutText);
+            const target = command.args[at + 1];
+            if (target !== undefined) {
+              writeFileSync(target, stdoutText);
+            }
           }
         }),
       ),

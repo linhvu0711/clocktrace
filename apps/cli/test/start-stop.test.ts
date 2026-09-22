@@ -143,9 +143,7 @@ describe("start and stop", () => {
       noApp,
     );
     // Then
-    expect(exit).toEqual(
-      Exit.fail(new AppMissingError({ path: appMainPath })),
-    );
+    expect(exit).toEqual(Exit.fail(new AppMissingError({ path: appMainPath })));
     expect(output).toEqual([]);
     expect(state.running).toBe(false);
   });
