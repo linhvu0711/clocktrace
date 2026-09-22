@@ -4,6 +4,7 @@ import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { DateTime, Effect, Layer } from "effect";
 
 import { isFriendlyError, run } from "./cli.js";
+import { Style } from "./format.js";
 import { Hosts } from "./hosts.js";
 import { Prompt } from "./prompt.js";
 
@@ -12,6 +13,7 @@ const layers = Layer.mergeAll(
   Hosts.Default,
   Launchd.Default,
   Prompt.Default,
+  Style.Default,
   NodeContext.layer,
   DateTime.layerCurrentZoneLocal,
 );
