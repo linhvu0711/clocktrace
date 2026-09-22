@@ -78,6 +78,8 @@ describe("permissions", () => {
               Ref.update(requests, (rs) => [...rs, grant]).pipe(
                 Effect.as(outcome),
               ),
+            biomeDevices: () => Effect.succeed([]),
+            biomeRecords: () => Effect.succeed([]),
           }),
         );
         const layers = Layer.mergeAll(

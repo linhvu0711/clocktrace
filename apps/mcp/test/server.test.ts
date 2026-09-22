@@ -160,6 +160,8 @@ const stubHelper = (p: Permissions) =>
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(p),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 
@@ -1140,6 +1142,8 @@ describe("server", () => {
         { name: "full disk access", state: "granted", note: null },
       ],
       lastActivity: null,
+      iosImport: null,
+      devices: [],
       databasePath: dbPath,
     };
     expect(result.isError).toBeUndefined();
@@ -1158,6 +1162,8 @@ describe("server", () => {
         permissions: () =>
           Effect.fail(new HelperExitedError({ cause: "boom" })),
         request: () => Effect.succeed("asked"),
+        biomeDevices: () => Effect.succeed([]),
+        biomeRecords: () => Effect.succeed([]),
       }),
     );
     const { client, close } = await connect(
@@ -1187,6 +1193,8 @@ describe("server", () => {
             fullDiskAccess: "granted",
           }),
         request: () => Effect.succeed("asked"),
+        biomeDevices: () => Effect.succeed([]),
+        biomeRecords: () => Effect.succeed([]),
       }),
     );
     const { client, close } = await connect(
@@ -1247,6 +1255,76 @@ describe("server", () => {
     // Then
     expect(result.isError).toBe(true);
     expect(text(result)).toBe(`launchctl bootstrap: exit 1 · see ${logPath}`);
+  });
+
+  it("status returns the iOS import and the devices as fields", async () => {
+    // Given: an ok import blob, an iPad with a stale sync, an iPhone with
+    // one Activity
+    const seedIos = (store: StoreShape) =>
+      Effect.gen(function* () {
+        yield* store.getOrInsertDevice({
+          kind: "ipad",
+          name: "Linh's iPad",
+          externalId: "P3",
+        });
+        const iphone = yield* store.getOrInsertDevice({
+          kind: "iphone",
+          name: "iPhone",
+          externalId: "P2",
+        });
+        yield* store.insertActivity({
+          deviceId: iphone.id,
+          bundleId: "com.apple.mobilesafari",
+          appName: "com.apple.mobilesafari",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-19T16:01:00.000Z"),
+          endedAt: t("2026-09-19T16:06:00.000Z"),
+        });
+        yield* store.setSetting(
+          "importer.status",
+          JSON.stringify({
+            state: "ok",
+            at: "2026-09-19T17:30:00.000Z",
+            devices: [
+              { externalId: "P3", lastSync: "2026-09-17T17:00:00.000Z" },
+            ],
+          }),
+        );
+      });
+    const { client, close } = await connect(withActivities(seedIos));
+    // When
+    const result = await callTool(client, { name: "status", arguments: {} });
+    await close();
+    // Then
+    const expected = {
+      collector: "running",
+      permissions: [
+        { name: "accessibility", state: "granted", note: null },
+        { name: "full disk access", state: "granted", note: null },
+      ],
+      lastActivity: "2026-09-19T16:06:00.000Z",
+      iosImport: { state: "ok", at: "2026-09-19T17:30:00.000Z" },
+      devices: [
+        {
+          name: "Linh's iPad",
+          kind: "ipad",
+          lastSync: "2026-09-17T17:00:00.000Z",
+          sync: "stale",
+          lastActivity: null,
+        },
+        {
+          name: "iPhone",
+          kind: "iphone",
+          lastSync: null,
+          sync: "never",
+          lastActivity: "2026-09-19T16:06:00.000Z",
+        },
+      ],
+      databasePath: dbPath,
+    };
+    expect(result.structuredContent).toEqual(expected);
+    expect(JSON.parse(text(result))).toEqual(expected);
   });
 
   it("status reports the last Activity time", async () => {

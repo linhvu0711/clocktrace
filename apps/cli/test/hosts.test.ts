@@ -58,6 +58,8 @@ const helperStub = (p: Permissions) =>
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(p),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 

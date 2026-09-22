@@ -40,6 +40,8 @@ const helperStub = (p: Permissions) =>
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(p),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 
@@ -51,6 +53,8 @@ const helperMissing = (missingPath: string) =>
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(allGranted),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 
@@ -62,6 +66,8 @@ const helperExits = (cause: unknown) =>
       lines: () => Stream.empty,
       permissions: () => Effect.fail(new HelperExitedError({ cause })),
       request: () => Effect.succeed("asked"),
+      biomeDevices: () => Effect.succeed([]),
+      biomeRecords: () => Effect.succeed([]),
     }),
   );
 
@@ -375,7 +381,69 @@ describe("status", () => {
         { name: "full disk access", state: "granted", note: null },
       ],
       lastActivity: null,
+      iosImport: null,
+      devices: [],
       databasePath: path,
     });
+  });
+
+  it("status prints the iOS import group and the device rows", async () => {
+    // Given: an ok import blob, a stale iPad, an iPhone with one Activity
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          yield* store.getOrInsertDevice({
+            kind: "ipad",
+            name: "Linh's iPad",
+            externalId: "P3",
+          });
+          const iphone = yield* store.getOrInsertDevice({
+            kind: "iphone",
+            name: "iPhone",
+            externalId: "P2",
+          });
+          yield* store.insertActivity({
+            deviceId: iphone.id,
+            bundleId: "com.apple.mobilesafari",
+            appName: "com.apple.mobilesafari",
+            title: null,
+            url: null,
+            startedAt: DateTime.unsafeMake("2026-09-19T16:01:00.000Z"),
+            endedAt: DateTime.unsafeMake("2026-09-19T16:06:00.000Z"),
+          });
+          yield* store.setSetting(
+            "importer.status",
+            JSON.stringify({
+              state: "ok",
+              at: "2026-09-19T17:30:00.000Z",
+              devices: [
+                { externalId: "P3", lastSync: "2026-09-17T17:00:00.000Z" },
+              ],
+            }),
+          );
+        }),
+      ),
+    );
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Collector      ✔ running",
+      "Permissions    2 of 2 granted",
+      "  ✔ Accessibility     window titles",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "iOS import     ✔ ok · 2026-09-19 10:30",
+      "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
+      "  ○ iPhone       never synced · last activity 2026-09-19 09:06",
+      "Last activity  2026-09-19 09:06",
+      `Database       ${path}`,
+    ]);
   });
 });
