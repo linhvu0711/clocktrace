@@ -12,12 +12,18 @@ import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { type Cell, columns, count, line, span, Style } from "./format.js";
+import {
+  type Cell,
+  columns,
+  count,
+  line,
+  mark,
+  span,
+  Style,
+} from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
-
-export const projectLine = (p: Project): string => `${p.id}  ${p.name}`;
 
 const projectRow = (p: Project): ReadonlyArray<Cell> => [
   `  ${p.name}`,
@@ -56,11 +62,22 @@ export const printSetProject = (
 ): Effect.Effect<
   void,
   ProjectNotFoundError | ParseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
   Effect.gen(function* () {
+    const look = yield* Style;
     const p = yield* setProject(input);
-    yield* report(json, p, (p) => [projectLine(p)]);
+    const verb = input.id === null ? "created" : "updated";
+    yield* report(json, p, (p) => [
+      line(
+        [
+          mark("ok", look),
+          ` ${verb} project ${p.name} `,
+          span("dim", `· ${p.id}`),
+        ],
+        look,
+      ),
+    ]);
   });
 
 export const printRemovedProject = (

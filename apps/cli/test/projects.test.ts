@@ -86,7 +86,28 @@ describe("projects", () => {
     if (Exit.isSuccess(exit)) {
       const projects = exit.value;
       expect(projects.length).toBe(1);
-      expect(output).toEqual([`${projects[0]?.id}  Thesis`]);
+      expect(output).toEqual([
+        `✔ created project Thesis · ${projects[0]?.id}`,
+      ]);
+    }
+  });
+
+  it("set --id renames and prints updated", async () => {
+    // Given: a Project named Thesis
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const p = yield* setProject({ id: null, name: "Thesis" });
+        // When
+        yield* printSetProject({ id: p.id, name: "Paper" }, false);
+        return p;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output).toEqual([
+        `✔ updated project Paper · ${exit.value.id}`,
+      ]);
     }
   });
 
