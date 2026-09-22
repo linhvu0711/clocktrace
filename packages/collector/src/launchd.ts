@@ -225,6 +225,18 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
               ),
             ),
           ),
+          // A KeepAlive job re-added after bootout waits ~45 s for launchd's
+          // spawn schedule; kickstart spawns it at once. Best-effort: a
+          // failed kick leaves the caller's state poll to catch it.
+          Effect.andThen(
+            Effect.ignore(
+              exit(
+                "launchctl kickstart",
+                "kickstart",
+                `${domain}/${collectorLabel}`,
+              ),
+            ),
+          ),
         ),
     };
   }),
