@@ -105,7 +105,7 @@ const pickHosts: Effect.Effect<
 // so poll the state for a bounded window instead of trusting one sample.
 // A re-run boots the agent out first, and relaunching a KeepAlive job after
 // bootout takes longer than the fresh-install path, so the window covers it.
-const defaultLoadRetry = Schedule.recurs(60).pipe(
+const defaultLoadRetry = Schedule.recurs(150).pipe(
   Schedule.addDelay(() => "100 millis"),
 );
 
