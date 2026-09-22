@@ -18,6 +18,8 @@ case .biomeRecords(let since):
   exit(biomeRecords(since: since))
 case .biomeDevices:
   exit(biomeDevices())
+case .spawn(let program, let args):
+  exit(runSpawn(program: program, args: args))
 case .usage:
   FileHandle.standardError.write(usageText.data(using: .utf8)!)
   exit(2)
