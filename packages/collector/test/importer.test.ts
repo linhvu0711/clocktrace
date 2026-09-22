@@ -29,6 +29,7 @@ const D_MAC =
   '{"deviceIdentifier":"00000000-0000-4000-8000-000000000001","lastSyncDate":null,"me":true,"model":"26A428","name":"","platform":3}';
 const D_PHONE = `{"deviceIdentifier":"${P2}","lastSyncDate":1789837200,"me":false,"model":"24A437","name":"","platform":2}`;
 const D_PAD = `{"deviceIdentifier":"${P3}","lastSyncDate":1789664400,"me":false,"model":"24A437","name":"Linh's iPad","platform":1}`;
+const D_PHONE_NAMED = `{"deviceIdentifier":"${P2}","lastSyncDate":1789837200,"me":false,"model":"24A437","name":"Linh's iPhone","platform":2}`;
 const D_UNK =
   '{"deviceIdentifier":"00000000-0000-4000-8000-000000000004","lastSyncDate":null,"me":false,"model":null,"name":"","platform":null}';
 
@@ -157,6 +158,7 @@ const allGranted: Permissions = {
 interface Ctx {
   calls: Ref.Ref<number>;
   sinces: Ref.Ref<ReadonlyArray<Option.Option<number>>>;
+  devicesRef: Ref.Ref<ReadonlyArray<string>>;
   recordsRef: Ref.Ref<ReadonlyArray<string>>;
 }
 
@@ -164,7 +166,8 @@ const run = <A, E>(
   spec: {
     devices:
       | ReadonlyArray<string>
-      | Effect.Effect<ReadonlyArray<string>, BiomeExitError>;
+      | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+      | "ref";
     records:
       | ReadonlyArray<string>
       | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
@@ -178,11 +181,14 @@ const run = <A, E>(
       yield* TestClock.setTime(NOW);
       const calls = yield* Ref.make(0);
       const sinces = yield* Ref.make<ReadonlyArray<Option.Option<number>>>([]);
+      const devicesRef = yield* Ref.make<ReadonlyArray<string>>([]);
       const recordsRef = yield* Ref.make<ReadonlyArray<string>>([]);
       const deviceEff: Effect.Effect<readonly string[], BiomeExitError> =
-        Effect.isEffect(spec.devices)
-          ? spec.devices
-          : Effect.succeed(spec.devices);
+        spec.devices === "ref"
+          ? Ref.get(devicesRef)
+          : Effect.isEffect(spec.devices)
+            ? spec.devices
+            : Effect.succeed(spec.devices);
       const recordEff: Effect.Effect<readonly string[], BiomeExitError> =
         spec.records === "ref"
           ? Ref.get(recordsRef)
@@ -212,7 +218,7 @@ const run = <A, E>(
           macosVersion: Effect.succeed(macos),
         }),
       );
-      return yield* inside({ calls, sinces, recordsRef }).pipe(
+      return yield* inside({ calls, sinces, devicesRef, recordsRef }).pipe(
         Effect.provide(Layer.mergeAll(stubHelper, Store.Test, stubMac)),
       );
     }).pipe(Effect.provide(TestContext.TestContext)),
@@ -264,6 +270,40 @@ describe("importer", () => {
       { kind: "ipad", name: "Linh's iPad", externalId: P3 },
       { kind: "iphone", name: "iPhone", externalId: P2 },
     ]);
+  });
+
+  it("a renamed DevicePeer shows its new name and an empty name falls back only while empty", async () => {
+    // Given: an iPhone peer first seen with an empty name
+    // When: the peer reports a name, then an empty name again
+    const result = await run(
+      { devices: "ref", records: [] },
+      "27.0",
+      (ctx) =>
+        Effect.gen(function* () {
+          yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          const first = yield* store.listDevices();
+          yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE_NAMED]);
+          yield* importOnce("/stub");
+          const second = yield* store.listDevices();
+          yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
+          yield* importOnce("/stub");
+          const third = yield* store.listDevices();
+          return { first, second, third };
+        }),
+    );
+    // Then
+    const names = (ds: ReadonlyArray<{ name: string }>) =>
+      ds.map((d) => d.name);
+    expect(names(result.first)).toEqual(["iPhone"]);
+    expect(names(result.second)).toEqual(["Linh's iPhone"]);
+    expect(names(result.third)).toEqual(["iPhone"]);
+    expect(result.second[0]?.id).toBe(result.first[0]?.id);
+    expect(result.third[0]?.id).toBe(result.first[0]?.id);
+    expect(result.first.length).toBe(1);
+    expect(result.second.length).toBe(1);
+    expect(result.third.length).toBe(1);
   });
 
   it("a start and its end become one Activity, an open start closes at the next record", async () => {

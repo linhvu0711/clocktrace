@@ -10,7 +10,8 @@ import type { NewRule, Rule } from "./rule.js";
 import { openStore } from "./sqlite-store.js";
 
 export interface StoreShape {
-  readonly getOrInsertDevice: (
+  /** The same externalId keeps its id; name and kind follow the newest call. */
+  readonly upsertDevice: (
     input: NewDevice,
   ) => Effect.Effect<Device, ParseError | StoreError>;
   readonly listDevices: () => Effect.Effect<ReadonlyArray<Device>, StoreError>;

@@ -170,7 +170,7 @@ export const importOnce = (
       if (kind === undefined) {
         continue;
       }
-      const device = yield* store.getOrInsertDevice({
+      const device = yield* store.upsertDevice({
         kind,
         name:
           row.name === null || row.name === ""

@@ -81,7 +81,7 @@ const seedOne = (dbPath: string) =>
   Effect.scoped(
     Effect.gen(function* () {
       const store = yield* openStore(dbPath);
-      const device = yield* store.getOrInsertDevice({
+      const device = yield* store.upsertDevice({
         kind: "mac",
         name: "Studio",
         externalId: "mac-1",
@@ -397,12 +397,12 @@ describe("status", () => {
       Effect.scoped(
         Effect.gen(function* () {
           const store = yield* openStore(path);
-          yield* store.getOrInsertDevice({
+          yield* store.upsertDevice({
             kind: "ipad",
             name: "Linh's iPad",
             externalId: "P3",
           });
-          const iphone = yield* store.getOrInsertDevice({
+          const iphone = yield* store.upsertDevice({
             kind: "iphone",
             name: "iPhone",
             externalId: "P2",
@@ -445,6 +445,71 @@ describe("status", () => {
       "iOS import     ✔ ok · 2026-09-19 10:30",
       "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
       "  ○ iPhone       never synced · last activity 2026-09-19 09:06",
+      "Last activity  2026-09-19 09:06",
+      `Database       ${path}`,
+    ]);
+  });
+
+  it("status prints a renamed iPhone", async () => {
+    // Given: the same seed, with the iPhone upserted again under its new name
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          yield* store.upsertDevice({
+            kind: "ipad",
+            name: "Linh's iPad",
+            externalId: "P3",
+          });
+          const iphone = yield* store.upsertDevice({
+            kind: "iphone",
+            name: "iPhone",
+            externalId: "P2",
+          });
+          yield* store.upsertDevice({
+            kind: "iphone",
+            name: "Linh's iPhone",
+            externalId: "P2",
+          });
+          yield* store.insertActivity({
+            deviceId: iphone.id,
+            bundleId: "com.apple.mobilesafari",
+            appName: "com.apple.mobilesafari",
+            title: null,
+            url: null,
+            startedAt: DateTime.unsafeMake("2026-09-19T16:01:00.000Z"),
+            endedAt: DateTime.unsafeMake("2026-09-19T16:06:00.000Z"),
+          });
+          yield* store.setSetting(
+            "importer.status",
+            JSON.stringify({
+              state: "ok",
+              at: "2026-09-19T17:30:00.000Z",
+              devices: [
+                { externalId: "P3", lastSync: "2026-09-17T17:00:00.000Z" },
+              ],
+            }),
+          );
+        }),
+      ),
+    );
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Collector      ✔ running",
+      "Permissions    2 of 2 granted",
+      "  ✔ Accessibility     window titles",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "iOS import     ✔ ok · 2026-09-19 10:30",
+      "  ✘ Linh's iPad    not syncing since 2026-09-17 10:00 · last activity none yet",
+      "  ○ Linh's iPhone  never synced · last activity 2026-09-19 09:06",
       "Last activity  2026-09-19 09:06",
       `Database       ${path}`,
     ]);

@@ -76,9 +76,9 @@ export const openStore = (
     const prepare = <T>(f: () => T) =>
       Effect.try({ try: f, catch: toStoreError });
 
-    const insertDevice = yield* prepare(() =>
+    const upsertDeviceStatement = yield* prepare(() =>
       db.prepare(
-        "INSERT OR IGNORE INTO devices (id, kind, name, external_id) VALUES (@id, @kind, @name, @externalId)",
+        "INSERT INTO devices (id, kind, name, external_id) VALUES (@id, @kind, @name, @externalId) ON CONFLICT(external_id) DO UPDATE SET name = excluded.name, kind = excluded.kind",
       ),
     );
     const selectDeviceByExternalId = yield* prepare(() =>
@@ -164,12 +164,12 @@ export const openStore = (
       ),
     );
 
-    const getOrInsertDevice: StoreShape["getOrInsertDevice"] = (input) =>
+    const upsertDevice: StoreShape["upsertDevice"] = (input) =>
       Effect.gen(function* () {
         const device = yield* Schema.validate(NewDeviceSchema)(input);
         return yield* Effect.try({
           try: () => {
-            insertDevice.run({ id: randomUUID(), ...device });
+            upsertDeviceStatement.run({ id: randomUUID(), ...device });
             return selectDeviceByExternalId.get({
               externalId: device.externalId,
             }) as Device;
@@ -480,7 +480,7 @@ export const openStore = (
       });
 
     return {
-      getOrInsertDevice,
+      upsertDevice,
       listDevices,
       insertActivity,
       readActivities,
