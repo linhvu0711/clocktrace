@@ -73,6 +73,6 @@ export class DatabaseNewerError extends Data.TaggedError("DatabaseNewerError")<{
   readonly codeVersion: number;
 }> {
   override get message(): string {
-    return "database is newer than this clocktrace";
+    return `database was written by clocktrace ${this.fileVersion}, this is ${this.codeVersion} · upgrade clocktrace`;
   }
 }

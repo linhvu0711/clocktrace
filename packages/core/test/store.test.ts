@@ -85,7 +85,9 @@ describe("store", () => {
     if (Either.isLeft(result)) {
       const error = result.left as DatabaseNewerError;
       expect(error._tag).toBe("DatabaseNewerError");
-      expect(error.message).toBe("database is newer than this clocktrace");
+      expect(error.message).toBe(
+        "database was written by clocktrace 99, this is 1 · upgrade clocktrace",
+      );
       expect(error.fileVersion).toBe(99);
       expect(error.codeVersion).toBe(1);
     }

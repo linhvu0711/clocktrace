@@ -221,7 +221,7 @@ describe("permissions", () => {
       true,
     );
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
     expect(output).toEqual([]);
   });
 });

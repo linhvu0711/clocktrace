@@ -7,10 +7,11 @@ import {
 import { FileSystem } from "@effect/platform";
 import { Data, Effect } from "effect";
 
-// biome-ignore lint/complexity/noBannedTypes: the error has no fields
-export class NotSetUpError extends Data.TaggedError("NotSetUpError")<{}> {
+export class NotSetUpError extends Data.TaggedError("NotSetUpError")<{
+  readonly dbPath: string;
+}> {
   override get message(): string {
-    return "not set up, run clocktrace setup";
+    return `not set up, run clocktrace setup · looked for ${this.dbPath}`;
   }
 }
 
@@ -25,7 +26,7 @@ export const requireSetUp: Effect.Effect<
   const installed = yield* launchd.isInstalled();
   const hasDb = yield* fs.exists(dbPath).pipe(Effect.orDie);
   if (!installed || !hasDb) {
-    return yield* new NotSetUpError();
+    return yield* new NotSetUpError({ dbPath });
   }
 });
 

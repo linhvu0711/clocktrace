@@ -6,6 +6,7 @@ import {
   fakeLaunchd,
   Helper,
   HelperExitedError,
+  HelperNotFoundError,
   type Launchd,
   type LaunchdState,
   type Permissions,
@@ -34,6 +35,17 @@ const helperStub = (p: Permissions) =>
       check: () => Effect.void,
       lines: () => Stream.empty,
       permissions: () => Effect.succeed(p),
+      request: () => Effect.succeed("asked"),
+    }),
+  );
+
+const helperMissing = (missingPath: string) =>
+  Layer.succeed(
+    Helper,
+    new Helper({
+      check: () => Effect.fail(new HelperNotFoundError({ path: missingPath })),
+      lines: () => Stream.empty,
+      permissions: () => Effect.succeed(allGranted),
       request: () => Effect.succeed("asked"),
     }),
   );
@@ -116,13 +128,53 @@ describe("status", () => {
       status(),
     );
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
     if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
       expect((exit.cause.error as NotSetUpError).message).toBe(
-        "not set up, run clocktrace setup",
+        `not set up, run clocktrace setup · looked for ${path}`,
       );
     }
     expect(existsSync(path)).toBe(false);
+  });
+
+  it("status names a missing helper", async () => {
+    // Given: set up (installed, running, database) and the helper binary is missing
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const exit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const prompt = yield* fakePrompt([], true);
+        const state = yield* Ref.make<LaunchdState>({
+          installed: true,
+          running: true,
+          plist: null,
+          installs: 0,
+        });
+        const layers = Layer.mergeAll(
+          prompt.layer,
+          fakeLaunchd(state),
+          helperMissing("/stub"),
+          NodeContext.layer,
+        );
+        return yield* Effect.exit(status().pipe(Effect.provide(layers)));
+      }).pipe(
+        Effect.withConfigProvider(
+          ConfigProvider.fromMap(
+            new Map([
+              ["CLOCKTRACE_HELPER", "/stub"],
+              ["CLOCKTRACE_DB", path],
+            ]),
+          ),
+        ),
+        DateTime.withCurrentZoneNamed("America/Los_Angeles"),
+      ),
+    );
+    // Then: the failure names the fix
+    expect(exit).toEqual(Exit.fail(new HelperNotFoundError({ path: "/stub" })));
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      expect((exit.cause.error as HelperNotFoundError).message).toBe(
+        "helper not found at /stub · run pnpm build or set CLOCKTRACE_HELPER",
+      );
+    }
   });
 
   it("status names a Helper failure", async () => {

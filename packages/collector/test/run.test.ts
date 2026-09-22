@@ -44,7 +44,7 @@ describe("run", () => {
     );
     if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
       expect((exit.cause.error as HelperNotFoundError).message).toBe(
-        "helper not found at /nope/clocktrace-helper",
+        "helper not found at /nope/clocktrace-helper · run pnpm build or set CLOCKTRACE_HELPER",
       );
     }
   });

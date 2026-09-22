@@ -5,11 +5,19 @@ import {
   fakeLaunchd,
   Helper,
   HelperExitedError,
+  HelperNotFoundError,
   Launchd,
+  LaunchdError,
   type LaunchdState,
+  logPath,
   type Permissions,
 } from "@clocktrace/collector";
-import { openStore, Store, type StoreShape } from "@clocktrace/core";
+import {
+  DatabaseNewerError,
+  openStore,
+  Store,
+  type StoreShape,
+} from "@clocktrace/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -1163,6 +1171,82 @@ describe("server", () => {
     expect(result.isError).toBe(true);
     expect(text(result)).toBe("helper exited: boom");
     expect(text(result).length).toBeGreaterThan(0);
+  });
+
+  it("a tool returns the helper-not-found text", async () => {
+    // Given: a Helper whose check fails with HelperNotFoundError
+    const missingHelper = Layer.succeed(
+      Helper,
+      new Helper({
+        check: () => Effect.fail(new HelperNotFoundError({ path: "/stub" })),
+        lines: () => Stream.empty,
+        permissions: () =>
+          Effect.succeed({
+            accessibility: "granted",
+            automation: {},
+            fullDiskAccess: "granted",
+          }),
+        request: () => Effect.succeed("asked"),
+      }),
+    );
+    const { client, close } = await connect(
+      EmptyStore,
+      Layer.merge(Launchd.Test, missingHelper),
+    );
+    // When
+    const result = await callTool(client, { name: "status", arguments: {} });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "helper not found at /stub · run pnpm build or set CLOCKTRACE_HELPER",
+    );
+  });
+
+  it("a tool returns the database-newer text", async () => {
+    // Given: a store layer that fails because the file is newer
+    const { client, close } = await connect(
+      Layer.fail(new DatabaseNewerError({ fileVersion: 2, codeVersion: 1 })),
+    );
+    // When
+    const result = await callTool(client, {
+      name: "list_categories",
+      arguments: {},
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "database was written by clocktrace 2, this is 1 · upgrade clocktrace",
+    );
+  });
+
+  it("a tool returns the launchd text", async () => {
+    // Given: a Launchd whose state fails with LaunchdError
+    const failingLaunchd = Layer.succeed(
+      Launchd,
+      new Launchd({
+        isInstalled: () => Effect.succeed(true),
+        install: () => Effect.void,
+        bootstrap: () => Effect.void,
+        bootout: () => Effect.void,
+        uninstall: () => Effect.void,
+        state: () =>
+          Effect.fail(
+            new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+          ),
+      }),
+    );
+    const { client, close } = await connect(
+      EmptyStore,
+      Layer.merge(failingLaunchd, Helper.Test),
+    );
+    // When
+    const result = await callTool(client, { name: "status", arguments: {} });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(`launchctl bootstrap: exit 1 · see ${logPath}`);
   });
 
   it("status reports the last Activity time", async () => {

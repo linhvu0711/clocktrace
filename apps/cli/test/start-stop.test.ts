@@ -103,7 +103,7 @@ describe("start and stop", () => {
       start(),
     );
     // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError()));
+    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
     expect(state.running).toBe(false);
   });
 });
