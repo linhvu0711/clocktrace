@@ -125,6 +125,18 @@ const PermissionLineOut = z.object({
   state: z.enum(["granted", "denied", "not checked"]),
   note: z.string().nullable(),
 });
+const IosImportOut = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("ok"), at: z.string() }),
+  z.object({ state: z.literal("broken"), reason: z.string() }),
+  z.object({ state: z.literal("notTested"), macosVersion: z.string() }),
+]);
+const DeviceStatusOut = z.object({
+  name: z.string(),
+  kind: z.enum(["iphone", "ipad"]),
+  lastSync: z.string().nullable(),
+  sync: z.enum(["synced", "stale", "never"]),
+  lastActivity: z.string().nullable(),
+});
 
 const instructions =
   "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, summary, timeline, activities, status. summary, timeline, and activities take range { from, to }: local dates YYYY-MM-DD or local date-times YYYY-MM-DDTHH:mm; compute words like today or this week yourself. Every reply starts with the exact window used and its zone.";
@@ -395,12 +407,14 @@ export const makeServer = async (
     "status",
     {
       description:
-        "Whether the Collector runs, each permission with its state and what is lost while denied, the last Activity time, and the database path.",
+        "Whether the Collector runs, each permission with its state and what is lost while denied, the last Activity time, the iOS import state, and each iPhone and iPad with its last sync and last Activity, and the database path.",
       inputSchema: {},
       outputSchema: {
         collector: z.enum(["running", "stopped"]),
         permissions: z.array(PermissionLineOut),
         lastActivity: z.string().nullable(),
+        iosImport: IosImportOut.nullable(),
+        devices: z.array(DeviceStatusOut),
         databasePath: z.string(),
       },
     },
