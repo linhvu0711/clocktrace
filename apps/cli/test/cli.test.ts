@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { BadLimitError, parseLimit } from "../src/activities.js";
 import { renderFriendly, run } from "../src/cli.js";
+import { Style } from "../src/format.js";
 import { Hosts } from "../src/hosts.js";
 import { fakePrompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
@@ -84,6 +85,7 @@ describe("cli", () => {
           fakeLaunchd(state),
           helperStub(allGranted),
           Hosts.Test,
+          Style.Test,
         );
         const exit = yield* Effect.exit(
           run([...argv]).pipe(Effect.provide(layers)),

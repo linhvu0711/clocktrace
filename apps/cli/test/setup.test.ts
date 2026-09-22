@@ -28,6 +28,7 @@ import {
 import { NodeInspectSymbol } from "effect/Inspectable";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { Style } from "../src/format.js";
 import {
   type HostName,
   Hosts,
@@ -131,6 +132,7 @@ describe("setup", () => {
           Hosts.Default,
           NodeContext.layer,
           noCommandsLayer,
+          Style.Test,
         );
         const exit = yield* Effect.exit(
           setup(opts.hosts, Schedule.recurs(3)).pipe(Effect.provide(layers)),
@@ -161,11 +163,12 @@ describe("setup", () => {
     "full disk access: iPhone and iPad import",
     "  denied: iPhone and iPad time is not imported",
     "full disk access: granted",
-    "collector: running",
-    "accessibility: granted",
-    "full disk access: granted",
-    "last activity: none yet",
-    `database: ${path}`,
+    "Collector      ✔ running",
+    "Permissions    2 of 2 granted",
+    "  ✔ Accessibility     window titles",
+    "  ✔ Full Disk Access  iPhone and iPad import",
+    "Last activity  none yet",
+    `Database       ${path}`,
     ...manualLines,
   ];
 

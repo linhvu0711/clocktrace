@@ -21,6 +21,10 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
       Effect.sync(() => {
         console.log(line);
       }),
+    printError: (line: string) =>
+      Effect.sync(() => {
+        console.error(line);
+      }),
   }),
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
@@ -30,6 +34,7 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
       interactive: Effect.succeed(false),
       ask: () => Effect.succeed(""),
       print: () => Effect.void,
+      printError: () => Effect.void,
     }),
   );
 }
@@ -40,11 +45,13 @@ export const fakePrompt = (
 ): Effect.Effect<{
   readonly layer: Layer.Layer<Prompt>;
   readonly output: Ref.Ref<ReadonlyArray<string>>;
+  readonly errors: Ref.Ref<ReadonlyArray<string>>;
   readonly questions: Ref.Ref<ReadonlyArray<string>>;
 }> =>
   Effect.gen(function* () {
     const remaining = yield* Ref.make<ReadonlyArray<string>>(answers);
     const output = yield* Ref.make<ReadonlyArray<string>>([]);
+    const errors = yield* Ref.make<ReadonlyArray<string>>([]);
     const questions = yield* Ref.make<ReadonlyArray<string>>([]);
     const layer = Layer.succeed(
       Prompt,
@@ -57,7 +64,8 @@ export const fakePrompt = (
             ),
           ),
         print: (line) => Ref.update(output, (o) => [...o, line]),
+        printError: (line) => Ref.update(errors, (e) => [...e, line]),
       }),
     );
-    return { layer, output, questions };
+    return { layer, output, errors, questions };
   });

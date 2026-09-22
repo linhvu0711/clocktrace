@@ -17,6 +17,7 @@ import type { CommandExecutor, FileSystem } from "@effect/platform";
 import { type DateTime, Effect, Option, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import type { Style } from "./format.js";
 import {
   type HostName,
   Hosts,
@@ -114,6 +115,7 @@ export const setup = (
   | FileSystem.FileSystem
   | CommandExecutor.CommandExecutor
   | DateTime.CurrentTimeZone
+  | Style
 > =>
   Effect.gen(function* () {
     const helper = yield* Helper;

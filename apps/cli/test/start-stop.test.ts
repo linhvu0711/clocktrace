@@ -5,7 +5,8 @@ import { join } from "node:path";
 import {
   fakeLaunchd,
   Helper,
-  type Launchd,
+  Launchd,
+  LaunchdError,
   type LaunchdState,
 } from "@clocktrace/collector";
 import { openStore } from "@clocktrace/core";
@@ -13,6 +14,8 @@ import { NodeContext } from "@effect/platform-node";
 import { ConfigProvider, DateTime, Effect, Exit, Layer, Ref } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { Style } from "../src/format.js";
+import { ReportedError } from "../src/output.js";
 import { fakePrompt, type Prompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import { start } from "../src/start.js";
@@ -37,8 +40,12 @@ describe("start and stop", () => {
     command: Effect.Effect<
       A,
       E,
-      Prompt | Launchd | import("@effect/platform").FileSystem.FileSystem
+      | Prompt
+      | Launchd
+      | import("@effect/platform").FileSystem.FileSystem
+      | Style
     >,
+    makeLaunchd?: (state: Ref.Ref<LaunchdState>) => Layer.Layer<Launchd>,
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -46,14 +53,16 @@ describe("start and stop", () => {
         const state = yield* Ref.make(launchdState);
         const layers = Layer.mergeAll(
           prompt.layer,
-          fakeLaunchd(state),
+          (makeLaunchd ?? fakeLaunchd)(state),
           Helper.Test,
           NodeContext.layer,
+          Style.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
         return {
           exit,
           output: yield* Ref.get(prompt.output),
+          errors: yield* Ref.get(prompt.errors),
           state: yield* Ref.get(state),
         };
       }).pipe(
@@ -78,7 +87,7 @@ describe("start and stop", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toEqual(["collector: running", "collector: running"]);
+    expect(output).toEqual(["✔ collector running", "✔ collector running"]);
     expect(state.running).toBe(true);
   });
 
@@ -91,8 +100,79 @@ describe("start and stop", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toEqual(["collector: stopped", "collector: stopped"]);
+    expect(output).toEqual(["✔ collector stopped", "✔ collector stopped"]);
     expect(state.running).toBe(false);
+  });
+
+  it("a failed start prints the mark, the step, and the log path", async () => {
+    // Given: set up, the Collector stopped, the bootstrap step fails
+    // When
+    const { exit, errors } = await run(
+      { installed: true, running: false, plist: null, installs: 0 },
+      start(),
+      (state) => fakeLaunchd(state, { failBootstrap: true }),
+    );
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(errors).toEqual([
+      "✘ launchctl bootstrap: exit 1",
+      "  log  ~/Library/Logs/clocktrace/collector.log",
+    ]);
+  });
+
+  it("a failed start fails with ReportedError so main exits 1", async () => {
+    // Given: the same as the case above
+    // When
+    const { exit } = await run(
+      { installed: true, running: false, plist: null, installs: 0 },
+      start(),
+      (state) => fakeLaunchd(state, { failBootstrap: true }),
+    );
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(
+        new ReportedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("a failed stop prints the mark, the step, and the log path", async () => {
+    // Given: set up and a Launchd whose bootout fails
+    const stub = () =>
+      Layer.succeed(
+        Launchd,
+        new Launchd({
+          isInstalled: () => Effect.succeed(true),
+          install: () => Effect.void,
+          bootstrap: () => Effect.void,
+          uninstall: () => Effect.void,
+          state: () => Effect.succeed("running"),
+          bootout: () =>
+            Effect.fail(
+              new LaunchdError({
+                step: "launchctl bootout",
+                detail: "exit 1",
+              }),
+            ),
+        }),
+      );
+    // When
+    const { exit, errors } = await run(
+      { installed: true, running: true, plist: null, installs: 0 },
+      stop(),
+      stub,
+    );
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(errors).toEqual([
+      "✘ launchctl bootout: exit 1",
+      "  log  ~/Library/Logs/clocktrace/collector.log",
+    ]);
   });
 
   it("start before setup fails not set up", async () => {

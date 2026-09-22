@@ -16,6 +16,7 @@ import type { FileSystem } from "@effect/platform";
 import { type DateTime, Effect } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import type { Style } from "./format.js";
 import { Prompt } from "./prompt.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
 import { printStatus } from "./status.js";
@@ -41,7 +42,7 @@ export const walkPermissions = (): Effect.Effect<
   | ParseError
   | StoreError
   | LaunchdError,
-  Prompt | Helper | Launchd | Store | DateTime.CurrentTimeZone
+  Prompt | Helper | Launchd | Store | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
     const prompt = yield* Prompt;
@@ -79,7 +80,12 @@ export const permissions = (): Effect.Effect<
   | StoreError
   | DatabaseNewerError
   | LaunchdError,
-  Prompt | Helper | Launchd | FileSystem.FileSystem | DateTime.CurrentTimeZone
+  | Prompt
+  | Helper
+  | Launchd
+  | FileSystem.FileSystem
+  | DateTime.CurrentTimeZone
+  | Style
 > => requireSetUp.pipe(Effect.andThen(withStore(walkPermissions())));
 
 export const permissionsCommand = Command.make("permissions", {}, () =>

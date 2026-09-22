@@ -1,6 +1,10 @@
-import { Options } from "@effect/cli";
-import { Effect } from "effect";
+import { homedir } from "node:os";
 
+import { type LaunchdError, logPath } from "@clocktrace/collector";
+import { Options } from "@effect/cli";
+import { Data, Effect } from "effect";
+
+import { line, mark, Style, shortPath, span } from "./format.js";
 import { Prompt } from "./prompt.js";
 
 export const jsonOption = Options.boolean("json").pipe(
@@ -16,4 +20,25 @@ export const report = <A extends Record<string, unknown>>(
 ): Effect.Effect<void, never, Prompt> =>
   Effect.flatMap(Prompt, (prompt) =>
     Effect.forEach(json ? [JSON.stringify(value)] : lines(value), prompt.print),
+  );
+
+export class ReportedError extends Data.TaggedError("ReportedError")<{
+  readonly cause: LaunchdError;
+}> {}
+
+export const reportLaunchd = <A, R>(
+  effect: Effect.Effect<A, LaunchdError, R>,
+): Effect.Effect<A, ReportedError, R | Prompt | Style> =>
+  Effect.catchTag(effect, "LaunchdError", (e) =>
+    Effect.gen(function* () {
+      const prompt = yield* Prompt;
+      const look = yield* Style;
+      yield* prompt.printError(
+        line([mark("bad", look), ` ${e.step}: ${e.detail}`], look),
+      );
+      yield* prompt.printError(
+        line(["  log  ", span("dim", shortPath(logPath, homedir()))], look),
+      );
+      return yield* new ReportedError({ cause: e });
+    }),
   );
