@@ -235,6 +235,34 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 detail: e.message,
               }),
           ),
+          // Bootstrap while a previous bootout is still tearing down is
+          // accepted but queued behind it, which defers registration ~45 s;
+          // wait until launchd reports the job gone so the add lands clean.
+          Effect.andThen(
+            Effect.ignore(
+              exit(
+                "launchctl print",
+                "print",
+                `${domain}/${collectorLabel}`,
+              ).pipe(
+                Effect.flatMap((code) =>
+                  code !== 0
+                    ? Effect.void
+                    : Effect.fail(
+                        new LaunchdError({
+                          step: "launchctl print",
+                          detail: "job still registered",
+                        }),
+                      ),
+                ),
+                Effect.retry(
+                  Schedule.spaced("100 millis").pipe(
+                    Schedule.upTo("10 seconds"),
+                  ),
+                ),
+              ),
+            ),
+          ),
           Effect.andThen(
             bootstrap().pipe(
               Effect.tapError(() =>
