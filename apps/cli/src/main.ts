@@ -3,7 +3,7 @@ import * as ValidationError from "@effect/cli/ValidationError";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { DateTime, Effect, Layer } from "effect";
 
-import { run } from "./cli.js";
+import { isFriendlyError, run } from "./cli.js";
 import { Hosts } from "./hosts.js";
 import { Prompt } from "./prompt.js";
 
@@ -19,7 +19,7 @@ const layers = Layer.mergeAll(
 run(process.argv).pipe(
   Effect.catchAll((e) =>
     Effect.sync(() => {
-      if (!ValidationError.isValidationError(e)) {
+      if (!ValidationError.isValidationError(e) && !isFriendlyError(e)) {
         console.error((e as { message: string }).message);
       }
       process.exitCode = 1;

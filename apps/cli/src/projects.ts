@@ -55,8 +55,13 @@ export const printRemovedProject = (
     report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
   );
 
-const id = Options.text("id").pipe(Options.optional);
-const name = Options.text("name");
+const id = Options.text("id").pipe(
+  Options.optional,
+  Options.withDescription("the project id to update; omit to create"),
+);
+const name = Options.text("name").pipe(
+  Options.withDescription("the project name"),
+);
 const idArg = Args.text({ name: "id" });
 
 const listCommand = Command.make("list", { json: jsonOption }, ({ json }) =>
@@ -77,5 +82,6 @@ const removeCommand = Command.make(
 );
 
 export const projectsCommand = Command.make("projects").pipe(
+  Command.withDescription("list, set, or remove projects"),
   Command.withSubcommands([listCommand, setCommand, removeCommand]),
 );

@@ -86,11 +86,24 @@ export const printRemovedRule = (
     report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
   );
 
-const field = Options.choice("field", RuleField.literals);
-const compare = Options.choice("compare", RuleCompare.literals);
-const value = Options.text("value");
-const effect = Options.choice("effect", RuleEffect.literals);
-const target = Options.text("target").pipe(Options.optional);
+const field = Options.choice("field", RuleField.literals).pipe(
+  Options.withDescription("the Activity field to test"),
+);
+const compare = Options.choice("compare", RuleCompare.literals).pipe(
+  Options.withDescription(
+    'how to compare the field; quote a value that holds a space: --compare "ends with"',
+  ),
+);
+const value = Options.text("value").pipe(
+  Options.withDescription("the text to compare against"),
+);
+const effect = Options.choice("effect", RuleEffect.literals).pipe(
+  Options.withDescription("what a matching Activity gets"),
+);
+const target = Options.text("target").pipe(
+  Options.optional,
+  Options.withDescription("the category or project id, for a set effect"),
+);
 const id = Args.text({ name: "id" });
 
 const listCommand = Command.make("list", { json: jsonOption }, ({ json }) =>
@@ -113,5 +126,6 @@ const removeCommand = Command.make(
 );
 
 export const rulesCommand = Command.make("rules").pipe(
+  Command.withDescription("list, add, or remove classification rules"),
   Command.withSubcommands([listCommand, addCommand, removeCommand]),
 );

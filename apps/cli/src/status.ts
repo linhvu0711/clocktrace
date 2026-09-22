@@ -54,4 +54,4 @@ export const statusCommand = Command.make(
   "status",
   { json: jsonOption },
   ({ json }) => status(json),
-);
+).pipe(Command.withDescription("show whether the collector is running"));

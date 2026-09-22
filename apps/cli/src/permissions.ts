@@ -84,4 +84,6 @@ export const permissions = (): Effect.Effect<
 
 export const permissionsCommand = Command.make("permissions", {}, () =>
   permissions(),
+).pipe(
+  Command.withDescription("check the macOS permissions the collector needs"),
 );

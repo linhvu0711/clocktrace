@@ -22,4 +22,6 @@ export const start = (): Effect.Effect<
     ),
   );
 
-export const startCommand = Command.make("start", {}, () => start());
+export const startCommand = Command.make("start", {}, () => start()).pipe(
+  Command.withDescription("start the collector"),
+);

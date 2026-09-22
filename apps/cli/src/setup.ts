@@ -171,7 +171,12 @@ export const setup = (
     );
   });
 
-const hostsOption = Options.text("hosts").pipe(Options.optional);
+const hostsOption = Options.text("hosts").pipe(
+  Options.optional,
+  Options.withDescription(
+    "register these hosts without the checklist: claude, codex, hermes, openclaw",
+  ),
+);
 
 export const setupCommand = Command.make(
   "setup",
@@ -191,4 +196,6 @@ export const setupCommand = Command.make(
       }
       yield* setup(names as ReadonlyArray<HostName>);
     }),
+).pipe(
+  Command.withDescription("install the collector and register your AI hosts"),
 );

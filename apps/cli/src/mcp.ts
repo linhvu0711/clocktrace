@@ -29,4 +29,6 @@ export const startMcp = (
     ),
   );
 
-export const mcpCommand = Command.make("mcp", {}, () => startMcp());
+export const mcpCommand = Command.make("mcp", {}, () => startMcp()).pipe(
+  Command.withDescription("start the MCP server for AI hosts"),
+);

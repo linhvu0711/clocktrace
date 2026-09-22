@@ -19,6 +19,7 @@ import {
   deviceOption,
   fromOption,
   localMinute,
+  requireWindow,
   toOption,
   windowLine,
 } from "./window.js";
@@ -66,10 +67,10 @@ export const timelineCommand = Command.make(
     json: jsonOption,
   },
   ({ from, to, device, json }) =>
-    whenSetUp(
-      printTimeline(
-        { range: { from, to }, deviceId: Option.getOrUndefined(device) },
-        json,
-      ),
-    ),
-);
+    Effect.gen(function* () {
+      const range = yield* requireWindow("timeline", from, to);
+      return yield* whenSetUp(
+        printTimeline({ range, deviceId: Option.getOrUndefined(device) }, json),
+      );
+    }),
+).pipe(Command.withDescription("show a timeline of activity blocks"));
