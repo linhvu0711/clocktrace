@@ -1,7 +1,7 @@
 import { checkSync } from "recheck";
 import { describe, expect, it, vi } from "vitest";
 
-import { exceedsBacktrackBudget } from "../src/index.js";
+import { exceedsBacktrackBudget, maxPatternLength } from "../src/index.js";
 
 vi.mock("recheck", async (importOriginal) => {
   const actual = await importOriginal<typeof import("recheck")>();
@@ -65,6 +65,19 @@ describe("regex-budget", () => {
     });
     // When / Then
     expect(exceedsBacktrackBudget("a+")).toBe(true);
+  });
+
+  it("a pattern past the analyzer's bound is rejected without analysis", () => {
+    // Given: a valid pattern longer than recheck's maxPatternSize — the
+    // checker could only answer unknown, after seconds of parsing
+    // When / Then
+    expect(exceedsBacktrackBudget("a".repeat(maxPatternLength + 1))).toBe(true);
+  });
+
+  it("a pattern at the analyzer's bound is still checked", () => {
+    // Given: a benign pattern exactly maxPatternLength long
+    // When / Then
+    expect(exceedsBacktrackBudget("a".repeat(maxPatternLength))).toBe(false);
   });
 
   it("github\\.com stays within the budget", () => {
