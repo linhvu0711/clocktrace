@@ -146,6 +146,16 @@ export const openStore = (
         "UPDATE rules SET position = position - 1 WHERE position > @position",
       ),
     );
+    const upsertAppNameStatement = yield* prepare(() =>
+      db.prepare(
+        "INSERT INTO app_names (bundle_id, name, genre, fetched_at) VALUES (@bundleId, @name, @genre, @fetchedAt) ON CONFLICT(bundle_id) DO UPDATE SET name = excluded.name, genre = excluded.genre, fetched_at = excluded.fetched_at",
+      ),
+    );
+    const selectAppName = yield* prepare(() =>
+      db.prepare(
+        "SELECT bundle_id AS bundleId, name, genre, fetched_at AS fetchedAt FROM app_names WHERE bundle_id = @bundleId",
+      ),
+    );
     const upsertSetting = yield* prepare(() =>
       db.prepare(
         "INSERT INTO settings (key, value) VALUES (@key, @value) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -423,6 +433,40 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const getAppName: StoreShape["getAppName"] = (bundleId) =>
+      Effect.try({
+        try: () => {
+          const row = selectAppName.get({ bundleId }) as
+            | {
+                bundleId: string;
+                name: string | null;
+                genre: string | null;
+                fetchedAt: string;
+              }
+            | undefined;
+          return row === undefined
+            ? Option.none()
+            : Option.some({
+                ...row,
+                fetchedAt: DateTime.unsafeMake(row.fetchedAt),
+              });
+        },
+        catch: (cause) => new StoreError({ cause }),
+      });
+
+    const upsertAppName: StoreShape["upsertAppName"] = (input) =>
+      Effect.try({
+        try: () => {
+          upsertAppNameStatement.run({
+            bundleId: input.bundleId,
+            name: input.name,
+            genre: input.genre,
+            fetchedAt: DateTime.formatIso(input.fetchedAt),
+          });
+        },
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     const getSetting: StoreShape["getSetting"] = (key) =>
       Effect.try({
         try: () => {
@@ -526,6 +570,8 @@ export const openStore = (
       insertRuleIfAbsent,
       listRules,
       deleteRule,
+      getAppName,
+      upsertAppName,
       getSetting,
       setSetting,
       seedStarterSet,

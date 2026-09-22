@@ -10,6 +10,7 @@ import {
 } from "@clocktrace/collector";
 import {
   ActivitiesPage,
+  type AppStore,
   activities,
   addRule,
   type CategoryInUseError,
@@ -63,6 +64,7 @@ export type StoreLayerError =
 
 export type Services =
   | Store
+  | AppStore
   | Launchd
   | Helper
   | App

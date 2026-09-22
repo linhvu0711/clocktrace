@@ -1,0 +1,286 @@
+import {
+  DateTime,
+  Effect,
+  Either,
+  Layer,
+  Option,
+  Ref,
+  TestClock,
+  TestContext,
+} from "effect";
+import { describe, expect, it } from "vitest";
+
+import type { StoreShape } from "../src/index.js";
+import {
+  AppStore,
+  AppStoreError,
+  classifyAppName,
+  iosAppNames,
+  openStore,
+  resolveAppName,
+  Store,
+} from "../src/index.js";
+
+const EmptyStore = Layer.scoped(
+  Store,
+  Effect.map(openStore(":memory:"), (shape) => new Store(shape)),
+);
+
+const run = <A, E>(
+  lookup: Layer.Layer<AppStore>,
+  body: Effect.Effect<A, E, AppStore | Store>,
+): Promise<A> =>
+  Effect.runPromise(
+    body.pipe(Effect.provide(Layer.mergeAll(EmptyStore, lookup))),
+  );
+
+const countingLookup = (
+  calls: Ref.Ref<number>,
+  answer: Effect.Effect<
+    Option.Option<{ name: string; genre: string | null }>,
+    AppStoreError
+  >,
+) =>
+  Layer.succeed(
+    AppStore,
+    new AppStore({
+      lookup: () =>
+        Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(answer)),
+    }),
+  );
+
+const seededName = (store: StoreShape) =>
+  store.upsertAppName({
+    bundleId: "xyz.blueskyweb.app",
+    name: "Bluesky",
+    genre: "Social Networking",
+    fetchedAt: DateTime.unsafeMake("2026-09-18T12:00:00.000Z"),
+  });
+
+describe("iosAppNames", () => {
+  it("the map holds at least 50 apps", () => {
+    // Given: iosAppNames
+    // When
+    const count = Object.keys(iosAppNames).length;
+    // Then
+    expect(count).toBeGreaterThanOrEqual(50);
+  });
+});
+
+describe("classifyAppName", () => {
+  it("decides a mapped app locally", async () => {
+    // Given: a bundle ID in the built-in map
+    // When
+    const result = await run(
+      AppStore.Test,
+      classifyAppName("com.apple.mobilesafari"),
+    );
+    // Then
+    expect(result).toEqual(
+      Either.left(Option.some({ name: "Safari", genre: null })),
+    );
+  });
+
+  it("decides a stored name locally", async () => {
+    // Given: a stored Bluesky row
+    const result = await run(
+      AppStore.Test,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seededName(store);
+        return yield* classifyAppName("xyz.blueskyweb.app");
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Either.left(Option.some({ name: "Bluesky", genre: "Social Networking" })),
+    );
+  });
+
+  it("decides a fresh failed lookup locally", async () => {
+    // Given: a name-null row younger than the retry window
+    const result = await run(
+      AppStore.Test,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.upsertAppName({
+          bundleId: "com.example.notanapp",
+          name: null,
+          genre: null,
+          fetchedAt: yield* DateTime.now,
+        });
+        return yield* classifyAppName("com.example.notanapp");
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then
+    expect(result).toEqual(Either.left(Option.none()));
+  });
+
+  it("asks for a lookup when nothing is cached", async () => {
+    // Given: nothing stored for the bundle ID
+    // When
+    const result = await run(
+      AppStore.Test,
+      classifyAppName("com.example.notanapp"),
+    );
+    // Then
+    expect(result).toEqual(Either.right("com.example.notanapp"));
+  });
+
+  it("asks for a lookup once a failed attempt is stale", async () => {
+    // Given: a name-null row older than the retry window
+    const result = await run(
+      AppStore.Test,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.upsertAppName({
+          bundleId: "com.example.notanapp",
+          name: null,
+          genre: null,
+          fetchedAt: yield* DateTime.now,
+        });
+        yield* TestClock.adjust("25 hours");
+        return yield* classifyAppName("com.example.notanapp");
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then
+    expect(result).toEqual(Either.right("com.example.notanapp"));
+  });
+});
+
+describe("resolveAppName", () => {
+  it("resolveAppName returns the built-in name and no genre", async () => {
+    // Given: nothing
+    // When
+    const result = await run(
+      AppStore.Test,
+      resolveAppName("com.apple.mobilesafari"),
+    );
+    // Then
+    expect(result).toEqual(Option.some({ name: "Safari", genre: null }));
+  });
+
+  it("a miss is looked up once and cached", async () => {
+    // Given: an in-memory store and a lookup stub returning Bluesky
+    const calls = Ref.unsafeMake(0);
+    const lookup = countingLookup(
+      calls,
+      Effect.succeed(
+        Option.some({ name: "Bluesky", genre: "Social Networking" }),
+      ),
+    );
+    // When
+    const { first, second, count, row } = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const first = yield* resolveAppName("xyz.blueskyweb.app");
+        const second = yield* resolveAppName("xyz.blueskyweb.app");
+        const row = yield* store.getAppName("xyz.blueskyweb.app");
+        return { first, second, count: yield* Ref.get(calls), row };
+      }),
+    );
+    // Then
+    expect(first).toEqual(
+      Option.some({ name: "Bluesky", genre: "Social Networking" }),
+    );
+    expect(second).toEqual(
+      Option.some({ name: "Bluesky", genre: "Social Networking" }),
+    );
+    expect(count).toBe(1);
+    expect(Option.map(row, (r) => [r.name, r.genre])).toEqual(
+      Option.some(["Bluesky", "Social Networking"]),
+    );
+  });
+
+  it("a stored name is read without a lookup", async () => {
+    // Given: a stored Bluesky row and a counting lookup
+    const calls = Ref.unsafeMake(0);
+    const lookup = countingLookup(
+      calls,
+      Effect.succeed(Option.some({ name: "Other", genre: "News" })),
+    );
+    // When
+    const { result, count } = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seededName(store);
+        const result = yield* resolveAppName("xyz.blueskyweb.app");
+        return { result, count: yield* Ref.get(calls) };
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Option.some({ name: "Bluesky", genre: "Social Networking" }),
+    );
+    expect(count).toBe(0);
+  });
+
+  it("resolveAppName returns none for an unmapped id", async () => {
+    // Given: nothing
+    // When
+    const result = await run(
+      AppStore.Test,
+      resolveAppName("com.example.notanapp"),
+    );
+    // Then
+    expect(result).toEqual(Option.none());
+  });
+
+  it("an empty lookup is retried after one day", async () => {
+    // Given: a lookup that finds nothing, pinned to a TestClock
+    const calls = Ref.unsafeMake(0);
+    const lookup = countingLookup(calls, Effect.succeed(Option.none()));
+    const { results, countAfterTwo, count, row } = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const a = yield* resolveAppName("com.example.notanapp");
+        const b = yield* resolveAppName("com.example.notanapp");
+        const countAfterTwo = yield* Ref.get(calls);
+        yield* TestClock.adjust("25 hours");
+        const c = yield* resolveAppName("com.example.notanapp");
+        const row = yield* store.getAppName("com.example.notanapp");
+        return {
+          results: [a, b, c],
+          countAfterTwo,
+          count: yield* Ref.get(calls),
+          row,
+        };
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then
+    expect(results).toEqual([Option.none(), Option.none(), Option.none()]);
+    expect(countAfterTwo).toBe(1);
+    expect(count).toBe(2);
+    expect(Option.isSome(row) && row.value.name === null).toBe(true);
+  });
+
+  it("an offline lookup fails soft and records the attempt", async () => {
+    // Given: a lookup that fails, pinned to a TestClock
+    const calls = Ref.unsafeMake(0);
+    const lookup = countingLookup(
+      calls,
+      Effect.fail(new AppStoreError({ cause: "offline" })),
+    );
+    const { results, count, row } = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const a = yield* resolveAppName("com.example.notanapp");
+        const b = yield* resolveAppName("com.example.notanapp");
+        const row = yield* store.getAppName("com.example.notanapp");
+        return {
+          results: [a, b],
+          count: yield* Ref.get(calls),
+          row,
+        };
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then
+    expect(results).toEqual([Option.none(), Option.none()]);
+    expect(count).toBe(1);
+    expect(Option.isSome(row) && row.value.name === null).toBe(true);
+  });
+});
