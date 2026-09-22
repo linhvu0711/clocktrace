@@ -310,7 +310,15 @@ export const walkPermissions = (
           perm.row =
             perm.state === "granted"
               ? [lead("ok", item), span("dim", "granted")]
-              : [lead("bad", item), span("bad", deniedFix(item))];
+              : perm.state === "noAnswer" && item.request.kind === "automation"
+                ? [
+                    lead("warn", item),
+                    noteCell(
+                      item,
+                      noAnswerNote(browserName(item.request.bundleId)),
+                    ),
+                  ]
+                : [lead("bad", item), span("bad", deniedFix(item))];
           yield* printRow(perm);
         }),
     );
