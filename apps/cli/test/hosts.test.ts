@@ -156,17 +156,15 @@ describe("hosts", () => {
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const terminal = yield* MockTerminal.make(
-          opts.interactive ?? false,
-        );
+        const terminal = yield* MockTerminal.make(opts.interactive ?? false);
         const console = yield* MockConsole.make;
         for (const k of opts.keys ?? []) {
           yield* typeof k === "string"
             ? terminal.inputText(k)
             : terminal.inputKey(
-              k.key,
-              k.ctrl === undefined ? {} : { ctrl: k.ctrl },
-            );
+                k.key,
+                k.ctrl === undefined ? {} : { ctrl: k.ctrl },
+              );
         }
         const executor = yield* fakeExecutor(opts.results ?? {});
         const state = yield* Ref.make<LaunchdState>({

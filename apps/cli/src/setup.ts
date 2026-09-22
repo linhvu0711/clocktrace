@@ -60,11 +60,7 @@ const registerHosts = (
 const pickHosts: Effect.Effect<
   ReadonlyArray<HostName>,
   StoppedError,
-  | Hosts
-  | Prompt
-  | HostBorders
-  | Terminal.Terminal
-  | Path.Path
+  Hosts | Prompt | HostBorders | Terminal.Terminal | Path.Path
 > = Effect.gen(function* () {
   const hostsService = yield* Hosts;
   const prompt = yield* Prompt;
@@ -74,9 +70,7 @@ const pickHosts: Effect.Effect<
     choices: hostNames.map((h) => ({
       title: hostTitle[h],
       value: h,
-      ...(detected[h]
-        ? { description: "found" as const, selected: true }
-        : {}),
+      ...(detected[h] ? { description: "found" as const, selected: true } : {}),
     })),
   });
   if (picked.length === 0) {
@@ -159,11 +153,7 @@ export const setup = (
         }
         yield* walkPermissions();
         const selected =
-          hosts !== undefined
-            ? hosts
-            : interactive
-              ? yield* pickHosts
-              : [];
+          hosts !== undefined ? hosts : interactive ? yield* pickHosts : [];
         if (selected.length === 0) {
           yield* printManualCommands;
         } else {

@@ -10,9 +10,9 @@ import { Console, DateTime, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { Prompt } from "../src/prompt.js";
+import { printSummary } from "../src/summary.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
-import { printSummary } from "../src/summary.js";
 
 const EmptyStore = Layer.scoped(
   Store,

@@ -63,9 +63,9 @@ describe("permissions", () => {
           yield* typeof k === "string"
             ? terminal.inputText(k)
             : terminal.inputKey(
-              k.key,
-              k.ctrl === undefined ? {} : { ctrl: k.ctrl },
-            );
+                k.key,
+                k.ctrl === undefined ? {} : { ctrl: k.ctrl },
+              );
         }
         const helper = Layer.succeed(
           Helper,

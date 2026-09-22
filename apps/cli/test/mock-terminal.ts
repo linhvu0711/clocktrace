@@ -35,10 +35,9 @@ export declare namespace MockTerminal {
 // Context
 // =============================================================================
 
-const MockTerminalTag = Context.GenericTag<
-  Terminal.Terminal,
-  MockTerminal
->("@effect/platform/Terminal");
+const MockTerminalTag = Context.GenericTag<Terminal.Terminal, MockTerminal>(
+  "@effect/platform/Terminal",
+);
 
 // =============================================================================
 // Constructors
