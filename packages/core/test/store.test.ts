@@ -380,6 +380,50 @@ describe("store", () => {
     );
   });
 
+  it("latestActivityEnd filters by deviceId", async () => {
+    // Given: a Mac Activity ending later than the iPhone's
+    const ends = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* store.insertActivity({
+          deviceId: d.id,
+          bundleId: "com.apple.finder",
+          appName: "Finder",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T11:00:00.000Z"),
+          endedAt: t("2026-09-18T12:00:00.000Z"),
+        });
+        const e = yield* store.getOrInsertDevice({
+          kind: "iphone",
+          name: "Fone",
+          externalId: "iphone-1",
+        });
+        yield* store.insertActivity({
+          deviceId: e.id,
+          bundleId: "com.apple.mobilesafari",
+          appName: "Safari",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T09:00:00.000Z"),
+          endedAt: t("2026-09-18T10:00:00.000Z"),
+        });
+        // When
+        return {
+          phone: yield* store.latestActivityEnd(e.id),
+          all: yield* store.latestActivityEnd(),
+        };
+      }),
+    );
+    // Then
+    expect(Option.map(ends.phone, DateTime.formatIso)).toEqual(
+      Option.some("2026-09-18T10:00:00.000Z"),
+    );
+    expect(Option.map(ends.all, DateTime.formatIso)).toEqual(
+      Option.some("2026-09-18T12:00:00.000Z"),
+    );
+  });
+
   it("insertActivity rejects endedAt before startedAt", async () => {
     // Given: an open store and a device
     const { result, rows } = await useStore((store) =>

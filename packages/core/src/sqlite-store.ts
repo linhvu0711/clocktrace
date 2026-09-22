@@ -160,7 +160,7 @@ export const openStore = (
     );
     const selectLatestEnd = yield* prepare(() =>
       db.prepare(
-        "SELECT ended_at AS endedAt FROM activities ORDER BY ended_at DESC LIMIT 1",
+        "SELECT ended_at AS endedAt FROM activities WHERE (@deviceId IS NULL OR device_id = @deviceId) ORDER BY ended_at DESC LIMIT 1",
       ),
     );
 
@@ -238,10 +238,12 @@ export const openStore = (
       });
     };
 
-    const latestActivityEnd: StoreShape["latestActivityEnd"] = () =>
+    const latestActivityEnd: StoreShape["latestActivityEnd"] = (deviceId) =>
       Effect.try({
         try: () => {
-          const row = selectLatestEnd.get() as { endedAt: string } | undefined;
+          const row = selectLatestEnd.get({ deviceId: deviceId ?? null }) as
+            | { endedAt: string }
+            | undefined;
           return row === undefined
             ? Option.none()
             : Option.some(DateTime.unsafeMake(row.endedAt));

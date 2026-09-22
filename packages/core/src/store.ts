@@ -23,10 +23,9 @@ export interface StoreShape {
     readonly to: DateTime.Utc;
   }) => Effect.Effect<ReadonlyArray<Activity>, StoreError>;
   /** The end of the newest Activity, none while the table is empty. */
-  readonly latestActivityEnd: () => Effect.Effect<
-    Option.Option<DateTime.Utc>,
-    StoreError
-  >;
+  readonly latestActivityEnd: (
+    deviceId?: string,
+  ) => Effect.Effect<Option.Option<DateTime.Utc>, StoreError>;
   readonly insertCategory: (
     input: NewCategory,
   ) => Effect.Effect<Category, ParseError | StoreError>;
