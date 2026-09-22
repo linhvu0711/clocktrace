@@ -51,7 +51,7 @@ The Importer's bookmark for one Device: the last segment file and offset it turn
 _Avoid_: Cursor, checkpoint, since
 
 **Import batch**:
-One Importer run's new Activities, the Progress each Device moves to, and the run's status. Written in one transaction, so a failed write leaves none of them. Planned in #114, not built: today the three land in separate writes.
+One Importer run's new Activities, the Progress each Device moves to, and the run's status. Written in one transaction, so a failed write leaves none of them.
 _Avoid_: Import, sync, chunk
 
 **Host**:

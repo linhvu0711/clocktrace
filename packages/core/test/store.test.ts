@@ -798,9 +798,7 @@ describe("store", () => {
     );
     // Then
     expect(activities).toHaveLength(2);
-    expect(progress).toEqual(
-      Option.some('{"segment":"s","offset":1,"ts":1}'),
-    );
+    expect(progress).toEqual(Option.some('{"segment":"s","offset":1,"ts":1}'));
     expect(status).toEqual(Option.some("ok"));
   });
 

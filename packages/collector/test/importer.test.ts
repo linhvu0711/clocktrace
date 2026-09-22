@@ -1,12 +1,14 @@
 import { readFileSync } from "node:fs";
 
-import { Store } from "@clocktrace/core";
+import { type ImportBatch, Store, StoreError } from "@clocktrace/core";
 import {
   DateTime,
   Effect,
+  Either,
   Layer,
   Option,
   Ref,
+  Schema,
   Stream,
   TestClock,
   TestContext,
@@ -14,7 +16,13 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { BiomeExitError, Helper } from "../src/helper.js";
-import { importOnce, importProgressKey, importTick } from "../src/importer.js";
+import {
+  ImportResult,
+  importOnce,
+  importProgressKey,
+  importStatusKey,
+  importTick,
+} from "../src/importer.js";
 import { MacIdentity } from "../src/mac-identity.js";
 import type { Permissions } from "../src/permissions.js";
 
@@ -172,6 +180,7 @@ const run = <A, E>(
       | ReadonlyArray<string>
       | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
       | "ref";
+    store?: Layer.Layer<Store, never, Store>;
   },
   macos: string,
   inside: (ctx: Ctx) => Effect.Effect<A, E, Helper | Store | MacIdentity>,
@@ -221,9 +230,43 @@ const run = <A, E>(
         }),
       );
       return yield* inside({ calls, sinces, devicesRef, recordsRef }).pipe(
-        Effect.provide(Layer.mergeAll(stubHelper, Store.Test, stubMac)),
+        Effect.provide(
+          Layer.mergeAll(
+            stubHelper,
+            Store.Test,
+            stubMac,
+            spec.store === undefined
+              ? Layer.empty
+              : Layer.provide(spec.store, Store.Test),
+          ),
+        ),
       );
     }).pipe(Effect.provide(TestContext.TestContext)),
+  );
+
+const spyStore = (
+  batches: Ref.Ref<ReadonlyArray<ImportBatch>>,
+  failNext: Ref.Ref<boolean>,
+): Layer.Layer<Store, never, Store> =>
+  Layer.effect(
+    Store,
+    Effect.map(
+      Store,
+      (s) =>
+        new Store({
+          ...s,
+          writeImportBatch: (batch) =>
+            Ref.getAndSet(failNext, false).pipe(
+              Effect.flatMap((fail) =>
+                fail
+                  ? Effect.fail(new StoreError({ cause: "disk full" }))
+                  : Ref.update(batches, (bs) => [...bs, batch]).pipe(
+                      Effect.andThen(s.writeImportBatch(batch)),
+                    ),
+              ),
+            ),
+        }),
+    ),
   );
 
 const t = (s: string) => DateTime.unsafeMake(s);
@@ -877,5 +920,125 @@ describe("importer", () => {
         endedAt: "2026-09-19T16:10:00.000Z",
       },
     ]);
+  });
+
+  it("a failed Import batch leaves no Activities and the next run writes them once", async () => {
+    // Given: the first batch write fails
+    const batches = await Effect.runPromise(
+      Ref.make<ReadonlyArray<ImportBatch>>([]),
+    );
+    const failNext = await Effect.runPromise(Ref.make(true));
+    const result = await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL,
+        store: spyStore(batches, failNext),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          // When
+          const first = yield* Effect.either(importOnce("/stub"));
+          const store = yield* Store;
+          const afterFail = (yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          })).length;
+          const second = yield* Effect.either(importOnce("/stub"));
+          const afterRetry = (yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          })).length;
+          return { first, second, afterFail, afterRetry };
+        }),
+    );
+    const written = await Effect.runPromise(Ref.get(batches));
+    // Then
+    expect(Either.isLeft(result.first)).toBe(true);
+    if (Either.isLeft(result.first)) {
+      expect(result.first.left).toBeInstanceOf(StoreError);
+    }
+    expect(Either.isRight(result.second)).toBe(true);
+    expect(result.afterFail).toBe(0);
+    expect(result.afterRetry).toBe(3);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.activities).toHaveLength(3);
+  });
+
+  it("a run with no new records writes only the status", async () => {
+    // Given: a first run already imported every record
+    const batches = await Effect.runPromise(
+      Ref.make<ReadonlyArray<ImportBatch>>([]),
+    );
+    const failNext = await Effect.runPromise(Ref.make(false));
+    // When
+    await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL,
+        store: spyStore(batches, failNext),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          yield* importOnce("/stub");
+        }),
+    );
+    const written = await Effect.runPromise(Ref.get(batches));
+    // Then
+    expect(written).toHaveLength(2);
+    expect(written[1]?.activities).toEqual([]);
+    expect(written[1]?.settings.map((s) => s.key)).toEqual([importStatusKey]);
+  });
+
+  it("a failed Import batch records broken and keeps the prior sync data", async () => {
+    // Given: a successful run, then a failing batch write
+    const batches = await Effect.runPromise(
+      Ref.make<ReadonlyArray<ImportBatch>>([]),
+    );
+    const failNext = await Effect.runPromise(Ref.make(false));
+    const { status, count } = await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL,
+        store: spyStore(batches, failNext),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          // When
+          yield* Ref.set(failNext, true);
+          yield* importTick("/stub");
+          const store = yield* Store;
+          return {
+            status: yield* store.getSetting(importStatusKey),
+            count: (yield* store.readActivities({
+              from: t("2026-09-19T00:00:00.000Z"),
+              to: t("2026-09-20T00:00:00.000Z"),
+            })).length,
+          };
+        }),
+    );
+    // Then
+    expect(count).toBe(3);
+    expect(Option.isSome(status)).toBe(true);
+    if (Option.isSome(status)) {
+      const parsed = Schema.decodeUnknownSync(ImportResult)(status.value);
+      expect(parsed.state).toBe("broken");
+      if (parsed.state === "broken") {
+        expect(parsed.devices).toEqual([
+          {
+            externalId: P2,
+            lastSync: DateTime.unsafeMake("2026-09-19T17:00:00.000Z"),
+          },
+          {
+            externalId: P3,
+            lastSync: DateTime.unsafeMake("2026-09-17T17:00:00.000Z"),
+          },
+        ]);
+      }
+    }
   });
 });

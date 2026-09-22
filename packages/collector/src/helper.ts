@@ -154,9 +154,7 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
       biomeDevices: (path: string) =>
         runBiome(Command.make(path, "biome", "devices")),
       biomeRecords: (path: string, since: ReadonlyMap<string, number>) =>
-        runBiome(
-          Command.make(path, "biome", "records", ...sinceArgs(since)),
-        ),
+        runBiome(Command.make(path, "biome", "records", ...sinceArgs(since))),
     };
   }),
   dependencies: [NodeContext.layer],

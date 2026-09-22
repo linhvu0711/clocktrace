@@ -1,4 +1,4 @@
-import { Store, type StoreError } from "@clocktrace/core";
+import { type NewActivity, Store, type StoreError } from "@clocktrace/core";
 import {
   Cause,
   DateTime,
@@ -205,9 +205,7 @@ export const importOnce = (
         progress.set(externalId, decoded.value);
       }
     }
-    const since = new Map(
-      [...progress].map(([id, p]) => [id, p.ts] as const),
-    );
+    const since = new Map([...progress].map(([id, p]) => [id, p.ts] as const));
 
     let recordTexts: ReadonlyArray<string>;
     let reason: string | null = null;
@@ -243,34 +241,29 @@ export const importOnce = (
       string,
       { segment: string; offset: number; ts: number }
     >();
-    let count = 0;
+    const activities: Array<NewActivity> = [];
 
-    const close = (
-      externalId: string,
-      endedAt: DateTime.Utc,
-    ): Effect.Effect<void, ParseError | StoreError> =>
-      Effect.gen(function* () {
-        const o = open.get(externalId);
-        if (o === undefined) {
-          return;
-        }
-        open.delete(externalId);
-        if (
-          !isDroppedBundleId(o.bundleId) &&
-          DateTime.distance(o.startedAt, endedAt) >= minActivityMillis
-        ) {
-          yield* store.insertActivity({
-            deviceId: o.deviceId,
-            bundleId: o.bundleId,
-            appName: o.bundleId,
-            title: null,
-            url: null,
-            startedAt: o.startedAt,
-            endedAt,
-          });
-          count += 1;
-        }
-      });
+    const close = (externalId: string, endedAt: DateTime.Utc): void => {
+      const o = open.get(externalId);
+      if (o === undefined) {
+        return;
+      }
+      open.delete(externalId);
+      if (
+        !isDroppedBundleId(o.bundleId) &&
+        DateTime.distance(o.startedAt, endedAt) >= minActivityMillis
+      ) {
+        activities.push({
+          deviceId: o.deviceId,
+          bundleId: o.bundleId,
+          appName: o.bundleId,
+          title: null,
+          url: null,
+          startedAt: o.startedAt,
+          endedAt,
+        });
+      }
+    };
 
     for (const text of recordTexts) {
       const line = yield* decodeBiomeLine(text);
@@ -294,14 +287,14 @@ export const importOnce = (
       }
       const ts = DateTime.unsafeMake(line.ts * 1000);
       if (line.focus === "start") {
-        yield* close(line.device, ts);
+        close(line.device, ts);
         open.set(line.device, {
           deviceId: entry.deviceId,
           bundleId: line.bundleId,
           startedAt: ts,
         });
       } else {
-        yield* close(line.device, ts);
+        close(line.device, ts);
       }
       if (open.get(line.device) === undefined) {
         next.set(line.device, {
@@ -312,22 +305,27 @@ export const importOnce = (
       }
     }
 
-    for (const [externalId, p] of next) {
-      yield* store.setSetting(importProgressKey(externalId), encodeProgress(p));
-    }
-
-    yield* store.setSetting(
-      importStatusKey,
-      encodeResult(
-        reason === null
-          ? { state: "ok", at: now, devices: syncs }
-          : { state: "broken", at: now, reason, devices: syncs },
-      ),
-    );
+    yield* store.writeImportBatch({
+      activities,
+      settings: [
+        ...[...next].map(([externalId, p]) => ({
+          key: importProgressKey(externalId),
+          value: encodeProgress(p),
+        })),
+        {
+          key: importStatusKey,
+          value: encodeResult(
+            reason === null
+              ? { state: "ok", at: now, devices: syncs }
+              : { state: "broken", at: now, reason, devices: syncs },
+          ),
+        },
+      ],
+    });
 
     if (devices.size > 0) {
       yield* Effect.logInfo("iOS import done").pipe(
-        Effect.annotateLogs("activities", count),
+        Effect.annotateLogs("activities", activities.length),
       );
     }
   });
