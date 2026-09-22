@@ -86,12 +86,15 @@ export const printRemovedProject = (
 ): Effect.Effect<
   void,
   ProjectNotFoundError | ProjectInUseError | StoreError,
-  Store | Prompt
+  Store | Prompt | Style
 > =>
-  Effect.andThen(
-    removeProject(id),
-    report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
-  );
+  Effect.gen(function* () {
+    const look = yield* Style;
+    yield* removeProject(id);
+    yield* report(json, { removed: id }, ({ removed }) => [
+      line([mark("ok", look), ` removed project ${removed}`], look),
+    ]);
+  });
 
 const id = Options.text("id").pipe(
   Options.optional,

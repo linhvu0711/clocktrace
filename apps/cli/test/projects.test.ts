@@ -165,7 +165,7 @@ describe("projects", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       const { p, projects } = exit.value;
-      expect(output).toEqual([`removed ${p.id}`]);
+      expect(output).toEqual([`✔ removed project ${p.id}`]);
       expect(projects).toEqual([]);
     }
   });
