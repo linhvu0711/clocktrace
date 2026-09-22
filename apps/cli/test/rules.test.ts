@@ -21,9 +21,7 @@ const EmptyStore = Layer.scoped(
   Effect.map(openStore(":memory:"), (shape) => new Store(shape)),
 );
 
-const runPrint = <A, E>(
-  body: Effect.Effect<A, E, Store | Prompt | Style>,
-) =>
+const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* MockTerminal.make(false);

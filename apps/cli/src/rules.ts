@@ -21,20 +21,16 @@ import {
   count,
   line,
   mark,
-  span,
   Style,
+  span,
 } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 
-const ruleWhen = (r: Rule): string =>
-  `${r.field} ${r.compare} "${r.value}"`;
+const ruleWhen = (r: Rule): string => `${r.field} ${r.compare} "${r.value}"`;
 
-const ruleThen = (
-  r: Rule,
-  names: ReadonlyMap<string, string>,
-): Cell =>
+const ruleThen = (r: Rule, names: ReadonlyMap<string, string>): Cell =>
   r.effect === "private"
     ? span("warn", "private")
     : `${r.effect} ${names.get(r.target ?? "") ?? r.target}`;
@@ -77,10 +73,7 @@ export const printRules = (
       rules.length === 0
         ? ["none"]
         : [
-            ...columns(
-              [header, ...rules.map((r) => ruleRow(r, names))],
-              look,
-            ),
+            ...columns([header, ...rules.map((r) => ruleRow(r, names))], look),
             line(
               [span("dim", `  ${count(rules.length, "rule", "rules")}`)],
               look,

@@ -18,8 +18,8 @@ import {
   count,
   line,
   mark,
-  span,
   Style,
+  span,
 } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";

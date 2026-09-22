@@ -12,9 +12,7 @@ import { Prompt } from "../src/prompt.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
 
-const runPrint = <A, E>(
-  body: Effect.Effect<A, E, Store | Prompt | Style>,
-) =>
+const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* MockTerminal.make(false);
@@ -86,9 +84,7 @@ describe("projects", () => {
     if (Exit.isSuccess(exit)) {
       const projects = exit.value;
       expect(projects.length).toBe(1);
-      expect(output).toEqual([
-        `✔ created project Thesis · ${projects[0]?.id}`,
-      ]);
+      expect(output).toEqual([`✔ created project Thesis · ${projects[0]?.id}`]);
     }
   });
 
@@ -105,9 +101,7 @@ describe("projects", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
-      expect(output).toEqual([
-        `✔ updated project Paper · ${exit.value.id}`,
-      ]);
+      expect(output).toEqual([`✔ updated project Paper · ${exit.value.id}`]);
     }
   });
 

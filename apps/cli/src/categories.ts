@@ -18,8 +18,8 @@ import {
   count,
   line,
   mark,
-  span,
   Style,
+  span,
 } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
@@ -47,10 +47,7 @@ export const printCategories = (
       categories.length === 0
         ? ["none"]
         : [
-            ...columns(
-              [header, ...categories.map(categoryRow)],
-              look,
-            ),
+            ...columns([header, ...categories.map(categoryRow)], look),
             line(
               [
                 span(
