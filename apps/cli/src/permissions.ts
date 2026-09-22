@@ -4,10 +4,10 @@ import {
   appPath,
   browserName,
   type GrantState,
-  noAnswerNote,
   Helper,
   type HelperExitedError,
   type Launchd,
+  noAnswerNote,
   type PermissionItem,
   permissionItems,
 } from "@clocktrace/collector";
