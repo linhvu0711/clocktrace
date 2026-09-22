@@ -87,7 +87,9 @@ const pickHosts: Effect.Effect<
 
 // launchctl bootstrap returns before a RunAtLoad agent has reached running,
 // so poll the state for a bounded window instead of trusting one sample.
-const defaultLoadRetry = Schedule.recurs(20).pipe(
+// A re-run boots the agent out first, and relaunching a KeepAlive job after
+// bootout takes longer than the fresh-install path, so the window covers it.
+const defaultLoadRetry = Schedule.recurs(60).pipe(
   Schedule.addDelay(() => "100 millis"),
 );
 
