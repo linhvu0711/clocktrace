@@ -62,6 +62,10 @@ _Avoid_: Import, sync, chunk
 An AI app that starts the MCP server and gives its model our tools. v0 registers with Claude Code, Codex, Hermes Agent, and OpenClaw.
 _Avoid_: Client, agent app, harness, IDE
 
+**Registration**:
+The entry `setup` writes into one Host's config that tells it how to start our MCP server. It holds the absolute `node` and entry file paths, never a bare command, and every `setup` run rewrites it (ADR 0008).
+_Avoid_: MCP entry, server entry, host config
+
 **Twin**:
 The CLI command that pairs with an MCP tool: `clocktrace rules add` is the Twin of `add_rule`. Both call one core function and neither has logic of its own. Every tool has one (ADR 0006).
 _Avoid_: Alias, wrapper, mirror, subcommand
