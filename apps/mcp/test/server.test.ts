@@ -1269,6 +1269,7 @@ describe("server", () => {
     // Then
     const expected = {
       collector: "running",
+      app: "present",
       permissions: [
         { name: "accessibility", state: "granted", note: null },
         { name: "full disk access", state: "granted", note: null },
@@ -1330,6 +1331,8 @@ describe("server", () => {
     const expected = {
       collector: "running",
       app: "missing",
+      iosImport: null,
+      devices: [],
       permissions: [
         { name: "accessibility", state: "not checked", note: null },
         { name: "full disk access", state: "not checked", note: null },

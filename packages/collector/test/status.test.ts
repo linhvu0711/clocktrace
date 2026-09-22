@@ -78,7 +78,7 @@ const runAt = <A>(
   inside: Effect.Effect<
     A,
     unknown,
-    Store | Helper | Launchd | DateTime.CurrentTimeZone
+    Store | Helper | Launchd | App | DateTime.CurrentTimeZone
   >,
 ) =>
   Effect.runPromise(
@@ -87,7 +87,12 @@ const runAt = <A>(
       const state = yield* Ref.make(launchdState);
       return yield* inside.pipe(
         Effect.provide(
-          Layer.mergeAll(stubHelper(p), fakeLaunchd(state), Store.Test),
+          Layer.mergeAll(
+            stubHelper(p),
+            fakeLaunchd(state),
+            Store.Test,
+            App.Test,
+          ),
         ),
         Effect.withConfigProvider(config),
         DateTime.withCurrentZoneNamed("America/Los_Angeles"),
