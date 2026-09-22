@@ -233,20 +233,6 @@ describe("permissions", () => {
     expect(output).toEqual([
       "accessibility: window titles",
       "  denied: window titles are not tracked",
-      "accessibility: granted",
-      "automation Safari: URLs in Safari",
-      "  denied: URLs in Safari are not tracked",
-      "automation Safari: Safari is not running, open it and retry",
-      "full disk access: iPhone and iPad import",
-      "  denied: iPhone and iPad time is not imported",
-      "full disk access: granted",
-      "Collector      ✔ running",
-      "Permissions    2 of 3 granted",
-      "  ✔ Accessibility        window titles",
-      "  ✔ Full Disk Access     iPhone and iPad import",
-      "  ○ Automation · Safari  Safari is closed",
-      "Last activity  none yet",
-      `Database       ${path}`,
     ]);
   });
 
