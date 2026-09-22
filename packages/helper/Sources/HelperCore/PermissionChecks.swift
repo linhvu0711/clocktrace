@@ -44,3 +44,9 @@ public func requestFullDiskAccess(reads: PermissionReads = .live) -> Int32 {
   reads.openSettings(fullDiskAccessSettingsUrl)
   return 0
 }
+
+// `open -W` returns 0 whatever the app exits, so the request outcome
+// travels as a JSON line on stdout, not as an exit code.
+public func requestOutcomeLine(exitCode: Int32) -> String {
+  exitCode == 3 ? "{\"outcome\":\"notRunning\"}" : "{\"outcome\":\"asked\"}"
+}

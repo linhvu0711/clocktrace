@@ -1,4 +1,4 @@
-import { Helper, Launchd } from "@clocktrace/collector";
+import { App, Helper, Launchd } from "@clocktrace/collector";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { DateTime, Effect, Layer } from "effect";
 
@@ -13,6 +13,7 @@ export const serveStdio = async (): Promise<void> => {
       InstalledStore(path),
       Launchd.Default,
       Helper.Default,
+      App.Default,
       DateTime.layerCurrentZoneLocal,
     ),
   );

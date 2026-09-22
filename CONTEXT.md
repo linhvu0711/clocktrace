@@ -10,6 +10,10 @@ Automatic time tracking for a Mac, queried through an AI agent or the terminal i
 One continuous span of time in one app, with its window title and URL when known. The raw unit of tracked time. Activities are never edited after they are written.
 _Avoid_: Event, session, entry, log
 
+**App**:
+`~/Applications/Clocktrace.app`, the bundle `setup` writes whose main program is the Helper binary. It owns the macOS Accessibility, Automation, and Full Disk Access grants: the Collector and `permissions`/`status` run through it, and it must not be moved.
+_Avoid_: Bundle, wrapper, launcher
+
 **Collector**:
 The background process that watches the Mac and writes Activities. Runs as a per-user launchd agent.
 _Avoid_: Tracker, daemon, watcher, recorder

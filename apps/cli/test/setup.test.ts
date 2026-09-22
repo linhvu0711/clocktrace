@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  App,
+  AppError,
+  appMainPath,
+  appPath,
   entryPath,
   fakeLaunchd,
   Helper,
@@ -88,6 +92,18 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
   streamLines: () => Stream.empty,
 } satisfies CommandExecutor.CommandExecutor);
 
+// Tracks how many bundles were written; isInstalled flips true after
+// the first install, like the real app on disk.
+const fakeApp = (installs: Ref.Ref<number>) =>
+  Layer.succeed(
+    App,
+    new App({
+      isInstalled: () => Effect.map(Ref.get(installs), (n) => n > 0),
+      install: () =>
+        Ref.update(installs, (n) => n + 1).pipe(Effect.as("written" as const)),
+    }),
+  );
+
 const manualLines = hostNames.map(
   (h) => `${hostLabel[h]}: ${manualCommand[h]}`,
 );
@@ -124,6 +140,7 @@ describe("setup", () => {
         readonly bootstrapStuck?: boolean;
         readonly stalledSamples?: number;
       };
+      readonly app?: Layer.Layer<App>;
     } = {},
   ) =>
     Effect.runPromise(
@@ -139,6 +156,7 @@ describe("setup", () => {
               );
         }
         const state = yield* Ref.make(launchdState);
+        const appInstalls = yield* Ref.make(0);
         const layers = Layer.mergeAll(
           Console.setConsole(console),
           NodeContext.layer,
@@ -149,6 +167,7 @@ describe("setup", () => {
             : Layer.succeed(Stdin, new Stdin({ isTTY: Effect.succeed(false) })),
           fakeLaunchd(state, opts.launchd),
           helperLayer,
+          opts.app ?? fakeApp(appInstalls),
           Hosts.Default,
           noCommandsLayer,
           Style.Test,
@@ -161,6 +180,7 @@ describe("setup", () => {
           output: yield* console.getLines({ stripAnsi: true }),
           shown: yield* terminal.shown,
           state: yield* Ref.get(state),
+          appInstalls: yield* Ref.get(appInstalls),
         };
       }).pipe(
         Effect.withConfigProvider(
@@ -176,6 +196,7 @@ describe("setup", () => {
     );
 
   const expectedWalk = () => [
+    "no terminal, skipping questions",
     "accessibility: window titles",
     "  denied: window titles are not tracked",
     "accessibility: granted",
@@ -191,33 +212,39 @@ describe("setup", () => {
     ...manualLines,
   ];
 
-  it("setup creates the database, installs the Collector, walks the permissions, and prints the manual commands", async () => {
+  it("setup writes the app, installs the Collector, walks the permissions, and prints the manual commands", async () => {
     // Given: no plist and no database file
     // When
-    const { exit, output, state } = await run(helperStub(allGranted), {
-      installed: false,
-      running: false,
-      plist: null,
-      installs: 0,
-    });
+    const { exit, output, state, appInstalls } = await run(
+      helperStub(allGranted),
+      {
+        installed: false,
+        running: false,
+        plist: null,
+        installs: 0,
+      },
+    );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
+      `app: written ${appPath}`,
       `launchd agent: written ${plistPath}`,
-      "no terminal, skipping questions",
       ...expectedWalk(),
     ]);
+    expect(appInstalls).toBe(1);
     expect(existsSync(path)).toBe(true);
     expect(state.installed).toBe(true);
     expect(state.running).toBe(true);
     expect(state.installs).toBe(1);
+    expect(state.plist).toContain(`<string>${appMainPath}</string>`);
+    expect(state.plist).toContain("<string>spawn</string>");
     expect(state.plist).toContain(`<string>${process.execPath}</string>`);
     expect(state.plist).toContain(`<string>${entryPath}</string>`);
     expect(state.plist).toContain(`<string>${path}</string>`);
     expect(state.plist).toContain("<string>/stub</string>");
   });
 
-  it("setup again keeps the database and the agent and runs only permissions", async () => {
+  it("setup again rewrites the app and the agent and walks the permissions", async () => {
     // Given: one setup already run
     const first = await run(helperStub(allGranted), {
       installed: false,
@@ -230,10 +257,11 @@ describe("setup", () => {
     // Then
     expect(Exit.isSuccess(second.exit)).toBe(true);
     expect(second.output).toEqual([
-      "no terminal, skipping questions",
+      `app: written ${appPath}`,
+      `launchd agent: written ${plistPath}`,
       ...expectedWalk(),
     ]);
-    expect(second.state.installs).toBe(1);
+    expect(second.state.installs).toBe(2);
     expect(existsSync(path)).toBe(true);
   });
 
@@ -309,7 +337,7 @@ describe("setup", () => {
     expect(shown).not.toContain("Hosts");
   });
 
-  it("setup repairs a not-loaded Collector on a re-run", async () => {
+  it("setup rewrites and reloads the agent on a re-run", async () => {
     // Given: the plist present but the Collector not loaded
     const { exit, state } = await run(helperStub(allGranted), {
       installed: true,
@@ -317,39 +345,41 @@ describe("setup", () => {
       plist: "<plist>",
       installs: 1,
     });
-    // Then: the re-run loads the Collector without re-installing
+    // Then: the re-run rewrites the agent and loads the Collector
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(state.running).toBe(true);
-    expect(state.installs).toBe(1);
+    expect(state.installs).toBe(2);
+    expect(state.plist).toContain("<string>spawn</string>");
   });
 
   it("setup fails loudly when the load step fails", async () => {
     // Given: the plist present, not loaded, and the load step fails
-    const { exit, output } = await run(
+    const { exit, output, state } = await run(
       helperStub(allGranted),
       { installed: true, running: false, plist: "<plist>", installs: 1 },
       "/stub",
       { launchd: { failBootstrap: true } },
     );
-    // Then: it fails with the launchd error and never reaches registration
+    // Then: it fails with the launchd error and never reaches the agent
     expect(exit).toEqual(
       Exit.fail(
         new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
       ),
     );
-    expect(output).toEqual([]);
+    expect(output).toEqual([`app: written ${appPath}`]);
+    expect(state.installs).toBe(1);
   });
 
-  it("setup fails when the load reports success but the Collector stays stopped", async () => {
+  it("a rewrite that never starts puts the previous agent back", async () => {
     // Given: the plist present, not loaded; the load returns success but the
     // Collector never comes up (launchctl bootstrap exit 5 on a bad plist)
-    const { exit, output } = await run(
+    const { exit, output, state } = await run(
       helperStub(allGranted),
       { installed: true, running: false, plist: "<plist>", installs: 1 },
       "/stub",
       { launchd: { bootstrapStuck: true } },
     );
-    // Then: setup fails loudly, never reaches registration, keeps the plist
+    // Then: setup fails loudly and restores the previous agent
     expect(exit).toEqual(
       Exit.fail(
         new LaunchdError({
@@ -358,7 +388,13 @@ describe("setup", () => {
         }),
       ),
     );
-    expect(output).toEqual([]);
+    expect(output).toEqual([
+      `app: written ${appPath}`,
+      `launchd agent: written ${plistPath}`,
+    ]);
+    expect(state.plist).toBe("<plist>");
+    expect(state.installed).toBe(true);
+    expect(state.installs).toBe(3);
   });
 
   it("setup tolerates a slow startup and then succeeds", async () => {
@@ -414,22 +450,29 @@ describe("setup", () => {
     expect(state.installs).toBe(0);
   });
 
-  it("a failed repair leaves the plist untouched", async () => {
-    // Given: the plist present, not loaded, and the load step fails
-    const { exit, state } = await run(
+  it("a failed app install stops setup before the agent", async () => {
+    // Given: the app install fails at codesign; no plist
+    const appFails = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(false),
+        install: () =>
+          Effect.fail(new AppError({ step: "codesign", detail: "exit 1" })),
+      }),
+    );
+    // When
+    const { exit, output, state } = await run(
       helperStub(allGranted),
-      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      { installed: false, running: false, plist: null, installs: 0 },
       "/stub",
-      { launchd: { failBootstrap: true } },
+      { app: appFails },
     );
-    // Then: the existing plist is left untouched
+    // Then
     expect(exit).toEqual(
-      Exit.fail(
-        new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
-      ),
+      Exit.fail(new AppError({ step: "codesign", detail: "exit 1" })),
     );
-    expect(state.plist).toBe("<plist>");
-    expect(state.installs).toBe(1);
+    expect(state.installs).toBe(0);
+    expect(output).toEqual([]);
   });
 
   it("--hosts on a terminal registers the named without a checklist", async () => {

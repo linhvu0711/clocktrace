@@ -141,6 +141,22 @@ final class PermissionsTests: XCTestCase {
       ["x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"])
   }
 
+  func testOutcomeLineForExit0() {
+    // Given: exit code 0
+    // When
+    let line = requestOutcomeLine(exitCode: 0)
+    // Then
+    XCTAssertEqual(line, "{\"outcome\":\"asked\"}")
+  }
+
+  func testOutcomeLineForExit3() {
+    // Given: exit code 3
+    // When
+    let line = requestOutcomeLine(exitCode: 3)
+    // Then
+    XCTAssertEqual(line, "{\"outcome\":\"notRunning\"}")
+  }
+
   func testFullDiskAccessGrantedWhenTheSyncDbOpens() {
     // Given: the same reads, but sync.db opens
     let reads = reads(canOpenBiomeSyncDb: { true })

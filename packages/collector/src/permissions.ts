@@ -105,3 +105,9 @@ export const requestArgs = (r: GrantRequest): ReadonlyArray<string> => {
 export const RequestOutcome = Schema.Literal("asked", "notRunning");
 
 export type RequestOutcome = Schema.Schema.Type<typeof RequestOutcome>;
+
+export const RequestOutcomeLine = Schema.parseJson(
+  Schema.Struct({ outcome: Schema.Literal("asked", "notRunning") }),
+);
+
+export const decodeRequestOutcome = Schema.decodeUnknown(RequestOutcomeLine);

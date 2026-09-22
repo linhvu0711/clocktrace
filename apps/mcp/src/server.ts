@@ -1,4 +1,5 @@
 import {
+  type App,
   type Helper,
   type HelperExitedError,
   type HelperNotFoundError,
@@ -66,6 +67,7 @@ export type Services =
   | AppStore
   | Launchd
   | Helper
+  | App
   | DateTime.CurrentTimeZone;
 
 type ToolError =
@@ -413,10 +415,11 @@ export const makeServer = async (
     "status",
     {
       description:
-        "Whether the Collector runs, each permission with its state and what is lost while denied, the last Activity time, the iOS import state, and each iPhone and iPad with its last sync and last Activity, and the database path.",
+        "Whether the Collector runs, whether the app that owns the grants is present, each permission with its state and what is lost while denied, the last Activity time, the iOS import state, and each iPhone and iPad with its last sync and last Activity, and the database path.",
       inputSchema: {},
       outputSchema: {
         collector: z.enum(["running", "stopped"]),
+        app: z.enum(["present", "missing"]),
         permissions: z.array(PermissionLineOut),
         lastActivity: z.string().nullable(),
         iosImport: IosImportOut.nullable(),

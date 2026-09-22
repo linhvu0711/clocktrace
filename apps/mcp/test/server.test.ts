@@ -2,10 +2,10 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  App,
   fakeLaunchd,
   Helper,
   HelperExitedError,
-  HelperNotFoundError,
   Launchd,
   LaunchdError,
   type LaunchdState,
@@ -43,9 +43,10 @@ const config = Layer.setConfigProvider(
 
 const connect = async (
   store: Layer.Layer<Store, StoreLayerError>,
-  collector: Layer.Layer<Launchd | Helper> = Layer.merge(
+  collector: Layer.Layer<Launchd | Helper | App> = Layer.mergeAll(
     Launchd.Test,
     Helper.Test,
+    App.Test,
   ),
 ) => {
   const { server, dispose } = await makeServer(
@@ -1138,6 +1139,7 @@ describe("server", () => {
     // Then
     const expected = {
       collector: "running",
+      app: "present",
       permissions: [
         { name: "accessibility", state: "granted", note: null },
         { name: "full disk access", state: "granted", note: null },
@@ -1169,7 +1171,7 @@ describe("server", () => {
     );
     const { client, close } = await connect(
       EmptyStore,
-      Layer.merge(Launchd.Test, failingHelper),
+      Layer.mergeAll(Launchd.Test, failingHelper, App.Test),
     );
     // When
     const result = await callTool(client, { name: "status", arguments: {} });
@@ -1178,38 +1180,6 @@ describe("server", () => {
     expect(result.isError).toBe(true);
     expect(text(result)).toBe("helper exited: boom");
     expect(text(result).length).toBeGreaterThan(0);
-  });
-
-  it("a tool returns the helper-not-found text", async () => {
-    // Given: a Helper whose check fails with HelperNotFoundError
-    const missingHelper = Layer.succeed(
-      Helper,
-      new Helper({
-        check: () => Effect.fail(new HelperNotFoundError({ path: "/stub" })),
-        lines: () => Stream.empty,
-        permissions: () =>
-          Effect.succeed({
-            accessibility: "granted",
-            automation: {},
-            fullDiskAccess: "granted",
-          }),
-        request: () => Effect.succeed("asked"),
-        biomeDevices: () => Effect.succeed([]),
-        biomeRecords: () => Effect.succeed([]),
-      }),
-    );
-    const { client, close } = await connect(
-      EmptyStore,
-      Layer.merge(Launchd.Test, missingHelper),
-    );
-    // When
-    const result = await callTool(client, { name: "status", arguments: {} });
-    await close();
-    // Then
-    expect(result.isError).toBe(true);
-    expect(text(result)).toBe(
-      "helper not found at /stub · run pnpm build or set CLOCKTRACE_HELPER",
-    );
   });
 
   it("a tool returns the database-newer text", async () => {
@@ -1236,6 +1206,7 @@ describe("server", () => {
       Launchd,
       new Launchd({
         isInstalled: () => Effect.succeed(true),
+        readPlist: () => Effect.succeed(null),
         install: () => Effect.void,
         bootstrap: () => Effect.void,
         bootout: () => Effect.void,
@@ -1248,7 +1219,7 @@ describe("server", () => {
     );
     const { client, close } = await connect(
       EmptyStore,
-      Layer.merge(failingLaunchd, Helper.Test),
+      Layer.mergeAll(failingLaunchd, Helper.Test, App.Test),
     );
     // When
     const result = await callTool(client, { name: "status", arguments: {} });
@@ -1300,6 +1271,7 @@ describe("server", () => {
     // Then
     const expected = {
       collector: "running",
+      app: "present",
       permissions: [
         { name: "accessibility", state: "granted", note: null },
         { name: "full disk access", state: "granted", note: null },
@@ -1341,17 +1313,51 @@ describe("server", () => {
     expect(status.lastActivity).toBe("2026-09-18T09:40:00.000Z");
   });
 
+  it("status says app missing when the app is gone", async () => {
+    // Given: the Test Launchd (running), the Test Helper, a missing app
+    const appMissing = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(false),
+        install: () => Effect.succeed("written" as const),
+      }),
+    );
+    const { client, close } = await connect(
+      EmptyStore,
+      Layer.mergeAll(Launchd.Test, Helper.Test, appMissing),
+    );
+    // When
+    const result = await callTool(client, { name: "status", arguments: {} });
+    await close();
+    // Then
+    const expected = {
+      collector: "running",
+      app: "missing",
+      iosImport: null,
+      devices: [],
+      permissions: [
+        { name: "accessibility", state: "not checked", note: null },
+        { name: "full disk access", state: "not checked", note: null },
+      ],
+      lastActivity: null,
+      databasePath: dbPath,
+    };
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toEqual(expected);
+  });
+
   it("a stopped Collector: status says stopped, run clocktrace start, and summary still answers", async () => {
     // Given: the seeded day, a stopped Launchd, accessibility denied
     const { client, close } = await connect(
       withActivities(seedDay),
-      Layer.merge(
+      Layer.mergeAll(
         stoppedLaunchd,
         stubHelper({
           accessibility: "denied",
           automation: {},
           fullDiskAccess: "granted",
         }),
+        App.Test,
       ),
     );
     // When

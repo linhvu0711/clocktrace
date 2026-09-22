@@ -59,7 +59,9 @@ export const printRules = (
 ): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     const [rules, categories, projects] = yield* Effect.all([
       store.listRules(),
       store.listCategories(),
@@ -94,7 +96,9 @@ export const printAddedRule = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     const names: ReadonlyMap<string, string> = json
       ? new Map()
       : yield* Effect.flatMap(Store, (store) =>
@@ -126,7 +130,9 @@ export const printRemovedRule = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     yield* removeRule(id);
     yield* report(json, { removed: id }, ({ removed }) => [
       line([mark("ok", look), ` removed rule ${removed}`], look),
