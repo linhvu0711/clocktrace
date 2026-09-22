@@ -70,28 +70,68 @@ export class HostRemoveError extends Data.TaggedError("HostRemoveError")<{
 
 type CliHost = Exclude<HostName, "hermes">;
 
+// The shape a host add command can express; a registration carrying any
+// other field cannot be restored through it.
+type Registration = {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly env: Readonly<Record<string, string>>;
+};
+
 const addArgvFor = (
   host: CliHost,
-  command: string,
-  args: ReadonlyArray<string>,
-): ReadonlyArray<string> =>
-  host === "claude"
-    ? ["mcp", "add", "--scope", "user", "clocktrace", "--", command, ...args]
+  { command, args, env }: Registration,
+): ReadonlyArray<string> => {
+  const pairs = Object.entries(env);
+  return host === "claude"
+    ? [
+        "mcp",
+        "add",
+        "--scope",
+        "user",
+        "clocktrace",
+        ...pairs.flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+        "--",
+        command,
+        ...args,
+      ]
     : host === "codex"
-      ? ["mcp", "add", "clocktrace", "--", command, ...args]
+      ? [
+          "mcp",
+          "add",
+          "clocktrace",
+          ...pairs.flatMap(([k, v]) => ["--env", `${k}=${v}`]),
+          "--",
+          command,
+          ...args,
+        ]
       : [
           "mcp",
           "add",
           "clocktrace",
           "--command",
           command,
+          ...pairs.flatMap(([k, v]) => ["--env", `${k}=${v}`]),
           ...args.flatMap((a) => ["--arg", a]),
         ];
+};
 
 const addArgv: Record<CliHost, ReadonlyArray<string>> = {
-  claude: addArgvFor("claude", serverNode, [serverEntry, "mcp"]),
-  codex: addArgvFor("codex", serverNode, [serverEntry, "mcp"]),
-  openclaw: addArgvFor("openclaw", serverNode, [serverEntry, "mcp"]),
+  claude: addArgvFor("claude", {
+    command: serverNode,
+    args: [serverEntry, "mcp"],
+    env: {},
+  }),
+  codex: addArgvFor("codex", {
+    command: serverNode,
+    args: [serverEntry, "mcp"],
+    env: {},
+  }),
+  openclaw: addArgvFor("openclaw", {
+    command: serverNode,
+    args: [serverEntry, "mcp"],
+    env: {},
+  }),
 };
 
 const removeArgv: Record<CliHost, ReadonlyArray<string>> = {
@@ -103,10 +143,7 @@ const removeArgv: Record<CliHost, ReadonlyArray<string>> = {
 // A failed add must not strand a working registration: before removing we
 // read the entry the host already has, so it can go back through the same
 // add command. The files are read-only here — only the host CLI writes.
-type PriorRegistration = {
-  readonly command: string;
-  readonly args: ReadonlyArray<string>;
-};
+type PriorRegistration = Registration;
 
 const dig = (doc: unknown, path: ReadonlyArray<string>): unknown =>
   path.reduce<unknown>(
@@ -117,20 +154,58 @@ const dig = (doc: unknown, path: ReadonlyArray<string>): unknown =>
     doc,
   );
 
-// Only stdio entries can go back through an argv add; url-based ones have
-// no command to re-add.
+// A map of strings, or null when any value is not one.
+const stringRecord = (value: unknown): Record<string, string> | null => {
+  if (value === undefined) {
+    return {};
+  }
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof v !== "string") {
+      return null;
+    }
+    out[k] = v;
+  }
+  return out;
+};
+
+// Only an entry whose every field the add command can express again is
+// restorable; url transports, cwd, and other extras restore nothing rather
+// than restore a subtly wrong entry.
 const stdioPrior = (value: unknown): PriorRegistration | null => {
   if (typeof value !== "object" || value === null) {
     return null;
   }
-  const entry = value as { command?: unknown; args?: unknown };
-  if (typeof entry.command !== "string") {
+  const entry = value as Record<string, unknown>;
+  if (
+    typeof entry.command !== "string" ||
+    ("type" in entry && entry.type !== "stdio") ||
+    ("transport" in entry && entry.transport !== "stdio") ||
+    Object.keys(entry).some(
+      (k) => !["command", "args", "env", "type", "transport"].includes(k),
+    )
+  ) {
     return null;
   }
-  const args = Array.isArray(entry.args)
-    ? entry.args.filter((a): a is string => typeof a === "string")
-    : [];
-  return { command: entry.command, args };
+  if (
+    entry.args !== undefined &&
+    (!Array.isArray(entry.args) ||
+      entry.args.some((a) => typeof a !== "string"))
+  ) {
+    return null;
+  }
+  const env = stringRecord(entry.env);
+  if (env === null) {
+    return null;
+  }
+  return {
+    command: entry.command,
+    args: (entry.args as ReadonlyArray<string> | undefined) ?? [],
+    env,
+  };
 };
 
 const jsonPrior =
@@ -166,31 +241,69 @@ const unescapeToml = (s: string): string =>
 
 const tomlString = /"((?:[^"\\]|\\.)*)"/g;
 
-// Codex writes a [mcp_servers.clocktrace] table; read back only the
-// command and args strings of that one table.
-const codexPrior = (text: string): PriorRegistration | null => {
-  const header = /^[ \t]*\[mcp_servers\.clocktrace\][ \t]*$/m.exec(text);
+// The lines of a [name] table, up to the next table header.
+const tomlTable = (text: string, name: string): string | null => {
+  const header = new RegExp(`^[ \\t]*\\[${name}\\][ \\t]*$`, "m").exec(text);
   if (header === null) {
     return null;
   }
   const rest = text.slice(header.index + header[0].length);
   const next = /^[ \t]*\[/m.exec(rest);
-  const block = next === null ? rest : rest.slice(0, next.index);
+  return next === null ? rest : rest.slice(0, next.index);
+};
+
+// Codex writes a [mcp_servers.clocktrace] table plus an optional
+// [mcp_servers.clocktrace.env] sub-table. Any other key or sub-table is a
+// field the add command cannot rebuild, so the entry is not restorable.
+const codexPrior = (text: string): PriorRegistration | null => {
+  if (/^[ \t]*\[mcp_servers\.clocktrace\.(?!env\])/m.test(text)) {
+    return null;
+  }
+  const block = tomlTable(text, "mcp_servers\\.clocktrace");
+  if (block === null) {
+    return null;
+  }
+  const keys = block
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "" && !l.startsWith("#"));
+  if (keys.some((l) => !/^(command|args)[ \t]*=/.test(l))) {
+    return null;
+  }
   const command = /^[ \t]*command[ \t]*=[ \t]*"((?:[^"\\]|\\.)*)"/m.exec(
     block,
   )?.[1];
   if (command === undefined) {
     return null;
   }
-  const args = /^[ \t]*args[ \t]*=[ \t]*\[([\s\S]*?)\]/m.exec(block)?.[1];
+  const argsText = /^[ \t]*args[ \t]*=[ \t]*\[([\s\S]*?)\]/m.exec(block)?.[1];
+  const env: Record<string, string> = {};
+  const envBlock = tomlTable(text, "mcp_servers\\.clocktrace\\.env");
+  if (envBlock !== null) {
+    for (const raw of envBlock.split("\n")) {
+      const line = raw.trim();
+      if (line === "" || line.startsWith("#")) {
+        continue;
+      }
+      const pair =
+        /^([A-Za-z0-9_.-]+)[ \t]*=[ \t]*"((?:[^"\\]|\\.)*)"[ \t]*(#[^\n]*)?$/.exec(
+          line,
+        );
+      if (pair === null || pair[1] === undefined || pair[2] === undefined) {
+        return null;
+      }
+      env[pair[1]] = unescapeToml(pair[2]);
+    }
+  }
   return {
     command: unescapeToml(command),
     args:
-      args === undefined
+      argsText === undefined
         ? []
-        : [...args.matchAll(tomlString)].flatMap((m) =>
+        : [...argsText.matchAll(tomlString)].flatMap((m) =>
             m[1] === undefined ? [] : [unescapeToml(m[1])],
           ),
+    env,
   };
 };
 
@@ -401,7 +514,7 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
               return `${hostLabel[host]}: registered`;
             }
             if (prior !== null) {
-              yield* runHost(host, addArgvFor(host, prior.command, prior.args));
+              yield* runHost(host, addArgvFor(host, prior));
             }
             return `${hostLabel[host]}: failed. run by hand: ${manualCommand[host]}`;
           }),

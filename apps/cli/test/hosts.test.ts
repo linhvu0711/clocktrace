@@ -435,6 +435,55 @@ describe("hosts", () => {
     expect(line).toContain("openclaw: failed");
   });
 
+  it("a failed add restores the prior env map too", async () => {
+    // Given: config.toml holds an entry with an [mcp_servers.clocktrace.env]
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.clocktrace]\ncommand = "clocktrace"\nargs = ["mcp"]\n\n[mcp_servers.clocktrace.env]\nCLOCKTRACE_DB = "/work/db.db"\n',
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addCodex]: { code: 1, output: "boom" },
+        "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp":
+          { code: 0 },
+      }),
+    );
+    // When
+    const line = await register("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then
+    expect(recorded).toEqual([
+      removeCodex,
+      addCodex,
+      "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp",
+    ]);
+    expect(line).toContain("codex: failed");
+  });
+
+  it("a failed add does not restore a url-based registration", async () => {
+    // Given: ~/.claude.json holds an http entry argv cannot rebuild
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          clocktrace: { type: "http", url: "https://example.com/mcp" },
+        },
+      }),
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addClaude]: { code: 1, output: "boom" },
+      }),
+    );
+    // When
+    const line = await register("claude", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: remove then add, and no partial restore of a wrong entry
+    expect(recorded).toEqual([removeClaude, addClaude]);
+    expect(line).toContain("claude code: failed");
+  });
+
   it("manual commands quote the node and entry paths", () => {
     expect(manualCommand.claude).toBe(
       `claude mcp add --scope user clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
