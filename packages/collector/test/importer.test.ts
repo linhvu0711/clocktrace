@@ -157,7 +157,7 @@ const allGranted: Permissions = {
 
 interface Ctx {
   calls: Ref.Ref<number>;
-  sinces: Ref.Ref<ReadonlyArray<Option.Option<number>>>;
+  sinces: Ref.Ref<ReadonlyArray<ReadonlyMap<string, number>>>;
   devicesRef: Ref.Ref<ReadonlyArray<string>>;
   recordsRef: Ref.Ref<ReadonlyArray<string>>;
 }
@@ -180,7 +180,9 @@ const run = <A, E>(
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);
       const calls = yield* Ref.make(0);
-      const sinces = yield* Ref.make<ReadonlyArray<Option.Option<number>>>([]);
+      const sinces = yield* Ref.make<
+        ReadonlyArray<ReadonlyMap<string, number>>
+      >([]);
       const devicesRef = yield* Ref.make<ReadonlyArray<string>>([]);
       const recordsRef = yield* Ref.make<ReadonlyArray<string>>([]);
       const deviceEff: Effect.Effect<readonly string[], BiomeExitError> =
@@ -600,7 +602,7 @@ describe("importer", () => {
     });
   });
 
-  it("a second run imports nothing new and passes since", async () => {
+  it("a second run imports nothing new and passes each Device's Progress", async () => {
     // Given: the same devices and records imported twice
     // When
     const result = await run(
@@ -632,8 +634,44 @@ describe("importer", () => {
       offset: 108,
       ts: 1789834200,
     });
-    expect(result.since).toEqual(Option.some("1789834200"));
-    expect(result.sinces).toEqual([Option.none(), Option.some(1789834200)]);
+    expect(result.since).toEqual(Option.none());
+    expect(result.sinces).toEqual([
+      new Map(),
+      new Map([
+        [P2, 1789834260],
+        [P3, 1789834200],
+      ]),
+    ]);
+  });
+
+  it("a Device without Progress does not stop the others' incremental reads", async () => {
+    // Given: an iPhone with records and an iPad with none
+    // When: three import runs
+    const result = await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL.filter((r) => r.includes(P2)),
+      },
+      "27.0",
+      (ctx) =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          yield* importOnce("/stub");
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return {
+            sinces: yield* Ref.get(ctx.sinces),
+            progressP3: yield* store.getSetting(importProgressKey(P3)),
+          };
+        }),
+    );
+    // Then
+    expect(result.sinces).toEqual([
+      new Map(),
+      new Map([[P2, 1789834260]]),
+      new Map([[P2, 1789834260]]),
+    ]);
+    expect(result.progressP3).toEqual(Option.none());
   });
 
   it("an open start at the end of the stream is written once its end arrives", async () => {

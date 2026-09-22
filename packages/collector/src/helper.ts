@@ -1,6 +1,6 @@
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Chunk, Data, Effect, Either, Layer, Option, Stream } from "effect";
+import { Chunk, Data, Effect, Either, Layer, Stream } from "effect";
 
 import {
   decodePermissions,
@@ -50,6 +50,16 @@ export const biomeResult = (
           lines: lines.filter((l) => l !== ""),
         }),
       );
+
+export const sinceArgs = (
+  since: ReadonlyMap<string, number>,
+): ReadonlyArray<string> =>
+  [...since.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .flatMap(([device, seconds]) => [
+      "--since",
+      `${device}=${Math.floor(seconds)}`,
+    ]);
 
 export class Helper extends Effect.Service<Helper>()("Helper", {
   effect: Effect.gen(function* () {
@@ -143,17 +153,9 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
         ),
       biomeDevices: (path: string) =>
         runBiome(Command.make(path, "biome", "devices")),
-      biomeRecords: (path: string, since: Option.Option<number>) =>
+      biomeRecords: (path: string, since: ReadonlyMap<string, number>) =>
         runBiome(
-          Command.make(
-            path,
-            "biome",
-            "records",
-            ...Option.match(since, {
-              onNone: () => [] as ReadonlyArray<string>,
-              onSome: (s) => ["--since", String(Math.floor(s))],
-            }),
-          ),
+          Command.make(path, "biome", "records", ...sinceArgs(since)),
         ),
     };
   }),

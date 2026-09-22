@@ -70,7 +70,6 @@ export type ImportProgress = Schema.Schema.Type<typeof ImportProgress>;
 export const importStatusKey = "importer.status";
 export const importProgressKey = (externalId: string): string =>
   `importer.progress.${externalId}`;
-export const importSinceKey = "importer.since";
 
 interface Open {
   readonly deviceId: string;
@@ -206,10 +205,9 @@ export const importOnce = (
         progress.set(externalId, decoded.value);
       }
     }
-    const since =
-      devices.size > 0 && [...devices.keys()].every((id) => progress.has(id))
-        ? Option.some(Math.min(...[...progress.values()].map((p) => p.ts)))
-        : Option.none<number>();
+    const since = new Map(
+      [...progress].map(([id, p]) => [id, p.ts] as const),
+    );
 
     let recordTexts: ReadonlyArray<string>;
     let reason: string | null = null;
@@ -316,17 +314,6 @@ export const importOnce = (
 
     for (const [externalId, p] of next) {
       yield* store.setSetting(importProgressKey(externalId), encodeProgress(p));
-    }
-    const latest = (externalId: string) =>
-      next.get(externalId) ?? progress.get(externalId);
-    if (
-      devices.size > 0 &&
-      [...devices.keys()].every((id) => latest(id) !== undefined)
-    ) {
-      const minTs = Math.min(
-        ...[...devices.keys()].map((id) => latest(id)?.ts ?? 0),
-      );
-      yield* store.setSetting(importSinceKey, String(minTs));
     }
 
     yield* store.setSetting(

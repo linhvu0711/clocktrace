@@ -1,7 +1,7 @@
 import { Either } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { biomeResult, HelperExitedError } from "../src/helper.js";
+import { biomeResult, HelperExitedError, sinceArgs } from "../src/helper.js";
 
 describe("HelperExitedError", () => {
   it("HelperExitedError names the cause", () => {
@@ -36,5 +36,30 @@ describe("HelperExitedError", () => {
         "helper biome exited 4: no App.InFocus remote folder",
       );
     }
+  });
+
+  it("sinceArgs writes one --since per Device", () => {
+    // Given: Progress for two devices, one with a fractional ts
+    const map = new Map([
+      ["b-device", 200.7],
+      ["a-device", 150],
+    ]);
+    // When
+    const args = sinceArgs(map);
+    // Then
+    expect(args).toEqual([
+      "--since",
+      "a-device=150",
+      "--since",
+      "b-device=200",
+    ]);
+  });
+
+  it("sinceArgs is empty without Progress", () => {
+    // Given: no Progress
+    // When
+    const args = sinceArgs(new Map());
+    // Then
+    expect(args).toEqual([]);
   });
 });
