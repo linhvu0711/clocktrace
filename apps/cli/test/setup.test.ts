@@ -13,6 +13,7 @@ import {
   HelperNotFoundError,
   LaunchdError,
   type LaunchdState,
+  logPath,
   type Permissions,
   plistPath,
 } from "@clocktrace/collector";
@@ -41,6 +42,7 @@ import {
   hostNames,
   manualCommand,
 } from "../src/hosts.js";
+import { ReportedError } from "../src/output.js";
 import { Prompt, Stdin } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
 import * as MockConsole from "./mock-console.js";
@@ -54,17 +56,28 @@ const allGranted: Permissions = {
   fullDiskAccess: "granted",
 };
 
-const helperStub = (p: Permissions) =>
-  Layer.succeed(
-    Helper,
-    new Helper({
-      check: () => Effect.void,
-      lines: () => Stream.empty,
-      permissions: () => Effect.succeed(p),
-      request: () => Effect.succeed("asked"),
-      biomeDevices: () => Effect.succeed([]),
-      biomeRecords: () => Effect.succeed([]),
-    }),
+const helperStub = (...ps: ReadonlyArray<Permissions>) =>
+  Layer.unwrapEffect(
+    Effect.map(Ref.make(ps), (answers) =>
+      Layer.succeed(
+        Helper,
+        new Helper({
+          check: () => Effect.void,
+          lines: () => Stream.empty,
+          permissions: () =>
+            Ref.modify(answers, (as) => {
+              const head = as[0] ?? as.at(-1);
+              if (head === undefined) {
+                throw new Error("no permission answers left");
+              }
+              return [head, as.length > 1 ? as.slice(1) : as];
+            }),
+          request: () => Effect.succeed("asked"),
+          biomeDevices: () => Effect.succeed([]),
+          biomeRecords: () => Effect.succeed([]),
+        }),
+      ),
+    ),
   );
 
 const fakeProcess = (code: number): CommandExecutor.Process => ({
@@ -206,21 +219,19 @@ describe("setup", () => {
       ),
     );
 
-  const expectedWalk = () => [
-    "no terminal, skipping questions",
-    "accessibility: window titles",
-    "  denied: window titles are not tracked",
-    "accessibility: granted",
-    "full disk access: iPhone and iPad import",
-    "  denied: iPhone and iPad time is not imported",
-    "full disk access: granted",
-    "Collector      ✔ running",
-    "Permissions    2 of 2 granted",
+  const expectedSetup = () => [
+    "Collector",
+    `  ✔ app           ${appPath}`,
+    `  ✔ launch agent  ${plistPath}`,
+    "  starting collector…",
+    "  ✔ running",
+    "Permissions   2 of 2 granted",
     "  ✔ Accessibility     window titles",
     "  ✔ Full Disk Access  iPhone and iPad import",
-    "Last activity  none yet",
-    `Database       ${path}`,
+    "no terminal, skipping questions",
     ...manualLines,
+    "",
+    `Done. Database at ${path}. Run clocktrace status any time.`,
   ];
 
   it("setup writes the app, installs the Collector, walks the permissions, and prints the manual commands", async () => {
@@ -237,11 +248,7 @@ describe("setup", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toEqual([
-      `app: written ${appPath}`,
-      `launchd agent: written ${plistPath}`,
-      ...expectedWalk(),
-    ]);
+    expect(output).toEqual(expectedSetup());
     expect(appInstalls).toBe(1);
     expect(appCommits).toBe(1);
     expect(existsSync(path)).toBe(true);
@@ -268,11 +275,7 @@ describe("setup", () => {
     const second = await run(helperStub(allGranted), first.state);
     // Then
     expect(Exit.isSuccess(second.exit)).toBe(true);
-    expect(second.output).toEqual([
-      `app: written ${appPath}`,
-      `launchd agent: written ${plistPath}`,
-      ...expectedWalk(),
-    ]);
+    expect(second.output).toEqual(expectedSetup());
     expect(second.state.installs).toBe(2);
     expect(existsSync(path)).toBe(true);
   });
@@ -375,10 +378,19 @@ describe("setup", () => {
     // Then: it fails with the launchd error and never reaches the agent
     expect(exit).toEqual(
       Exit.fail(
-        new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+        new ReportedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+        }),
       ),
     );
-    expect(output).toEqual([`app: written ${appPath}`]);
+    expect(output).toEqual([
+      "Collector",
+      `  ✔ app           ${appPath}`,
+      `  ✘ collector did not start · see ${logPath}`,
+    ]);
     expect(state.installs).toBe(1);
   });
 
@@ -394,15 +406,20 @@ describe("setup", () => {
     // Then: setup fails loudly and restores the previous agent
     expect(exit).toEqual(
       Exit.fail(
-        new LaunchdError({
-          step: "launchctl bootstrap",
-          detail: "collector did not start",
+        new ReportedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "collector did not start",
+          }),
         }),
       ),
     );
     expect(output).toEqual([
-      `app: written ${appPath}`,
-      `launchd agent: written ${plistPath}`,
+      "Collector",
+      `  ✔ app           ${appPath}`,
+      `  ✔ launch agent  ${plistPath}`,
+      "  starting collector…",
+      `  ✘ collector did not start · see ${logPath}`,
     ]);
     expect(state.plist).toBe("<plist>");
     expect(state.installed).toBe(true);
@@ -436,9 +453,11 @@ describe("setup", () => {
     // Then: setup fails and clears the plist it just wrote
     expect(exit).toEqual(
       Exit.fail(
-        new LaunchdError({
-          step: "launchctl bootstrap",
-          detail: "collector did not start",
+        new ReportedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "collector did not start",
+          }),
         }),
       ),
     );
@@ -457,7 +476,12 @@ describe("setup", () => {
     // Then: the failed install leaves no plist behind
     expect(exit).toEqual(
       Exit.fail(
-        new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+        new ReportedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+        }),
       ),
     );
     expect(state.plist).toBe(null);
@@ -488,7 +512,7 @@ describe("setup", () => {
       Exit.fail(new AppError({ step: "codesign", detail: "exit 1" })),
     );
     expect(state.installs).toBe(0);
-    expect(output).toEqual([]);
+    expect(output).toEqual(["Collector"]);
   });
 
   it("--hosts on a terminal registers the named without a checklist", async () => {
@@ -502,8 +526,8 @@ describe("setup", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toContain("claude code: registered");
-    expect(output).toContain("codex: registered");
+    expect(output).toContain("  ✔ Claude Code registered");
+    expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");
   });
 
@@ -518,8 +542,8 @@ describe("setup", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toContain("claude code: registered");
-    expect(output).toContain("codex: registered");
+    expect(output).toContain("  ✔ Claude Code registered");
+    expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");
   });
 });

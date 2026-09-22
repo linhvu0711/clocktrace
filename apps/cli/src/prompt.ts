@@ -51,7 +51,7 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
       Effect.flatMap(Terminal.Terminal, (t) =>
         Effect.flatMap(t.isTTY, (tty) =>
           tty
-            ? t.display(label).pipe(
+            ? Effect.ignore(t.display(label)).pipe(
                 Effect.andThen(effect),
                 Effect.ensuring(Effect.ignore(t.display("\r\u001b[2K"))),
               )
