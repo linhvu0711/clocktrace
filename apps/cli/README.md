@@ -1,6 +1,6 @@
 # clocktrace
 
-The `clocktrace` command: setup, start, stop, status, permissions, mcp, and the Twins of the rule, category, project, and question tools (`rules`, `categories`, `projects`, `summary`, `timeline`, `activities`, `status --json`).
+The `clocktrace` command: setup, uninstall, start, stop, status, permissions, mcp, and the Twins of the rule, category, project, and question tools (`rules`, `categories`, `projects`, `summary`, `timeline`, `activities`, `status --json`).
 The Collector itself lives in `packages/collector` and runs as a per-user
 launchd agent.
 
@@ -18,6 +18,7 @@ pnpm build
 
 ```bash
 clocktrace setup         # create the database, install the Collector, walk the permissions
+clocktrace uninstall [--purge]   # remove the Collector, the app, and the host registrations; --purge also deletes the database and the logs
 clocktrace start         # start the Collector
 clocktrace stop          # stop the Collector
 clocktrace status        # Collector state, permissions, last Activity, database path
@@ -53,6 +54,19 @@ without the checklist. Every other command but `mcp`
 prints `not set up, run clocktrace setup` first. The Collector logs to
 `~/Library/Logs/clocktrace/collector.log`.
 
+`uninstall` reverses `setup`: it unloads and deletes the launch agent,
+asks macOS to drop the app's grants (`tccutil reset`, which only works
+while the app bundle still exists; when it is refused, remove Clocktrace
+under System Settings › Privacy & Security by hand), deletes
+`~/Applications/Clocktrace.app`, and removes the `clocktrace` MCP entry
+from every Host found on this Mac. One line per step;
+a step that finds nothing prints `already removed`, so a second run
+exits 0. The database and the logs stay unless `--purge` is given: on a
+terminal it asks before deleting the database, without one the flag is
+the consent, and the logs go either way. A failed Host remove prints
+the command to run by hand and exits 1. The `clocktrace` command itself
+is not removed.
+
 `rules`, `categories`, `projects`, `summary`, `timeline`, `activities`, and `status --json` are the Twins of the MCP tools
 (ADR 0006): each calls the same core function as its tool, `--json`
 prints exactly what the tool returns, an empty list prints `none`, and
@@ -78,7 +92,7 @@ documented in `packages/collector/README.md`.
 2. `pnpm --filter cli exec clocktrace stop` twice prints `collector: stopped`
    twice; `start` twice prints `collector: running` twice.
 3. `pnpm --filter cli exec clocktrace bogus` prints
-   `Invalid subcommand for clocktrace - use one of 'setup', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects', 'summary', 'timeline', 'activities'`
+   `Invalid subcommand for clocktrace - use one of 'setup', 'uninstall', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects', 'summary', 'timeline', 'activities'`
    and exits 1.
 4. `rm -rf ~/Applications/Clocktrace.app` then
    `pnpm --filter cli exec clocktrace status` prints
@@ -90,3 +104,11 @@ documented in `packages/collector/README.md`.
    `clocktrace status --json` prints `"app":"present"`.
 6. `pnpm --filter cli exec clocktrace permissions | cat` prints
    `no terminal, skipping questions` once and exits 0.
+7. `pnpm --filter cli exec clocktrace uninstall` prints a `✔` line for the
+   launch agent, the app, and each Host found, then a `✔` or `○` line for
+   the permissions; `ls ~/Library/LaunchAgents/com.clocktrace.collector.plist`
+   and `ls ~/Applications/Clocktrace.app` both fail, `claude mcp list` no
+   longer shows `clocktrace`, and the database is still there. A second
+   run prints `already removed` lines and exits 0. `--purge` also removes
+   `~/Library/Application Support/clocktrace` and `~/Library/Logs/clocktrace`.
+   `pnpm --filter cli exec clocktrace setup` works again afterwards.

@@ -2,8 +2,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
+import type { PlatformError } from "@effect/platform/Error";
 import { Chunk, Data, Effect, Layer, Stream } from "effect";
-import { parseDocument } from "yaml";
+import { type Document, parseDocument } from "yaml";
 
 export const hostNames = ["claude", "codex", "hermes", "openclaw"] as const;
 
@@ -41,6 +42,21 @@ export const manualCommand: Record<HostName, string> = {
   openclaw: "openclaw mcp add clocktrace --command clocktrace --arg mcp",
 };
 
+export const manualRemoveCommand: Record<HostName, string> = {
+  claude: "claude mcp remove clocktrace --scope user",
+  codex: "codex mcp remove clocktrace",
+  hermes: "remove mcp_servers.clocktrace from ~/.hermes/config.yaml",
+  openclaw: "openclaw mcp unset clocktrace",
+};
+
+export class HostRemoveError extends Data.TaggedError("HostRemoveError")<{
+  readonly host: HostName;
+}> {
+  override get message(): string {
+    return `${hostTitle[this.host]} failed · run by hand: ${manualRemoveCommand[this.host]}`;
+  }
+}
+
 const addArgv: Record<Exclude<HostName, "hermes">, ReadonlyArray<string>> = {
   claude: [
     "mcp",
@@ -64,6 +80,18 @@ const addArgv: Record<Exclude<HostName, "hermes">, ReadonlyArray<string>> = {
   ],
 };
 
+const removeArgv: Record<Exclude<HostName, "hermes">, ReadonlyArray<string>> = {
+  claude: ["mcp", "remove", "clocktrace", "--scope", "user"],
+  codex: ["mcp", "remove", "clocktrace"],
+  openclaw: ["mcp", "unset", "clocktrace"],
+};
+
+export type UnregisterOutcome = "unregistered" | "not registered" | "no cli";
+
+// What a host CLI prints when asked to remove a server it does not have;
+// codex exits 0 in that case, so the text is checked before the code.
+const notRegisteredPattern = /no mcp server named ['"]?clocktrace['"]?/i;
+
 const detectPath: Record<HostName, string> = {
   claude: ".claude.json",
   codex: ".codex",
@@ -83,7 +111,7 @@ const collect = (
     Effect.catchAll(() => Effect.succeed("")),
   );
 
-const runAdd = (
+const runHost = (
   bin: string,
   argv: ReadonlyArray<string>,
 ): Effect.Effect<
@@ -126,30 +154,38 @@ class HermesConfigParseError extends Data.TaggedError(
   cause: unknown;
 }> {}
 
-const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
+const hermesConfigPath = () => join(homedir(), ".hermes", "config.yaml");
+
+const readHermes: Effect.Effect<
+  { readonly doc: Document; readonly exists: boolean },
+  HermesConfigParseError | PlatformError,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = hermesConfigPath();
+  const exists = yield* fs
+    .exists(path)
+    .pipe(Effect.catchAll(() => Effect.succeed(false)));
+  const text = exists ? yield* fs.readFileString(path) : "";
+  const doc = yield* Effect.try({
+    try: () => parseDocument(text === "" ? "{}" : text),
+    catch: (cause) => new HermesConfigParseError({ cause }),
+  });
+  if (doc.errors.length > 0) {
+    return yield* new HermesConfigParseError({ cause: doc.errors });
+  }
+  return { doc, exists };
+});
+
+// Write beside the resolved target so a symlink keeps pointing at its
+// source, and keep the target's mode on the replacement file.
+const writeHermes = (
+  doc: Document,
+  exists: boolean,
+): Effect.Effect<void, PlatformError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const path = join(homedir(), ".hermes", "config.yaml");
-    const exists = yield* fs
-      .exists(path)
-      .pipe(Effect.catchAll(() => Effect.succeed(false)));
-    const text = exists ? yield* fs.readFileString(path) : "";
-    const doc = yield* Effect.try({
-      try: () => parseDocument(text === "" ? "{}" : text),
-      catch: (cause) => new HermesConfigParseError({ cause }),
-    });
-    if (doc.errors.length > 0) {
-      return yield* new HermesConfigParseError({ cause: doc.errors });
-    }
-    if (doc.getIn(["mcp_servers", "clocktrace"]) !== undefined) {
-      return `${hostLabel.hermes}: already registered`;
-    }
-    doc.setIn(["mcp_servers", "clocktrace"], {
-      command: "clocktrace",
-      args: ["mcp"],
-    });
-    // Write beside the resolved target so a symlink keeps pointing at its
-    // source, and keep the target's mode on the replacement file.
+    const path = hermesConfigPath();
     const target = exists
       ? yield* fs
           .realPath(path)
@@ -165,6 +201,19 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
       Effect.andThen(fs.rename(tmp, target)),
       Effect.tapError(() => fs.remove(tmp).pipe(Effect.ignore)),
     );
+  });
+
+const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
+  Effect.gen(function* () {
+    const { doc, exists } = yield* readHermes;
+    if (doc.getIn(["mcp_servers", "clocktrace"]) !== undefined) {
+      return `${hostLabel.hermes}: already registered`;
+    }
+    doc.setIn(["mcp_servers", "clocktrace"], {
+      command: "clocktrace",
+      args: ["mcp"],
+    });
+    yield* writeHermes(doc, exists);
     return `${hostLabel.hermes}: registered`;
   }).pipe(
     Effect.catchAll(() =>
@@ -173,6 +222,20 @@ const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
       ),
     ),
   );
+
+const unregisterHermes: Effect.Effect<
+  UnregisterOutcome,
+  HostRemoveError,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const { doc, exists } = yield* readHermes;
+  if (doc.getIn(["mcp_servers", "clocktrace"]) === undefined) {
+    return "not registered" as const;
+  }
+  doc.deleteIn(["mcp_servers", "clocktrace"]);
+  yield* writeHermes(doc, exists);
+  return "unregistered" as const;
+}).pipe(Effect.mapError(() => new HostRemoveError({ host: "hermes" })));
 
 export class Hosts extends Effect.Service<Hosts>()("Hosts", {
   succeed: {
@@ -195,7 +258,7 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
     register: (host: HostName): Effect.Effect<string, never, Borders> =>
       host === "hermes"
         ? registerHermes
-        : runAdd(host, addArgv[host]).pipe(
+        : runHost(host, addArgv[host]).pipe(
             Effect.map(({ code, output }) =>
               code === 0
                 ? `${hostLabel[host]}: registered`
@@ -204,6 +267,26 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
                   : `${hostLabel[host]}: failed. run by hand: ${manualCommand[host]}`,
             ),
           ),
+    unregister: (
+      host: HostName,
+    ): Effect.Effect<UnregisterOutcome, HostRemoveError, Borders> =>
+      host === "hermes"
+        ? unregisterHermes
+        : Effect.gen(function* () {
+            // detect can find a host by its config alone; without the
+            // binary the remove can never run, so say so instead of failing.
+            if (!(yield* onPath(host))) {
+              return "no cli" as const;
+            }
+            const { code, output } = yield* runHost(host, removeArgv[host]);
+            if (notRegisteredPattern.test(output)) {
+              return "not registered" as const;
+            }
+            if (code === 0) {
+              return "unregistered" as const;
+            }
+            return yield* new HostRemoveError({ host });
+          }),
   },
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
@@ -218,6 +301,7 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
           openclaw: false,
         }),
       register: (host) => Effect.succeed(`${hostLabel[host]}: registered`),
+      unregister: () => Effect.succeed("unregistered" as const),
     }),
   );
 }

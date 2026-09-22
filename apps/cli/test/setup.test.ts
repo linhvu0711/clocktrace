@@ -121,6 +121,7 @@ const fakeApp = (
         Ref.update(installs, (n) => n + 1).pipe(Effect.as("written" as const)),
       commit: () => Ref.update(committed, (n) => n + 1),
       rollback: () => Ref.update(rolledBack, (n) => n + 1),
+      remove: () => Ref.set(installs, 0).pipe(Effect.as("removed" as const)),
     }),
   );
 
@@ -498,6 +499,7 @@ describe("setup", () => {
           Effect.fail(new AppError({ step: "codesign", detail: "exit 1" })),
         commit: () => Effect.void,
         rollback: () => Effect.void,
+        remove: () => Effect.succeed("absent" as const),
       }),
     );
     // When

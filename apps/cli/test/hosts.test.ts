@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -37,7 +38,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import { Style } from "../src/format.js";
-import { type HostName, Hosts, manualCommand } from "../src/hosts.js";
+import {
+  type HostName,
+  HostRemoveError,
+  Hosts,
+  manualCommand,
+  manualRemoveCommand,
+} from "../src/hosts.js";
 import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
 import * as MockConsole from "./mock-console.js";
@@ -131,6 +138,24 @@ const register = (
     Effect.flatMap(Hosts, (h) => h.register(host)).pipe(
       Effect.provide(Hosts.Default),
       Effect.provide(Layer.mergeAll(NodeContext.layer, executorLayer)),
+    ),
+  );
+
+// Hermes touches no binary, so it runs on NodeContext alone.
+const unregister = (
+  host: HostName,
+  executorLayer?: Layer.Layer<CommandExecutor.CommandExecutor>,
+) =>
+  Effect.runPromise(
+    Effect.exit(
+      Effect.flatMap(Hosts, (h) => h.unregister(host)).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(
+          executorLayer === undefined
+            ? NodeContext.layer
+            : Layer.mergeAll(NodeContext.layer, executorLayer),
+        ),
+      ),
     ),
   );
 
@@ -513,5 +538,155 @@ describe("hosts", () => {
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");
+  });
+
+  it("unregisters each host with its own command", async () => {
+    // Given: each host binary on PATH; each remove exits 0
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        "which claude": { code: 0 },
+        "which codex": { code: 0 },
+        "which openclaw": { code: 0 },
+        "claude mcp remove clocktrace --scope user": { code: 0 },
+        "codex mcp remove clocktrace": { code: 0 },
+        "openclaw mcp unset clocktrace": { code: 0 },
+      }),
+    );
+    // When
+    const outcomes = [
+      await unregister("claude", executor.layer),
+      await unregister("codex", executor.layer),
+      await unregister("openclaw", executor.layer),
+    ];
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then
+    expect(recorded).toEqual([
+      "which claude",
+      "claude mcp remove clocktrace --scope user",
+      "which codex",
+      "codex mcp remove clocktrace",
+      "which openclaw",
+      "openclaw mcp unset clocktrace",
+    ]);
+    expect(outcomes).toEqual([
+      Exit.succeed("unregistered"),
+      Exit.succeed("unregistered"),
+      Exit.succeed("unregistered"),
+    ]);
+  });
+
+  it("claude without the server exits 1 and is not registered", async () => {
+    // Given: claude on PATH; its remove exits 1 with the real message
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        "which claude": { code: 0 },
+        "claude mcp remove clocktrace --scope user": {
+          code: 1,
+          output: 'No MCP server named "clocktrace" in user scope',
+        },
+      }),
+    );
+    // When
+    const outcome = await unregister("claude", executor.layer);
+    // Then
+    expect(outcome).toEqual(Exit.succeed("not registered"));
+  });
+
+  it("codex without the server exits 0 and is still not registered", async () => {
+    // Given: codex on PATH; its remove exits 0 with the real message
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        "which codex": { code: 0 },
+        "codex mcp remove clocktrace": {
+          code: 0,
+          output: "No MCP server named 'clocktrace' found.",
+        },
+      }),
+    );
+    // When
+    const outcome = await unregister("codex", executor.layer);
+    // Then
+    expect(outcome).toEqual(Exit.succeed("not registered"));
+  });
+
+  it("a failed remove is a HostRemoveError with the manual command", async () => {
+    // Given: codex on PATH; its remove exits 1 printing boom
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        "which codex": { code: 0 },
+        "codex mcp remove clocktrace": { code: 1, output: "boom" },
+      }),
+    );
+    // When
+    const outcome = await unregister("codex", executor.layer);
+    // Then
+    expect(outcome).toEqual(Exit.fail(new HostRemoveError({ host: "codex" })));
+    expect(new HostRemoveError({ host: "codex" }).message).toBe(
+      `Codex failed · run by hand: ${manualRemoveCommand.codex}`,
+    );
+  });
+
+  it("a host binary missing from PATH is no cli and runs no remove", async () => {
+    // Given: which codex exits 1
+    const executor = await Effect.runPromise(fakeExecutor({}));
+    // When
+    const outcome = await unregister("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then
+    expect(outcome).toEqual(Exit.succeed("no cli"));
+    expect(recorded).toEqual(["which codex"]);
+  });
+
+  it("hermes unregister removes the block and keeps other keys", async () => {
+    // Given: config.yaml with a model and two servers
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(
+      path,
+      'model: nous-1\nmcp_servers:\n  clocktrace:\n    command: clocktrace\n    args: ["mcp"]\n  other:\n    command: other\n',
+    );
+    // When
+    const outcome = await unregister("hermes");
+    // Then
+    expect(outcome).toEqual(Exit.succeed("unregistered"));
+    expect(parse(readFileSync(path, "utf8"))).toEqual({
+      model: "nous-1",
+      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
+      mcp_servers: { other: { command: "other" } },
+    });
+  });
+
+  it("hermes unregister with the key absent leaves the file unchanged", async () => {
+    // Given: config.yaml without mcp_servers.clocktrace
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    const text = "model: nous-1\n";
+    writeFileSync(path, text);
+    // When
+    const outcome = await unregister("hermes");
+    // Then
+    expect(outcome).toEqual(Exit.succeed("not registered"));
+    expect(readFileSync(path, "utf8")).toBe(text);
+  });
+
+  it("hermes unregister without a config file is not registered", async () => {
+    // Given: no ~/.hermes at all
+    // When
+    const outcome = await unregister("hermes");
+    // Then
+    expect(outcome).toEqual(Exit.succeed("not registered"));
+    expect(existsSync(join(home, ".hermes"))).toBe(false);
+  });
+
+  it("hermes unregister on a malformed config is a HostRemoveError", async () => {
+    // Given: ~/.hermes/config.yaml contains invalid YAML
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "model: [\n");
+    // When
+    const outcome = await unregister("hermes");
+    // Then
+    expect(outcome).toEqual(Exit.fail(new HostRemoveError({ host: "hermes" })));
+    expect(readFileSync(path, "utf8")).toBe("model: [\n");
   });
 });
