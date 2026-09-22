@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { Store } from "@clocktrace/core";
 import {
   DateTime,
@@ -623,5 +625,144 @@ describe("importer", () => {
       startedAt: "2026-09-19T16:11:00.000Z",
       endedAt: "2026-09-19T16:16:00.000Z",
     });
+  });
+
+  it("a partial device failure keeps the emitted records and records broken", async () => {
+    // Given: biome records emits Safari's records then exits 6 on the iPad folder
+    // When
+    const result = await run(
+      {
+        devices: [D_PHONE, D_PAD],
+        records: Effect.fail(
+          new BiomeExitError({
+            code: 6,
+            stderr: "cannot list iPad folder\n",
+            lines: [R3, R4],
+          }),
+        ),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return {
+            activities: yield* rows,
+            status: yield* store.getSetting("importer.status"),
+          };
+        }),
+    );
+    // Then
+    expect(result.activities).toEqual([
+      {
+        device: "iPhone",
+        appName: "com.apple.mobilesafari",
+        bundleId: "com.apple.mobilesafari",
+        title: null,
+        url: null,
+        startedAt: "2026-09-19T16:01:00.000Z",
+        endedAt: "2026-09-19T16:06:00.000Z",
+      },
+    ]);
+    expect(JSON.parse(Option.getOrElse(result.status, () => ""))).toEqual({
+      state: "broken",
+      at: "2026-09-19T17:30:00.000Z",
+      reason: "cannot list iPad folder",
+      devices: [
+        { externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" },
+        { externalId: P3, lastSync: "2026-09-17T17:00:00.000Z" },
+      ],
+    });
+  });
+
+  it("a device read failure keeps the previous sync data", async () => {
+    // Given: one good import, then biome devices exits 5
+    const devicesRef = Ref.unsafeMake<
+      Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+    >(Effect.succeed([D_PHONE, D_PAD]));
+    // When
+    const status = await run(
+      {
+        devices: Ref.get(devicesRef).pipe(Effect.flatten),
+        records: ALL,
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          yield* Ref.set(
+            devicesRef,
+            Effect.fail(
+              new BiomeExitError({
+                code: 5,
+                stderr: "cannot read DevicePeer: locked\n",
+              }),
+            ),
+          );
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return yield* store.getSetting("importer.status");
+        }),
+    );
+    // Then
+    expect(JSON.parse(Option.getOrElse(status, () => ""))).toEqual({
+      state: "broken",
+      at: "2026-09-19T17:30:00.000Z",
+      reason: "cannot read DevicePeer: locked",
+      devices: [
+        { externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" },
+        { externalId: P3, lastSync: "2026-09-17T17:00:00.000Z" },
+      ],
+    });
+  });
+
+  it("imports a real biome records sample file", async () => {
+    // Given: the golden sample at test/fixtures/biome-records.sample.jsonl
+    const lines = readFileSync(
+      new URL("./fixtures/biome-records.sample.jsonl", import.meta.url),
+      "utf8",
+    )
+      .trim()
+      .split("\n");
+    // When
+    const activities = await run(
+      { devices: [D_MAC, D_PHONE, D_PAD], records: lines },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          return yield* rows;
+        }),
+    );
+    // Then
+    expect(activities).toEqual([
+      {
+        device: "Linh's iPad",
+        appName: "com.apple.mobilenotes",
+        bundleId: "com.apple.mobilenotes",
+        title: null,
+        url: null,
+        startedAt: "2026-09-19T16:00:00.000Z",
+        endedAt: "2026-09-19T16:10:00.000Z",
+      },
+      {
+        device: "iPhone",
+        appName: "com.apple.mobilesafari",
+        bundleId: "com.apple.mobilesafari",
+        title: null,
+        url: null,
+        startedAt: "2026-09-19T16:01:00.000Z",
+        endedAt: "2026-09-19T16:06:00.000Z",
+      },
+      {
+        device: "iPhone",
+        appName: "com.burbn.instagram",
+        bundleId: "com.burbn.instagram",
+        title: null,
+        url: null,
+        startedAt: "2026-09-19T16:06:00.000Z",
+        endedAt: "2026-09-19T16:10:00.000Z",
+      },
+    ]);
   });
 });
