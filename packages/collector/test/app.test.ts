@@ -203,9 +203,10 @@ describe("App.install", () => {
     const mainFile = join(appHome, "Contents", "MacOS", "Clocktrace");
     expect(readFileSync(mainFile, "utf8")).toBe("helper-bytes");
     expect(statSync(mainFile).mode & 0o777).toBe(0o755);
+    const staging = `${mod.appPath}.new`;
     expect(commands).toEqual([
-      ["codesign", "-dv", mod.appMainPath],
-      ["codesign", "--force", "--sign", "-", mod.appPath],
+      ["codesign", "-dv", join(staging, "Contents", "MacOS", "Clocktrace")],
+      ["codesign", "--force", "--sign", "-", staging],
       [mod.lsregisterPath, "-f", mod.appPath],
     ]);
   });
@@ -218,7 +219,11 @@ describe("App.install", () => {
     // Then
     expect(result).toEqual(Exit.succeed("written"));
     expect(commands).toEqual([
-      ["codesign", "-dv", mod.appMainPath],
+      [
+        "codesign",
+        "-dv",
+        join(`${mod.appPath}.new`, "Contents", "MacOS", "Clocktrace"),
+      ],
       [mod.lsregisterPath, "-f", mod.appPath],
     ]);
   });
@@ -281,7 +286,10 @@ describe("App.install", () => {
   });
 
   it("a failed codesign fails install with its step", async () => {
-    // Given: ad-hoc codesign -dv and the sign step exits 1
+    // Given: a first install done with the Helper helper-bytes
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    writeFileSync(helperPath, "helper-bytes-2");
+    // When: the second install's codesign --force exits 1
     const { result, mod } = await runApp(
       ADHOC,
       (app) => app.install(helperPath),
@@ -290,10 +298,17 @@ describe("App.install", () => {
           ? 1
           : 0,
     );
-    // Then
+    // Then: install fails and the previous app is untouched
     expect(result).toEqual(
       Exit.fail(new mod.AppError({ step: "codesign", detail: "exit 1" })),
     );
+    expect(
+      readFileSync(
+        join(mod.appPath, "Contents", "MacOS", "Clocktrace"),
+        "utf8",
+      ),
+    ).toBe("helper-bytes");
+    expect(existsSync(`${mod.appPath}.new`)).toBe(false);
   });
 
   it("isInstalled is false before install and true after", async () => {

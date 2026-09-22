@@ -95,39 +95,45 @@ export class App extends Effect.Service<App>()("App", {
       isInstalled: () => fs.exists(appMainPath).pipe(Effect.orDie),
       install: (helperPath: string) =>
         Effect.gen(function* () {
+          // Build the whole bundle at a sibling first; an ad-hoc signature
+          // embeds no path, so the staged bundle stays valid when it is
+          // renamed over the live one, and a failure before the rename
+          // leaves the old app untouched.
+          const staging = `${appPath}.new`;
+          const stagingMain = join(staging, "Contents", "MacOS", "Clocktrace");
           const built = join(dirname(helperPath), "Clocktrace.app");
-          yield* fs
-            .remove(appPath, { recursive: true, force: true })
-            .pipe(Effect.mapError(fsError(`write ${appPath}`)));
-          const builtExists = yield* fs
-            .exists(built)
-            .pipe(Effect.mapError(fsError(`copy ${built}`)));
-          let result: "copied" | "written";
-          if (builtExists) {
+          const build = Effect.gen(function* () {
             yield* fs
-              .copy(built, appPath)
-              .pipe(Effect.mapError(fsError(`copy ${appPath}`)));
-            result = "copied";
-          } else {
+              .remove(staging, { recursive: true, force: true })
+              .pipe(Effect.mapError(fsError(`write ${staging}`)));
+            const builtExists = yield* fs
+              .exists(built)
+              .pipe(Effect.mapError(fsError(`copy ${built}`)));
+            if (builtExists) {
+              yield* fs
+                .copy(built, staging)
+                .pipe(Effect.mapError(fsError(`copy ${staging}`)));
+              return "copied" as const;
+            }
             yield* fs
-              .makeDirectory(join(appPath, "Contents", "MacOS"), {
+              .makeDirectory(join(staging, "Contents", "MacOS"), {
                 recursive: true,
               })
-              .pipe(Effect.mapError(fsError(`write ${appPath}`)));
+              .pipe(Effect.mapError(fsError(`write ${staging}`)));
             yield* fs
               .writeFileString(
-                join(appPath, "Contents", "Info.plist"),
+                join(staging, "Contents", "Info.plist"),
                 infoPlist(),
               )
-              .pipe(Effect.mapError(fsError(`write ${appPath}`)));
+              .pipe(Effect.mapError(fsError(`write ${staging}`)));
             yield* fs
-              .copyFile(helperPath, appMainPath)
-              .pipe(Effect.mapError(fsError(`copy ${appMainPath}`)));
+              .copyFile(helperPath, stagingMain)
+              .pipe(Effect.mapError(fsError(`copy ${stagingMain}`)));
             yield* fs
-              .chmod(appMainPath, 0o755)
-              .pipe(Effect.mapError(fsError(`write ${appMainPath}`)));
+              .chmod(stagingMain, 0o755)
+              .pipe(Effect.mapError(fsError(`write ${stagingMain}`)));
             const lines = yield* stderrLines(
-              Command.make("codesign", "-dv", appMainPath),
+              Command.make("codesign", "-dv", stagingMain),
             );
             if (!hasDeveloperIdSignature(lines)) {
               const code = yield* exit(
@@ -136,7 +142,7 @@ export class App extends Effect.Service<App>()("App", {
                 "--force",
                 "--sign",
                 "-",
-                appPath,
+                staging,
               );
               if (code !== 0) {
                 return yield* new AppError({
@@ -145,8 +151,28 @@ export class App extends Effect.Service<App>()("App", {
                 });
               }
             }
-            result = "written";
-          }
+            return "written" as const;
+          });
+          const result = yield* build.pipe(
+            Effect.flatMap((r) =>
+              fs
+                .remove(appPath, { recursive: true, force: true })
+                .pipe(
+                  Effect.mapError(fsError(`write ${appPath}`)),
+                  Effect.andThen(
+                    fs
+                      .rename(staging, appPath)
+                      .pipe(Effect.mapError(fsError(`rename ${staging}`))),
+                  ),
+                  Effect.as(r),
+                ),
+            ),
+            Effect.tapError(() =>
+              Effect.ignore(
+                fs.remove(staging, { recursive: true, force: true }),
+              ),
+            ),
+          );
           const registered = yield* exit(
             "lsregister",
             lsregisterPath,
