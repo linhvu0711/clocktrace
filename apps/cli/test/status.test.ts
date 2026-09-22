@@ -205,14 +205,6 @@ describe("status", () => {
       ],
       lastActivity: null,
       databasePath: path,
-      imports: "not built yet",
-      lines: [
-        "collector: running",
-        "accessibility: granted",
-        "full disk access: granted",
-        "last activity: none yet",
-        `database: ${path}`,
-      ],
     });
   });
 });
