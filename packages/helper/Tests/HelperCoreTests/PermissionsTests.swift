@@ -9,6 +9,7 @@ final class PermissionsTests: XCTestCase {
     installed: @escaping (String) -> Bool = {
       ["com.apple.Safari", "com.google.Chrome", "com.brave.Browser"].contains($0)
     },
+    running: @escaping (String) -> Bool = { _ in true },
     automationStatus: @escaping (String, Bool) -> OSStatus = { bundleId, _ in
       switch bundleId {
       case "com.apple.Safari": return -600
@@ -23,6 +24,7 @@ final class PermissionsTests: XCTestCase {
       axTrusted: axTrusted,
       axPrompt: axPrompt,
       installed: installed,
+      running: running,
       automationStatus: automationStatus,
       canOpenBiomeSyncDb: canOpenBiomeSyncDb,
       openSettings: openSettings
@@ -55,6 +57,32 @@ final class PermissionsTests: XCTestCase {
     let state = checkPermissions(reads: reads).automation["com.google.Chrome"]
     // Then
     XCTAssertEqual(state, .denied)
+  }
+
+  func testAClosedBrowserIsNotRunningWithoutTheProbe() {
+    // Given: Safari closed, its probe would answer granted
+    let reads = reads(
+      running: { $0 != "com.apple.Safari" },
+      automationStatus: { _, _ in 0 })
+    // When
+    let state = checkPermissions(reads: reads).automation["com.apple.Safari"]
+    // Then
+    XCTAssertEqual(state, .notRunning)
+  }
+
+  func testAClosedBrowserIsNeverProbed() {
+    // Given: Safari closed; the probe records every call
+    var probes: [String] = []
+    let reads = reads(
+      running: { $0 != "com.apple.Safari" },
+      automationStatus: { bundleId, _ in
+        probes.append(bundleId)
+        return 0
+      })
+    // When
+    _ = checkPermissions(reads: reads)
+    // Then
+    XCTAssertEqual(probes, ["com.brave.Browser", "com.google.Chrome"])
   }
 
   func testAccessibilityDeniedWhenNotTrusted() {

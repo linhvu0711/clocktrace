@@ -20,6 +20,10 @@ extension PermissionReads {
     installed: { bundleId in
       NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) != nil
     },
+    running: { bundleId in
+      !NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+        .isEmpty
+    },
     automationStatus: { bundleId, ask in
       HelperCore.automationStatus(bundleId: bundleId, askUser: ask)
     },

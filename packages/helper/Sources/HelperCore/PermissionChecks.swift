@@ -5,6 +5,10 @@ public func checkPermissions(reads: PermissionReads = .live) -> Permissions {
       automation[bundleId] = .notInstalled
       continue
     }
+    guard reads.running(bundleId) else {
+      automation[bundleId] = .notRunning
+      continue
+    }
     switch reads.automationStatus(bundleId, false) {
     case 0:
       automation[bundleId] = .granted
