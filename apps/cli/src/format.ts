@@ -1,7 +1,8 @@
+import { isoMinute } from "@clocktrace/core";
 import { Terminal } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Ansi, AnsiDoc } from "@effect/printer-ansi";
-import { Config, Effect, Layer, Option } from "effect";
+import { Config, DateTime, Effect, Layer, Option } from "effect";
 
 export type Tone = "ok" | "warn" | "bad" | "dim" | "head";
 
@@ -77,6 +78,49 @@ export const shortPath = (path: string, home: string): string =>
     : path.startsWith(`${home}/`)
       ? `~${path.slice(home.length)}`
       : path;
+
+const visible = (cell: Cell): number =>
+  spans(cell).reduce((n, s) => n + s.text.length, 0);
+
+export const columns = (
+  rows: ReadonlyArray<ReadonlyArray<Cell>>,
+  look: Look,
+): ReadonlyArray<string> => {
+  const widthAt = (i: number): number =>
+    Math.max(...rows.map((r) => visible(r[i] ?? ""))) + 2;
+  return rows.map((r) =>
+    r
+      .map((cell, i) => {
+        const rendered = spans(cell)
+          .map((s) => renderSpan(s, look))
+          .join("");
+        return i < r.length - 1
+          ? rendered + " ".repeat(widthAt(i) - visible(cell))
+          : rendered;
+      })
+      .join(""),
+  );
+};
+
+export const clock = (t: DateTime.Utc, now: DateTime.Zoned): string => {
+  const at = isoMinute(DateTime.setZone(t, now.zone));
+  const day = at.slice(0, 10);
+  const time = at.slice(11);
+  return day === isoMinute(now).slice(0, 10) ? `today ${time}` : `${day} ${time}`;
+};
+
+export const duration = (seconds: number): string => {
+  if (seconds < 60) {
+    return "<1m";
+  }
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h === 0
+    ? `${m}m ${pad(s)}s`
+    : `${h}h ${pad(m)}m ${pad(s)}s`;
+};
 
 export class Style extends Effect.Service<Style>()("Style", {
   effect: Effect.gen(function* () {
