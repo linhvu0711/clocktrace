@@ -123,13 +123,22 @@ export const importOnce = (
           return;
         }
         if (e.code === 5) {
+          const stored = yield* store.getSetting(importStatusKey);
+          const prior = yield* Effect.option(
+            Schema.decodeUnknown(ImportResult)(
+              Option.getOrElse(stored, () => ""),
+            ),
+          );
           yield* store.setSetting(
             importStatusKey,
             encodeResult({
               state: "broken",
               at: now,
               reason: e.stderr.trim(),
-              devices: [],
+              devices: Option.match(prior, {
+                onNone: () => [],
+                onSome: (r) => ("devices" in r ? r.devices : []),
+              }),
             }),
           );
           return;
@@ -194,6 +203,8 @@ export const importOnce = (
         ? Option.some(Math.min(...[...progress.values()].map((p) => p.ts)))
         : Option.none<number>();
 
+    let recordTexts: ReadonlyArray<string>;
+    let reason: string | null = null;
     const recordLines = yield* Effect.either(
       helper.biomeRecords(helperPath, since),
     );
@@ -211,7 +222,14 @@ export const importOnce = (
         );
         return;
       }
-      return yield* e;
+      if (e._tag === "BiomeExitError" && e.code === 6) {
+        recordTexts = e.lines ?? [];
+        reason = e.stderr.trim() || e.message;
+      } else {
+        return yield* e;
+      }
+    } else {
+      recordTexts = recordLines.right;
     }
 
     const open = new Map<string, Open>();
@@ -219,7 +237,6 @@ export const importOnce = (
       string,
       { segment: string; offset: number; ts: number }
     >();
-    let reason: string | null = null;
     let count = 0;
 
     const close = (
@@ -249,7 +266,7 @@ export const importOnce = (
         }
       });
 
-    for (const text of recordLines.right) {
+    for (const text of recordTexts) {
       const line = yield* decodeBiomeLine(text);
       if ("error" in line) {
         if (reason === null) {

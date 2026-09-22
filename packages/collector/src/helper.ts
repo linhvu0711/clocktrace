@@ -29,6 +29,7 @@ export class HelperExitedError extends Data.TaggedError("HelperExitedError")<{
 export class BiomeExitError extends Data.TaggedError("BiomeExitError")<{
   readonly code: number;
   readonly stderr: string;
+  readonly lines?: ReadonlyArray<string>;
 }> {
   override get message(): string {
     return `helper biome exited ${this.code}: ${this.stderr.trim()}`;
@@ -42,7 +43,13 @@ export const biomeResult = (
 ): Either.Either<ReadonlyArray<string>, BiomeExitError> =>
   code === 0
     ? Either.right(lines.filter((l) => l !== ""))
-    : Either.left(new BiomeExitError({ code, stderr }));
+    : Either.left(
+        new BiomeExitError({
+          code,
+          stderr,
+          lines: lines.filter((l) => l !== ""),
+        }),
+      );
 
 export class Helper extends Effect.Service<Helper>()("Helper", {
   effect: Effect.gen(function* () {
