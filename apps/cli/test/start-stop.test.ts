@@ -3,6 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  App,
+  AppMissingError,
+  appMainPath,
   fakeLaunchd,
   Helper,
   Launchd,
@@ -56,9 +59,11 @@ describe("start and stop", () => {
       | Terminal.Terminal
       | Path.Path
       | import("@effect/platform").FileSystem.FileSystem
+      | App
       | Style
     >,
     makeLaunchd?: (state: Ref.Ref<LaunchdState>) => Layer.Layer<Launchd>,
+    appLayer: Layer.Layer<App> = App.Test,
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -72,6 +77,7 @@ describe("start and stop", () => {
           Prompt.Default,
           (makeLaunchd ?? fakeLaunchd)(state),
           Helper.Test,
+          appLayer,
           Style.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
@@ -117,6 +123,30 @@ describe("start and stop", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual(["✔ collector stopped", "✔ collector stopped"]);
+    expect(state.running).toBe(false);
+  });
+
+  it("start without the app fails and leaves launchd alone", async () => {
+    // Given: the plist installed, not running, and no app present
+    const noApp = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(false),
+        install: () => Effect.succeed("written" as const),
+      }),
+    );
+    // When
+    const { exit, output, state } = await run(
+      { installed: true, running: false, plist: null, installs: 0 },
+      start(),
+      undefined,
+      noApp,
+    );
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(new AppMissingError({ path: appMainPath })),
+    );
+    expect(output).toEqual([]);
     expect(state.running).toBe(false);
   });
 
