@@ -85,6 +85,48 @@ final class PermissionsTests: XCTestCase {
     XCTAssertEqual(probes, ["com.brave.Browser", "com.google.Chrome"])
   }
 
+  private func slowChromeReads() -> PermissionReads {
+    reads(automationStatus: { bundleId, _ in
+      if bundleId == "com.google.Chrome" {
+        Thread.sleep(forTimeInterval: 0.5)
+      }
+      return bundleId == "com.apple.Safari" ? -600 : 0
+    })
+  }
+
+  func testAProbeThatNeverAnswersIsNoAnswerAfterTheLimit() {
+    // Given: Chrome's probe hangs; Safari closed answers -600, Brave granted
+    let reads = slowChromeReads()
+    // When
+    let state = checkPermissions(reads: reads, probeLimit: .milliseconds(50))
+      .automation["com.google.Chrome"]
+    // Then
+    XCTAssertEqual(state, .noAnswer)
+  }
+
+  func testTheOtherBrowsersKeepTheirStateAfterANoAnswer() {
+    // Given: the same reads
+    let reads = slowChromeReads()
+    // When
+    let state = checkPermissions(reads: reads, probeLimit: .milliseconds(50))
+      .automation["com.brave.Browser"]
+    // Then
+    XCTAssertEqual(state, .granted)
+  }
+
+  func testNoAnswerEncodesAsNoAnswer() {
+    // Given: the same reads
+    let reads = slowChromeReads()
+    // When
+    let json = checkPermissions(reads: reads, probeLimit: .milliseconds(50))
+      .json()
+    // Then
+    XCTAssertEqual(
+      json,
+      "{\"accessibility\":\"granted\",\"automation\":{\"com.apple.Safari\":\"notRunning\",\"com.brave.Browser\":\"granted\",\"com.google.Chrome\":\"noAnswer\",\"com.microsoft.edgemac\":\"notInstalled\",\"com.operasoftware.Opera\":\"notInstalled\",\"com.vivaldi.Vivaldi\":\"notInstalled\",\"org.chromium.Chromium\":\"notInstalled\"},\"fullDiskAccess\":\"denied\"}"
+    )
+  }
+
   func testAccessibilityDeniedWhenNotTrusted() {
     // Given: the same reads, but Accessibility is not granted
     let reads = reads(axTrusted: { false })

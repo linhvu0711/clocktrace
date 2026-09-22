@@ -8,6 +8,7 @@ case .watch:
   runWatch()
 case .permissions:
   emit(checkPermissions().json())
+  exit(0)
 case .requestAccessibility:
   let code = requestAccessibility()
   emit(requestOutcomeLine(exitCode: code))

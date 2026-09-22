@@ -1,4 +1,9 @@
-public func checkPermissions(reads: PermissionReads = .live) -> Permissions {
+import Foundation
+
+public func checkPermissions(
+  reads: PermissionReads = .live,
+  probeLimit: DispatchTimeInterval = .seconds(5)
+) -> Permissions {
   var automation: [String: GrantState] = [:]
   for bundleId in supportedBrowsers {
     guard reads.installed(bundleId) else {
@@ -9,7 +14,14 @@ public func checkPermissions(reads: PermissionReads = .live) -> Permissions {
       automation[bundleId] = .notRunning
       continue
     }
-    switch reads.automationStatus(bundleId, false) {
+    guard
+      let status = answerWithin(
+        probeLimit, { reads.automationStatus(bundleId, false) })
+    else {
+      automation[bundleId] = .noAnswer
+      continue
+    }
+    switch status {
     case 0:
       automation[bundleId] = .granted
     case -1744:
@@ -25,6 +37,22 @@ public func checkPermissions(reads: PermissionReads = .live) -> Permissions {
     automation: automation,
     fullDiskAccess: reads.canOpenBiomeSyncDb() ? .granted : .denied
   )
+}
+
+private func answerWithin(
+  _ limit: DispatchTimeInterval,
+  _ probe: @escaping () -> OSStatus
+) -> OSStatus? {
+  let semaphore = DispatchSemaphore(value: 0)
+  var answer: OSStatus?
+  DispatchQueue.global().async {
+    answer = probe()
+    semaphore.signal()
+  }
+  if semaphore.wait(timeout: .now() + limit) == .timedOut {
+    return nil
+  }
+  return answer
 }
 
 public func requestAccessibility(reads: PermissionReads = .live) -> Int32 {
