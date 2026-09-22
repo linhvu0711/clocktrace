@@ -452,6 +452,61 @@ describe("collector", () => {
     ]);
   });
 
+  it("blanks a Brave private window title", async () => {
+    // Given: the Starter set's `(Private)` rule matches Brave's private suffix
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Brave Browser",
+        bundleId: "com.brave.Browser",
+        title: "Example - Brave (Private)",
+        url: "https://example.com/",
+      }),
+      line({
+        ts: "2026-01-01T00:00:10.000Z",
+        app: "Brave Browser",
+        bundleId: "com.brave.Browser",
+        title: "Example - Brave (Private)",
+        url: "https://example.com/",
+      }),
+    ];
+    // When
+    const rows = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.getOrInsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        const result = yield* store.readActivities({
+          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
+          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
+        });
+        return result.map((a) => ({
+          appName: a.appName,
+          bundleId: a.bundleId,
+          title: a.title,
+          url: a.url,
+          startedAt: DateTime.formatIso(a.startedAt),
+          endedAt: DateTime.formatIso(a.endedAt),
+        }));
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Brave Browser",
+        bundleId: "com.brave.Browser",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:00:10.000Z",
+      },
+    ]);
+  });
+
   it("an Activity under 1 second is dropped", async () => {
     // Given: a 400ms TextEdit blip inside a Safari stretch
     const lines = [
