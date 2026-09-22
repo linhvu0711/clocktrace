@@ -15,6 +15,12 @@ describe("regex-budget", () => {
     expect(exceedsBacktrackBudget("(x+x+)+y")).toBe(true);
   });
 
+  it("(a|aa)+$ exceeds the budget at a longer probe length", () => {
+    // Given: a slow-growing pattern, cheap at 24 chars but seconds at 40 (#49)
+    // When / Then
+    expect(exceedsBacktrackBudget("(a|aa)+$")).toBe(true);
+  });
+
   it("github\\.com stays within the budget", () => {
     // Given: a plain domain pattern
     // When / Then
