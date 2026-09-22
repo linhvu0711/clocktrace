@@ -1,7 +1,8 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
+  decodePermissions,
   Permissions,
   permissionItems,
   requestArgs,
@@ -20,6 +21,18 @@ describe("permissions", () => {
     expect(p.automation["com.apple.Safari"]).toBe("notRunning");
     expect(p.automation["com.microsoft.edgemac"]).toBe("notInstalled");
     expect(p.fullDiskAccess).toBe("denied");
+  });
+
+  it("decodes a browser that did not answer", () => {
+    // Given: the fixture line with Chrome noAnswer in place of notAsked
+    const noAnswer = line.replace(
+      '"com.google.Chrome":"notAsked"',
+      '"com.google.Chrome":"noAnswer"',
+    );
+    // When
+    const p = Effect.runSync(decodePermissions(noAnswer));
+    // Then
+    expect(p.automation["com.google.Chrome"]).toBe("noAnswer");
   });
 
   it("items list installed browsers by bundle id with display names", () => {

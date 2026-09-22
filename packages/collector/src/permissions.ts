@@ -5,6 +5,7 @@ export const GrantState = Schema.Literal(
   "denied",
   "notAsked",
   "notRunning",
+  "noAnswer",
   "notInstalled",
 );
 
@@ -34,6 +35,9 @@ const browserNames: Record<string, string> = {
 
 export const browserName = (bundleId: string): string =>
   browserNames[bundleId] ?? bundleId;
+
+export const noAnswerNote = (browser: string): string =>
+  `${browser} did not answer · quit ${browser}, open it again, then run clocktrace permissions`;
 
 export const GrantRequest = Schema.Union(
   Schema.Struct({ kind: Schema.Literal("accessibility") }),
