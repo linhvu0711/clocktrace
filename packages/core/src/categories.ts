@@ -12,6 +12,7 @@ import { Store } from "./store.js";
 export const CategoryInput = Schema.Struct({
   id: Schema.NullOr(Schema.String),
   ...NewCategory.fields,
+  productive: Schema.optional(Schema.Boolean),
 });
 
 export const setCategory = (
@@ -26,12 +27,21 @@ export const setCategory = (
     if (input.id === null) {
       return yield* store.insertCategory({
         name: input.name,
-        productive: input.productive,
+        productive: input.productive ?? false,
       });
+    }
+    let productive = input.productive;
+    if (productive === undefined) {
+      const categories = yield* store.listCategories();
+      const current = categories.find((c) => c.id === input.id);
+      if (current === undefined) {
+        return yield* new CategoryNotFoundError({ id: input.id });
+      }
+      productive = current.productive;
     }
     const updated = yield* store.updateCategory(input.id, {
       name: input.name,
-      productive: input.productive,
+      productive,
     });
     if (Option.isNone(updated)) {
       return yield* new CategoryNotFoundError({ id: input.id });

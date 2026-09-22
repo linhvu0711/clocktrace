@@ -135,6 +135,50 @@ describe("categories", () => {
     });
   });
 
+  it("setCategory with an id and no flag keeps the flag", async () => {
+    // Given: an empty store with one productive category
+    const { inserted, result } = await useEmpty(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const inserted = yield* store.insertCategory({
+          name: "Coding",
+          productive: true,
+        });
+        // When: a rename that leaves out productive
+        const result = yield* setCategory({ id: inserted.id, name: "Code" });
+        return { inserted, result };
+      }),
+    );
+    // Then
+    expect(result).toEqual({
+      id: inserted.id,
+      name: "Code",
+      productive: true,
+    });
+  });
+
+  it("setCategory with an unknown id and no flag names the id", async () => {
+    // Given: an empty store
+    // When: an update with no productive on an id that does not exist
+    const result = await useEmpty(
+      Effect.either(
+        setCategory({
+          id: "00000000-0000-4000-8000-000000000077",
+          name: "X",
+        }),
+      ),
+    );
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      const error = result.left as CategoryNotFoundError;
+      expect(error._tag).toBe("CategoryNotFoundError");
+      expect(error.message).toBe(
+        "category 00000000-0000-4000-8000-000000000077 not found",
+      );
+    }
+  });
+
   it("setCategory with an unknown id fails naming the id", async () => {
     // Given: an empty store
     // When
