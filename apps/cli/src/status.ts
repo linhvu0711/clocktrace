@@ -1,15 +1,16 @@
 import { homedir } from "node:os";
 
 import {
+  type App,
   type DeviceStatus,
   type Helper,
   type HelperExitedError,
-  type HelperNotFoundError,
   type Launchd,
   type LaunchdError,
   type PermissionLine,
   readStatus,
   Status,
+  statusLines,
 } from "@clocktrace/collector";
 import type { Store, StoreError } from "@clocktrace/core";
 import { Command } from "@effect/cli";
@@ -159,21 +160,25 @@ export const printStatus = (
   json = false,
 ): Effect.Effect<
   void,
-  | HelperNotFoundError
-  | HelperExitedError
-  | ParseError
-  | StoreError
-  | LaunchdError,
-  Prompt | Launchd | Helper | Store | DateTime.CurrentTimeZone | Style
+  HelperExitedError | ParseError | StoreError | LaunchdError,
+  | Prompt
+  | Launchd
+  | Helper
+  | App
+  | Store
+  | DateTime.CurrentTimeZone
+  | Style
 > =>
   Effect.gen(function* () {
     const status = yield* readStatus();
     const encoded = yield* Schema.encode(Status)(status);
     const look = yield* Style;
     const now = yield* DateTime.nowInCurrentZone;
-    yield* report(json, encoded, () =>
-      statusScreen(status, look, now, homedir()),
-    );
+    const lines =
+      status.app === "missing"
+        ? yield* statusLines(status)
+        : statusScreen(status, look, now, homedir());
+    yield* report(json, encoded, () => lines);
   });
 
 export const status = (
@@ -181,7 +186,6 @@ export const status = (
 ): Effect.Effect<
   void,
   | NotSetUpError
-  | HelperNotFoundError
   | HelperExitedError
   | ParseError
   | StoreError
@@ -190,6 +194,7 @@ export const status = (
   | Prompt
   | Launchd
   | Helper
+  | App
   | FileSystem.FileSystem
   | DateTime.CurrentTimeZone
   | Style
