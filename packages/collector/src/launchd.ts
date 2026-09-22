@@ -172,7 +172,19 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
     return {
       isInstalled: () => fs.exists(plistPath).pipe(Effect.orDie),
       readPlist: () =>
-        fs.readFileString(plistPath).pipe(Effect.orElseSucceed(() => null)),
+        fs.readFileString(plistPath).pipe(
+          Effect.catchIf(
+            (e) => e._tag === "SystemError" && e.reason === "NotFound",
+            () => Effect.succeed(null),
+          ),
+          Effect.mapError(
+            (e) =>
+              new LaunchdError({
+                step: `read ${plistPath}`,
+                detail: e.message,
+              }),
+          ),
+        ),
       bootstrap,
       bootout,
       state,
