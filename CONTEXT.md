@@ -46,6 +46,14 @@ _Avoid_: Source, machine, peer
 The part of the Collector that turns Biome App.InFocus records from other Devices into Activities. Isolated from Mac tracking and gated by a list of verified macOS versions.
 _Avoid_: Screen Time sync, iOS tracker
 
+**Progress**:
+The Importer's bookmark for one Device: the last segment file and offset it turned into Activities, and that record's time. A Device with no records has no Progress yet.
+_Avoid_: Cursor, checkpoint, since
+
+**Import batch**:
+One Importer run's new Activities, the Progress each Device moves to, and the run's status. Written in one transaction, so a failed write leaves none of them.
+_Avoid_: Import, sync, chunk
+
 **Host**:
 An AI app that starts the MCP server and gives its model our tools. v0 registers with Claude Code, Codex, Hermes Agent, and OpenClaw.
 _Avoid_: Client, agent app, harness, IDE
