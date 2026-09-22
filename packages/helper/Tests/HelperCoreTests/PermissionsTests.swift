@@ -9,6 +9,7 @@ final class PermissionsTests: XCTestCase {
     installed: @escaping (String) -> Bool = {
       ["com.apple.Safari", "com.google.Chrome", "com.brave.Browser"].contains($0)
     },
+    running: @escaping (String) -> Bool = { _ in true },
     automationStatus: @escaping (String, Bool) -> OSStatus = { bundleId, _ in
       switch bundleId {
       case "com.apple.Safari": return -600
@@ -23,6 +24,7 @@ final class PermissionsTests: XCTestCase {
       axTrusted: axTrusted,
       axPrompt: axPrompt,
       installed: installed,
+      running: running,
       automationStatus: automationStatus,
       canOpenBiomeSyncDb: canOpenBiomeSyncDb,
       openSettings: openSettings
@@ -55,6 +57,74 @@ final class PermissionsTests: XCTestCase {
     let state = checkPermissions(reads: reads).automation["com.google.Chrome"]
     // Then
     XCTAssertEqual(state, .denied)
+  }
+
+  func testAClosedBrowserIsNotRunningWithoutTheProbe() {
+    // Given: Safari closed, its probe would answer granted
+    let reads = reads(
+      running: { $0 != "com.apple.Safari" },
+      automationStatus: { _, _ in 0 })
+    // When
+    let state = checkPermissions(reads: reads).automation["com.apple.Safari"]
+    // Then
+    XCTAssertEqual(state, .notRunning)
+  }
+
+  func testAClosedBrowserIsNeverProbed() {
+    // Given: Safari closed; the probe records every call
+    var probes: [String] = []
+    let reads = reads(
+      running: { $0 != "com.apple.Safari" },
+      automationStatus: { bundleId, _ in
+        probes.append(bundleId)
+        return 0
+      })
+    // When
+    _ = checkPermissions(reads: reads)
+    // Then
+    XCTAssertEqual(probes, ["com.brave.Browser", "com.google.Chrome"])
+  }
+
+  private func slowChromeReads() -> PermissionReads {
+    reads(automationStatus: { bundleId, _ in
+      if bundleId == "com.google.Chrome" {
+        Thread.sleep(forTimeInterval: 0.5)
+      }
+      return bundleId == "com.apple.Safari" ? -600 : 0
+    })
+  }
+
+  func testAProbeThatNeverAnswersIsNoAnswerAfterTheLimit() {
+    // Given: Chrome's probe hangs; Safari closed answers -600, Brave granted
+    let reads = slowChromeReads()
+    // When
+    let state = checkPermissions(reads: reads, probeLimit: .milliseconds(50))
+      .automation["com.google.Chrome"]
+    // Then
+    XCTAssertEqual(state, .noAnswer)
+  }
+
+  func testTheOtherBrowsersKeepTheirStateAfterANoAnswer() {
+    // Given: the same reads
+    let reads = slowChromeReads()
+    // When
+    let state = checkPermissions(reads: reads, probeLimit: .milliseconds(50))
+      .automation["com.brave.Browser"]
+    // Then
+    XCTAssertEqual(state, .granted)
+  }
+
+  func testNoAnswerEncodesAsNoAnswer() {
+    // Given: the same reads
+    let reads = slowChromeReads()
+    // When
+    let json = checkPermissions(reads: reads, probeLimit: .milliseconds(50))
+      .json()
+    // Then
+    XCTAssertEqual(
+      json,
+      "{\"accessibility\":\"granted\",\"automation\":{\"com.apple.Safari\":\"notRunning\",\"com.brave.Browser\":\"granted\",\"com.google.Chrome\":\"noAnswer\",\"com.microsoft.edgemac\":\"notInstalled\",\"com.operasoftware.Opera\":\"notInstalled\",\"com.vivaldi.Vivaldi\":\"notInstalled\",\"org.chromium.Chromium\":\"notInstalled\"},\"fullDiskAccess\":\"denied\"}"
+    )
   }
 
   func testAccessibilityDeniedWhenNotTrusted() {
@@ -96,6 +166,47 @@ final class PermissionsTests: XCTestCase {
       bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
     // Then
     XCTAssertEqual(probes, [["com.apple.Safari", "true"]])
+  }
+
+  func testRequestAutomationExits3WithoutTheProbeWhenNotRunning() {
+    // Given: the browser is not running; the probe would answer granted
+    let reads = reads(
+      running: { _ in false },
+      automationStatus: { _, _ in 0 })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 3)
+  }
+
+  func testRequestAutomationNeverProbesAClosedBrowser() {
+    // Given: the browser is not running; the probe records (bundleId, ask)
+    var probes: [[String]] = []
+    let reads = reads(
+      running: { _ in false },
+      automationStatus: { bundleId, ask in
+        probes.append([bundleId, String(ask)])
+        return 0
+      })
+    // When
+    _ = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(probes, [])
+  }
+
+  func testRequestAutomationWaitsForASlowAnswer() {
+    // Given: a running browser whose probe takes 0.3 s to answer denied
+    let reads = reads(automationStatus: { _, _ in
+      Thread.sleep(forTimeInterval: 0.3)
+      return -1743
+    })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 0)
   }
 
   func testRequestAutomationExits3WhenNotRunning() {

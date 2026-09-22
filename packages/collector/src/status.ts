@@ -9,6 +9,7 @@ import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
 import {
   browserName,
+  noAnswerNote,
   type PermissionItem,
   permissionItems,
 } from "./permissions.js";
@@ -73,6 +74,17 @@ export const permissionLine = (item: PermissionItem): PermissionLine => {
       name: item.name,
       state: "not checked",
       note: `${browser} is closed`,
+    };
+  }
+  if (item.state === "noAnswer") {
+    const browser =
+      item.request.kind === "automation"
+        ? browserName(item.request.bundleId)
+        : item.name;
+    return {
+      name: item.name,
+      state: "not checked",
+      note: noAnswerNote(browser),
     };
   }
   return { name: item.name, state: "denied", note: item.loss };

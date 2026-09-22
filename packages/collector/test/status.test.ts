@@ -187,6 +187,34 @@ describe("status", () => {
     ]);
   });
 
+  it("a browser that did not answer is not checked with the fix", async () => {
+    // Given: a stopped agent, Chrome noAnswer, an empty store
+    // When
+    const lines = await runWith(
+      {
+        accessibility: "denied",
+        automation: {
+          "com.apple.Safari": "notRunning",
+          "com.google.Chrome": "noAnswer",
+          "com.brave.Browser": "notInstalled",
+        },
+        fullDiskAccess: "denied",
+      },
+      { installed: true, running: false, plist: null, installs: 0 },
+      Effect.flatMap(readStatus(), statusLines),
+    );
+    // Then
+    expect(lines).toEqual([
+      "collector: stopped, run clocktrace start",
+      "accessibility: denied, window titles are not tracked",
+      "automation Safari: not checked, Safari is closed",
+      "automation Chrome: not checked, Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
+      "full disk access: denied, iPhone and iPad time is not imported",
+      "last activity: none yet",
+      `database: ${dbPath}`,
+    ]);
+  });
+
   it("a running Collector with every grant and one Activity", async () => {
     // Given: a running agent, every grant, one Activity on one device
     // When

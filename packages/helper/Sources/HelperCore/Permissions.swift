@@ -5,6 +5,7 @@ public enum GrantState: String, Encodable, Equatable {
   case denied
   case notAsked
   case notRunning
+  case noAnswer
   case notInstalled
 }
 

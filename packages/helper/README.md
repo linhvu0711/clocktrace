@@ -75,7 +75,7 @@ missing it marks the line in `missing` and moves on.
 | field | source | states |
 | --- | --- | --- |
 | `accessibility` | `AXIsProcessTrusted` | `granted`, `denied` |
-| `automation.<bundleId>` | `AEDeterminePermissionToAutomateTarget` without asking | `granted`, `denied`, `notAsked`, `notRunning` (browser closed), `notInstalled` |
+| `automation.<bundleId>` | `AEDeterminePermissionToAutomateTarget` without asking | `granted`, `denied`, `notAsked`, `notRunning` (browser closed), `noAnswer` (running, macOS did not answer in 5 s), `notInstalled` |
 | `fullDiskAccess` | opening `~/Library/Biome/sync/sync.db` | `granted`, `denied` |
 
 macOS cannot tell a denied Accessibility grant from one never asked, and Full

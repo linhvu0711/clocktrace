@@ -292,6 +292,37 @@ describe("status", () => {
     ]);
   });
 
+  it("status prints a browser that did not answer", async () => {
+    // Given: Safari not running, Chrome noAnswer, one Activity
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    await Effect.runPromise(seedOne(path));
+    // When
+    const { exit, output } = await run(
+      {
+        accessibility: "granted",
+        automation: {
+          "com.apple.Safari": "notRunning",
+          "com.google.Chrome": "noAnswer",
+        },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Collector      ✔ running",
+      "Permissions    2 of 4 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "  ○ Automation · Safari  Safari is closed",
+      "  ○ Automation · Chrome  Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
+      "Last activity  2026-09-18 10:05",
+      `Database       ${path}`,
+    ]);
+  });
+
   it("status paints the marks when color is on", async () => {
     // Given: the same as the first case, but color on
     await Effect.runPromise(Effect.scoped(openStore(path)));
@@ -369,6 +400,33 @@ describe("status", () => {
       devices: [],
       databasePath: path,
     });
+  });
+
+  it("status --json carries a browser that did not answer as not checked", async () => {
+    // Given: Chrome noAnswer; the store opened, the collector running
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const fixture: Permissions = {
+      accessibility: "granted",
+      automation: { "com.google.Chrome": "noAnswer" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output } = await run(
+      fixture,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(true),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(JSON.parse(output[0] ?? "").permissions).toEqual([
+      { name: "accessibility", state: "granted", note: null },
+      {
+        name: "automation Chrome",
+        state: "not checked",
+        note: "Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
+      },
+      { name: "full disk access", state: "granted", note: null },
+    ]);
   });
 
   it("status prints the iOS import group and the device rows", async () => {
