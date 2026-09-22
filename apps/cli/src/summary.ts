@@ -17,7 +17,13 @@ import type { ParseError } from "effect/ParseResult";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
-import { deviceOption, fromOption, toOption, windowLine } from "./window.js";
+import {
+  deviceOption,
+  fromOption,
+  requireWindow,
+  toOption,
+  windowLine,
+} from "./window.js";
 
 export const summaryLine = (row: SummaryRow): string =>
   [
@@ -51,7 +57,7 @@ export const printSummary = (
 
 const groupBy = Options.choice("group-by", GroupBy.literals).pipe(
   Options.withDefault("category"),
-  Options.withDescription("category, project, app, or device"),
+  Options.withDescription("how to group the rows"),
 );
 
 export const summaryCommand = Command.make(
@@ -64,14 +70,17 @@ export const summaryCommand = Command.make(
     json: jsonOption,
   },
   ({ from, to, groupBy, device, json }) =>
-    whenSetUp(
-      printSummary(
-        {
-          range: { from, to },
-          groupBy,
-          deviceId: Option.getOrUndefined(device),
-        },
-        json,
-      ),
-    ),
+    Effect.gen(function* () {
+      const range = yield* requireWindow("summary", from, to);
+      return yield* whenSetUp(
+        printSummary(
+          { range, groupBy, deviceId: Option.getOrUndefined(device) },
+          json,
+        ),
+      );
+    }),
+).pipe(
+  Command.withDescription(
+    "show time summed by category, project, app, or device",
+  ),
 );

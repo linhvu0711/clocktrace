@@ -10,7 +10,7 @@ import {
   usedRange,
 } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
-import { DateTime, Effect, Option, Schema } from "effect";
+import { Data, DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { jsonOption, report } from "./output.js";
@@ -20,9 +20,28 @@ import {
   deviceOption,
   fromOption,
   localMinute,
+  requireWindow,
   toOption,
   windowLine,
 } from "./window.js";
+
+// biome-ignore lint/complexity/noBannedTypes: the error has no fields
+export class BadLimitError extends Data.TaggedError("BadLimitError")<{}> {}
+
+// --limit is parsed as text so we own the error wording instead of the
+// library's "'x' is not a integer"; a non-integer value is a BadLimitError.
+export const parseLimit = (
+  limit: Option.Option<string>,
+): Effect.Effect<Option.Option<number>, BadLimitError> =>
+  Option.match(limit, {
+    onNone: () => Effect.succeed(Option.none()),
+    onSome: (text) => {
+      const n = Number(text);
+      return Number.isInteger(n)
+        ? Effect.succeed(Option.some(n))
+        : Effect.fail(new BadLimitError());
+    },
+  });
 
 export const activityLine = (a: Activity, zone: DateTime.TimeZone): string =>
   [
@@ -66,7 +85,7 @@ const appOption = Options.text("app").pipe(
   Options.withDescription("a bundle id or app name"),
 );
 
-const limitOption = Options.integer("limit").pipe(
+const limitOption = Options.text("limit").pipe(
   Options.optional,
   Options.withDescription("rows to print, at most 200"),
 );
@@ -82,15 +101,19 @@ export const activitiesCommand = Command.make(
     json: jsonOption,
   },
   ({ from, to, device, app, limit, json }) =>
-    whenSetUp(
-      printActivities(
-        {
-          range: { from, to },
-          deviceId: Option.getOrUndefined(device),
-          app: Option.getOrUndefined(app),
-          limit: Option.getOrUndefined(limit),
-        },
-        json,
-      ),
-    ),
-);
+    Effect.gen(function* () {
+      const rows = yield* parseLimit(limit);
+      const range = yield* requireWindow("activities", from, to);
+      return yield* whenSetUp(
+        printActivities(
+          {
+            range,
+            deviceId: Option.getOrUndefined(device),
+            app: Option.getOrUndefined(app),
+            limit: Option.getOrUndefined(rows),
+          },
+          json,
+        ),
+      );
+    }),
+).pipe(Command.withDescription("list raw activities"));

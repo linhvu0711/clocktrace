@@ -56,8 +56,13 @@ export const printRemovedCategory = (
     report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
   );
 
-const id = Options.text("id").pipe(Options.optional);
-const name = Options.text("name");
+const id = Options.text("id").pipe(
+  Options.optional,
+  Options.withDescription("the category id to update; omit to create"),
+);
+const name = Options.text("name").pipe(
+  Options.withDescription("the category name"),
+);
 const productive = Options.choice("productive", ["true", "false"]).pipe(
   Options.optional,
   Options.withDescription(
@@ -95,5 +100,6 @@ const removeCommand = Command.make(
 );
 
 export const categoriesCommand = Command.make("categories").pipe(
+  Command.withDescription("list, set, or remove categories"),
   Command.withSubcommands([listCommand, setCommand, removeCommand]),
 );

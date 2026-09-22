@@ -4,7 +4,9 @@ import { Effect } from "effect";
 import { Prompt } from "./prompt.js";
 
 export const jsonOption = Options.boolean("json").pipe(
-  Options.withDescription("print the JSON the MCP tool returns"),
+  Options.withDescription(
+    "print JSON for scripts, the same shape the MCP tool returns",
+  ),
 );
 
 export const report = <A extends Record<string, unknown>>(

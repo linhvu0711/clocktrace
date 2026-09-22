@@ -45,7 +45,9 @@ export const make = Effect.gen(function* () {
     debug: () => Effect.void,
     dir: () => Effect.void,
     dirxml: () => Effect.void,
-    error: () => Effect.void,
+    // The CLI's error output (library validation messages) goes to
+    // Console.error; capture it so tests can read what the user is shown.
+    error: log,
     group: () => Effect.void,
     groupEnd: Effect.void,
     info: () => Effect.void,

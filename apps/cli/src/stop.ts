@@ -22,4 +22,6 @@ export const stop = (): Effect.Effect<
     ),
   );
 
-export const stopCommand = Command.make("stop", {}, () => stop());
+export const stopCommand = Command.make("stop", {}, () => stop()).pipe(
+  Command.withDescription("stop the collector"),
+);
