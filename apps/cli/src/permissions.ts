@@ -19,7 +19,7 @@ import {
   Command as PlatformCommand,
   type Terminal,
 } from "@effect/platform";
-import { Data, Effect, Schedule } from "effect";
+import { Data, Effect, Either, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { type Cell, columns, line, mark, Style, span } from "./format.js";
@@ -189,31 +189,40 @@ export const walkPermissions = (
             const code = yield* PlatformCommand.exitCode(
               PlatformCommand.make("open", "-b", bundleId),
             ).pipe(Effect.orElseSucceed(() => 1));
-            const state =
+            const opened =
               code === 0
                 ? yield* Effect.scoped(helper.permissions(appPath)).pipe(
                     Effect.flatMap((after) =>
                       after.automation[bundleId] === undefined ||
                       after.automation[bundleId] === "notRunning"
                         ? Effect.fail(new BrowserNotRunning({ bundleId }))
-                        : Effect.succeed(after.automation[bundleId]),
+                        : Effect.succeed(
+                            after.automation[bundleId] as GrantState,
+                          ),
                     ),
-                    Effect.retry({ schedule: openRetry }),
-                    Effect.orElseSucceed(() => null),
+                    Effect.retry({
+                      schedule: openRetry,
+                      while: (e) => e._tag === "BrowserNotRunning",
+                    }),
+                    Effect.either,
                   )
-                : null;
-            if (state === null) {
-              perm.row = [
-                lead("warn", item),
-                span(
-                  "warn",
-                  `${browserName(bundleId)} did not open · open it, then run clocktrace permissions`,
-                ),
-              ];
+                : Either.left(new BrowserNotRunning({ bundleId }));
+            if (Either.isLeft(opened)) {
+              const e = opened.left;
+              perm.row =
+                e._tag === "BrowserNotRunning"
+                  ? [
+                      lead("warn", item),
+                      span(
+                        "warn",
+                        `${browserName(bundleId)} did not open · open it, then run clocktrace permissions`,
+                      ),
+                    ]
+                  : [lead("bad", item), span("bad", e.message)];
               yield* printRow(perm);
               return;
             }
-            perm.state = state;
+            perm.state = opened.right;
           }),
         );
       }
@@ -245,6 +254,18 @@ export const walkPermissions = (
           );
           if ("error" in request) {
             perm.row = [lead("bad", item), span("bad", request.error.message)];
+            yield* printRow(perm);
+            return;
+          }
+          if (
+            request.outcome === "notRunning" &&
+            item.request.kind === "automation"
+          ) {
+            perm.state = "notRunning";
+            perm.row = [
+              lead("warn", item),
+              noteCell(item, `${browserName(item.request.bundleId)} is closed`),
+            ];
             yield* printRow(perm);
             return;
           }

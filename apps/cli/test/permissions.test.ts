@@ -71,6 +71,8 @@ describe("permissions", () => {
       readonly appLayer?: Layer.Layer<App>;
       readonly commands?: Record<string, ExecResult>;
       readonly openRetry?: Schedule.Schedule<unknown, unknown>;
+      readonly permissionsErrorAt?: number;
+      readonly permissionsError?: HelperExitedError;
     } = {},
   ) =>
     Effect.runPromise(
@@ -89,19 +91,29 @@ describe("permissions", () => {
                 k.ctrl === undefined ? {} : { ctrl: k.ctrl },
               );
         }
+        const permCalls = yield* Ref.make(0);
         const helper = Layer.succeed(
           Helper,
           new Helper({
             check: () => Effect.void,
             lines: () => Stream.empty,
             permissions: () =>
-              Ref.modify(answers, (as) => {
-                const head = as[0] ?? as.at(-1);
-                if (head === undefined) {
-                  throw new Error("no permission answers left");
-                }
-                return [head, as.length > 1 ? as.slice(1) : as];
-              }),
+              Ref.modify(permCalls, (n) => [n, n + 1]).pipe(
+                Effect.flatMap((n) =>
+                  n === options.permissionsErrorAt
+                    ? Effect.fail(
+                        options.permissionsError ??
+                          new HelperExitedError({ cause: "gone" }),
+                      )
+                    : Ref.modify(answers, (as) => {
+                        const head = as[0] ?? as.at(-1);
+                        if (head === undefined) {
+                          throw new Error("no permission answers left");
+                        }
+                        return [head, as.length > 1 ? as.slice(1) : as];
+                      }),
+                ),
+              ),
             request: (_path, grant) => {
               const error = options.requestError?.(grant) ?? null;
               return (error !== null ? Effect.fail(error) : Effect.void).pipe(
@@ -571,6 +583,62 @@ describe("permissions", () => {
     expect(requests).toEqual([]);
     expect(output[output.length - 1]).toBe(
       "  ○ Automation · Safari  Safari did not open · open it, then run clocktrace permissions",
+    );
+  });
+
+  it("a helper failure while waiting for a browser to run prints the cross", async () => {
+    // Given
+    const p = {
+      accessibility: "granted" as const,
+      automation: { "com.apple.Safari": "notRunning" as const },
+      fullDiskAccess: "granted" as const,
+    };
+    // When: the browser is asked to open, then the helper errors on the poll
+    const { exit, output, requests } = await run(
+      [p],
+      ["y", { key: "enter" }],
+      true,
+      {
+        commands: { "open -b com.apple.Safari": { code: 0 } },
+        permissionsErrorAt: 1,
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([]);
+    expect(output[output.length - 1]).toBe(
+      "  ✘ Automation · Safari  helper exited: gone",
+    );
+  });
+
+  it("a browser that closes before the ask shows closed, not denied", async () => {
+    // Given: Safari opens, reads notAsked, then reports notRunning at request
+    const closed = {
+      accessibility: "granted" as const,
+      automation: { "com.apple.Safari": "notRunning" as const },
+      fullDiskAccess: "granted" as const,
+    };
+    const pending = {
+      ...closed,
+      automation: { "com.apple.Safari": "notAsked" as const },
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [closed, pending, pending],
+      ["y", { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: { "open -b com.apple.Safari": { code: 0 } },
+        outcome: "notRunning",
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "com.apple.Safari" },
+    ]);
+    expect(output[output.length - 1]).toBe(
+      "  ○ Automation · Safari  URLs in Safari  Safari is closed",
     );
   });
 });

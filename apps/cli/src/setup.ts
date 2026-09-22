@@ -224,12 +224,14 @@ export const setup = (
             prompt
               .printError(
                 line(
-                  [
-                    "  ",
-                    mark("bad", look),
-                    " collector did not start · see ",
-                    span("dim", shortPath(logPath, home)),
-                  ],
+                  e.step.startsWith("launchctl")
+                    ? [
+                        "  ",
+                        mark("bad", look),
+                        " collector did not start · see ",
+                        span("dim", shortPath(logPath, home)),
+                      ]
+                    : ["  ", mark("bad", look), ` ${e.message}`],
                   look,
                 ),
               )
