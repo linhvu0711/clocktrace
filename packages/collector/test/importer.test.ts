@@ -275,23 +275,20 @@ describe("importer", () => {
   it("a renamed DevicePeer shows its new name and an empty name falls back only while empty", async () => {
     // Given: an iPhone peer first seen with an empty name
     // When: the peer reports a name, then an empty name again
-    const result = await run(
-      { devices: "ref", records: [] },
-      "27.0",
-      (ctx) =>
-        Effect.gen(function* () {
-          yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
-          yield* importOnce("/stub");
-          const store = yield* Store;
-          const first = yield* store.listDevices();
-          yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE_NAMED]);
-          yield* importOnce("/stub");
-          const second = yield* store.listDevices();
-          yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
-          yield* importOnce("/stub");
-          const third = yield* store.listDevices();
-          return { first, second, third };
-        }),
+    const result = await run({ devices: "ref", records: [] }, "27.0", (ctx) =>
+      Effect.gen(function* () {
+        yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
+        yield* importOnce("/stub");
+        const store = yield* Store;
+        const first = yield* store.listDevices();
+        yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE_NAMED]);
+        yield* importOnce("/stub");
+        const second = yield* store.listDevices();
+        yield* Ref.set(ctx.devicesRef, [D_MAC, D_PHONE]);
+        yield* importOnce("/stub");
+        const third = yield* store.listDevices();
+        return { first, second, third };
+      }),
     );
     // Then
     const names = (ds: ReadonlyArray<{ name: string }>) =>

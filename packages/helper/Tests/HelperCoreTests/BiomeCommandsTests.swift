@@ -78,7 +78,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 3)
     XCTAssertEqual(out, [])
@@ -92,7 +92,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 4)
     XCTAssertEqual(out, [])
@@ -106,7 +106,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 0)
     XCTAssertEqual(out, [])
@@ -129,7 +129,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 0)
     XCTAssertEqual(err, [])
@@ -148,6 +148,27 @@ final class BiomeCommandsTests: XCTestCase {
       ])
   }
 
+  func testSkipsOldSegmentsOnlyForTheDeviceWithASince() {
+    // Given: two devices, only a-device has a --since flag
+    let reads = reads(
+      deviceFolders: { ["b-device", "a-device"] },
+      segments: { _ in
+        .listed([BiomeSegment(name: "1", modifiedAt: 100), BiomeSegment(name: "2", modifiedAt: 200)])
+      })
+    var out: [String] = []
+    var err: [String] = []
+    // When
+    let code = biomeRecords(
+      reads: reads, since: ["a-device": 150], emit: { out.append($0) }, emitError: { err.append($0) })
+    // Then
+    XCTAssertEqual(code, 0)
+    XCTAssertEqual(err, [])
+    XCTAssertEqual(out.count, 9)
+    XCTAssertEqual(
+      out.first,
+      "{\"appVersion\":\"1.2.3\",\"build\":\"456\",\"bundleId\":\"com.example.alpha\",\"device\":\"a-device\",\"focus\":\"start\",\"offset\":32,\"reason\":\"com.example.reason\",\"segment\":\"2\",\"ts\":1758307200.5}")
+  }
+
   func testSkipsSegmentsOlderThanSince() {
     // Given: two segments, only "2" newer than the --since flag
     let reads = reads(segments: { _ in
@@ -157,7 +178,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: 150, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: ["a-device": 150], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 0)
     XCTAssertEqual(err, [])
@@ -174,7 +195,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: 150, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: ["a-device": 150], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 0)
     XCTAssertEqual(err, [])
@@ -193,7 +214,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 0)
     XCTAssertEqual(err, [])
@@ -213,7 +234,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 0)
     XCTAssertEqual(err, [])
@@ -234,7 +255,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 6)
     XCTAssertEqual(err, ["cannot list /remote/a-device: Permission denied"])
@@ -251,7 +272,7 @@ final class BiomeCommandsTests: XCTestCase {
     var err: [String] = []
     // When
     let code = biomeRecords(
-      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+      reads: reads, since: [:], emit: { out.append($0) }, emitError: { err.append($0) })
     // Then
     XCTAssertEqual(code, 0)
     XCTAssertEqual(out, [])

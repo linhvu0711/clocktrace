@@ -5,7 +5,7 @@ public enum Command: Equatable {
   case requestAccessibility
   case requestAutomation(String)
   case requestFullDiskAccess
-  case biomeRecords(since: Int?)
+  case biomeRecords(since: [String: Int])
   case biomeDevices
   case usage
 
@@ -13,9 +13,21 @@ public enum Command: Equatable {
     if args.count == 4 && Array(args.prefix(3)) == ["permissions", "request", "automation"] {
       return .requestAutomation(args[3])
     }
-    if args.count == 4 && Array(args.prefix(3)) == ["biome", "records", "--since"],
-      let since = Int(args[3])
-    {
+    if args.first == "biome" && args.dropFirst().first == "records" {
+      var since: [String: Int] = [:]
+      var rest = args.dropFirst(2)
+      while !rest.isEmpty {
+        guard rest.count >= 2, rest.first == "--since" else { return .usage }
+        let pair = rest.dropFirst().first ?? ""
+        rest = rest.dropFirst(2)
+        guard let eq = pair.firstIndex(of: "=") else { return .usage }
+        let device = String(pair[pair.startIndex..<eq])
+        let seconds = String(pair[pair.index(after: eq)...])
+        guard !device.isEmpty, let n = Int(seconds), since[device] == nil else {
+          return .usage
+        }
+        since[device] = n
+      }
       return .biomeRecords(since: since)
     }
     switch args {
@@ -29,8 +41,6 @@ public enum Command: Equatable {
       return .requestAccessibility
     case ["permissions", "request", "fulldiskaccess"]:
       return .requestFullDiskAccess
-    case ["biome", "records"]:
-      return .biomeRecords(since: nil)
     case ["biome", "devices"]:
       return .biomeDevices
     default:
@@ -40,4 +50,4 @@ public enum Command: Equatable {
 }
 
 public let usageText =
-  "usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <unixSeconds>] | biome devices)\n"
+  "usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <deviceId>=<unixSeconds>]... | biome devices)\n"
