@@ -14,7 +14,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { BiomeExitError, Helper } from "../src/helper.js";
-import { importOnce, importProgressKey } from "../src/importer.js";
+import { importOnce, importProgressKey, importTick } from "../src/importer.js";
 import { MacIdentity } from "../src/mac-identity.js";
 import type { Permissions } from "../src/permissions.js";
 
@@ -709,6 +709,44 @@ describe("importer", () => {
       state: "broken",
       at: "2026-09-19T17:30:00.000Z",
       reason: "cannot read DevicePeer: locked",
+      devices: [
+        { externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" },
+        { externalId: P3, lastSync: "2026-09-17T17:00:00.000Z" },
+      ],
+    });
+  });
+
+  it("an unexpected failure records broken and keeps the prior sync data", async () => {
+    // Given: one good import, then biome devices exits with an unhandled code
+    const devicesRef = Ref.unsafeMake<
+      Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+    >(Effect.succeed([D_PHONE, D_PAD]));
+    // When
+    const status = await run(
+      {
+        devices: Ref.get(devicesRef).pipe(Effect.flatten),
+        records: ALL,
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          yield* Ref.set(
+            devicesRef,
+            Effect.fail(
+              new BiomeExitError({ code: 9, stderr: "unknown failure\n" }),
+            ),
+          );
+          yield* importTick("/stub");
+          const store = yield* Store;
+          return yield* store.getSetting("importer.status");
+        }),
+    );
+    // Then
+    expect(JSON.parse(Option.getOrElse(status, () => ""))).toEqual({
+      state: "broken",
+      at: "2026-09-19T17:30:00.000Z",
+      reason: "helper biome exited 9: unknown failure",
       devices: [
         { externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" },
         { externalId: P3, lastSync: "2026-09-17T17:00:00.000Z" },

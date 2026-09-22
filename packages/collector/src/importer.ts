@@ -81,6 +81,23 @@ interface Open {
 const encodeResult = Schema.encodeSync(ImportResult);
 const encodeProgress = Schema.encodeSync(ImportProgress);
 
+const lastKnownSyncs = (
+  store: Store,
+): Effect.Effect<
+  Array<{ externalId: string; lastSync: DateTime.Utc | null }>,
+  StoreError
+> =>
+  Effect.gen(function* () {
+    const stored = yield* store.getSetting(importStatusKey);
+    const prior = yield* Effect.option(
+      Schema.decodeUnknown(ImportResult)(Option.getOrElse(stored, () => "")),
+    );
+    return Option.match(prior, {
+      onNone: () => [],
+      onSome: (r) => ("devices" in r ? [...r.devices] : []),
+    });
+  });
+
 export const importOnce = (
   helperPath: string,
 ): Effect.Effect<
@@ -123,22 +140,13 @@ export const importOnce = (
           return;
         }
         if (e.code === 5) {
-          const stored = yield* store.getSetting(importStatusKey);
-          const prior = yield* Effect.option(
-            Schema.decodeUnknown(ImportResult)(
-              Option.getOrElse(stored, () => ""),
-            ),
-          );
           yield* store.setSetting(
             importStatusKey,
             encodeResult({
               state: "broken",
               at: now,
               reason: e.stderr.trim(),
-              devices: Option.match(prior, {
-                onNone: () => [],
-                onSome: (r) => ("devices" in r ? r.devices : []),
-              }),
+              devices: yield* lastKnownSyncs(store),
             }),
           );
           return;
@@ -337,15 +345,41 @@ export const importOnce = (
     }
   });
 
-export const importLoop = (
+export const importTick = (
   helperPath: string,
 ): Effect.Effect<void, never, Helper | Store | MacIdentity> =>
   importOnce(helperPath).pipe(
     Effect.catchAllCause((cause) =>
-      Effect.logWarning("import failed").pipe(
-        Effect.annotateLogs("cause", Cause.pretty(cause)),
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const errors = Cause.prettyErrors(cause);
+        yield* store.setSetting(
+          importStatusKey,
+          encodeResult({
+            state: "broken",
+            at: yield* DateTime.now,
+            reason:
+              errors.length > 0
+                ? errors.map((e) => e.message).join("; ")
+                : Cause.pretty(cause),
+            devices: yield* lastKnownSyncs(store),
+          }),
+        );
+      }).pipe(
+        Effect.catchAllCause(() => Effect.void),
+        Effect.andThen(
+          Effect.logWarning("import failed").pipe(
+            Effect.annotateLogs("cause", Cause.pretty(cause)),
+          ),
+        ),
       ),
     ),
+  );
+
+export const importLoop = (
+  helperPath: string,
+): Effect.Effect<void, never, Helper | Store | MacIdentity> =>
+  importTick(helperPath).pipe(
     Effect.repeat(Schedule.spaced(importEvery)),
     Effect.asVoid,
   );
