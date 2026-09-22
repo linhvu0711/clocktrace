@@ -233,6 +233,60 @@ describe("format", () => {
     expect(columns([["abcdef", "x"]], look)).toEqual(["abcdef  "]);
   });
 
+  it("a too-wide last cell wraps onto lines indented to its column", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 9 };
+    // When / Then
+    expect(
+      columns([["ab", "one two three"]], look, { overflow: "wrap" }),
+    ).toEqual(["ab  one", "    two", "    three"]);
+  });
+
+  it("a space-less token longer than the width hard-breaks", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 9 };
+    // When / Then
+    expect(
+      columns([["ab", "abcdefghijk"]], look, { overflow: "wrap" }),
+    ).toEqual(["ab  abcde", "    fghij", "    k"]);
+  });
+
+  it("a wrapped cell keeps its tone on every line", () => {
+    // Given
+    const look = { color: true, unicode: true, width: 7 };
+    // When / Then
+    expect(
+      columns([["ab", [span("dim", "one two")]]], look, { overflow: "wrap" }),
+    ).toEqual(["ab  \u001b[0;90mone\u001b[0m", "    \u001b[0;90mtwo\u001b[0m"]);
+  });
+
+  it("a cell that fits is not wrapped", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 9 };
+    // When / Then
+    expect(columns([["ab", "one"]], look, { overflow: "wrap" })).toEqual([
+      "ab  one",
+    ]);
+  });
+
+  it("wrap with width 0 prints the row in full", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 0 };
+    // When / Then
+    expect(
+      columns([["ab", "one two three"]], look, { overflow: "wrap" }),
+    ).toEqual(["ab  one two three"]);
+  });
+
+  it("wrap with no room leaves the last cell empty", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 4 };
+    // When / Then
+    expect(columns([["abcdef", "x"]], look, { overflow: "wrap" })).toEqual([
+      "abcdef  ",
+    ]);
+  });
+
   it("shortPath puts ~ in place of the home folder at a path boundary", () => {
     // Given / When / Then
     expect([
