@@ -60,7 +60,7 @@ export const walkPermissions = (): Effect.Effect<
     const helperPath = yield* Effect.orDie(helperPathConfig);
     yield* helper.check(helperPath);
     const interactive = yield* prompt.interactive;
-    const p = yield* helper.permissions(helperPath);
+    const p = yield* Effect.scoped(helper.permissions(helperPath));
     for (const item of permissionItems(p)) {
       yield* prompt.print(`${item.name}: ${item.gives}`);
       yield* prompt.print(`  denied: ${item.loss}`);
@@ -75,7 +75,9 @@ export const walkPermissions = (): Effect.Effect<
         yield* prompt.print(`${item.name}: skipped, ${item.loss}`);
         continue;
       }
-      const outcome = yield* helper.request(helperPath, item.request);
+      const outcome = yield* Effect.scoped(
+        helper.request(helperPath, item.request),
+      );
       yield* prompt.print(outcomeLine(item, outcome));
     }
     yield* printStatus();

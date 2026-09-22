@@ -93,7 +93,7 @@ export const readStatus = (): Effect.Effect<
     const helperPath = yield* Effect.orDie(helperPathConfig);
     const helper = yield* Helper;
     yield* helper.check(helperPath);
-    const p = yield* helper.permissions(helperPath);
+    const p = yield* Effect.scoped(helper.permissions(helperPath));
     const launchd = yield* Launchd;
     const collector = yield* launchd.state();
     const store = yield* Store;
