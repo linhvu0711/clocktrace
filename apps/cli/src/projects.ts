@@ -12,20 +12,41 @@ import { Args, Command, Options } from "@effect/cli";
 import { Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import { type Cell, columns, count, line, span, Style } from "./format.js";
 import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 
 export const projectLine = (p: Project): string => `${p.id}  ${p.name}`;
 
+const projectRow = (p: Project): ReadonlyArray<Cell> => [
+  `  ${p.name}`,
+  span("dim", p.id),
+];
+
 export const printProjects = (
   json: boolean,
-): Effect.Effect<void, StoreError, Store | Prompt> =>
+): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
+    const look = yield* Style;
     const projects = yield* store.listProjects();
+    const header = [span("dim", "  name"), span("dim", "id")];
     yield* report(json, { projects }, ({ projects }) =>
-      projects.length === 0 ? ["none"] : projects.map(projectLine),
+      projects.length === 0
+        ? ["none"]
+        : [
+            ...columns([header, ...projects.map(projectRow)], look),
+            line(
+              [
+                span(
+                  "dim",
+                  `  ${count(projects.length, "project", "projects")}`,
+                ),
+              ],
+              look,
+            ),
+          ],
     );
   });
 

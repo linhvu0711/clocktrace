@@ -2,6 +2,7 @@ import { type ProjectNotFoundError, Store, setProject } from "@clocktrace/core";
 import { NodeContext } from "@effect/platform-node";
 import { Console, Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
+import { Style } from "../src/format.js";
 import {
   printProjects,
   printRemovedProject,
@@ -11,7 +12,9 @@ import { Prompt } from "../src/prompt.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
 
-const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
+const runPrint = <A, E>(
+  body: Effect.Effect<A, E, Store | Prompt | Style>,
+) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* MockTerminal.make(false);
@@ -26,6 +29,7 @@ const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
                 terminal.layer,
                 Prompt.Default,
                 Store.Test,
+                Style.Test,
               ),
             ),
           ),
@@ -37,6 +41,27 @@ const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt>) =>
   );
 
 describe("projects", () => {
+  it("list prints a header, one row per Project with the id last, and the count", async () => {
+    // Given: one Project
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const p = yield* setProject({ id: null, name: "Thesis" });
+        // When
+        yield* printProjects(false);
+        return p;
+      }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output).toEqual([
+        "  name    id",
+        `  Thesis  ${exit.value.id}`,
+        "  1 project",
+      ]);
+    }
+  });
+
   it("list of no Projects prints none", async () => {
     // Given: Store.Test, whose Starter set holds no Project
     // When
