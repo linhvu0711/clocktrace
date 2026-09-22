@@ -1,12 +1,9 @@
 import { Store, type StoreError } from "@clocktrace/core";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
-import { dbPathConfig, helperPathConfig } from "./config.js";
-import {
-  Helper,
-  type HelperExitedError,
-  type HelperNotFoundError,
-} from "./helper.js";
+import { App, appPath } from "./app.js";
+import { dbPathConfig } from "./config.js";
+import { Helper, type HelperExitedError } from "./helper.js";
 import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
@@ -53,6 +50,7 @@ export type DeviceStatus = Schema.Schema.Type<typeof DeviceStatus>;
 
 export const Status = Schema.Struct({
   collector: Schema.Literal("running", "stopped"),
+  app: Schema.Literal("present", "missing"),
   permissions: Schema.Array(PermissionLine),
   lastActivity: Schema.NullOr(Schema.DateTimeUtc),
   iosImport: Schema.NullOr(IosImport),
@@ -80,20 +78,27 @@ export const permissionLine = (item: PermissionItem): PermissionLine => {
   return { name: item.name, state: "denied", note: item.loss };
 };
 
+export const notCheckedLines: ReadonlyArray<PermissionLine> = [
+  { name: "accessibility", state: "not checked", note: null },
+  { name: "full disk access", state: "not checked", note: null },
+];
+
 export const readStatus = (): Effect.Effect<
   Status,
-  | HelperNotFoundError
-  | HelperExitedError
-  | ParseError
-  | StoreError
-  | LaunchdError,
-  Store | Launchd | Helper
+  HelperExitedError | ParseError | StoreError | LaunchdError,
+  Store | Launchd | Helper | App
 > =>
   Effect.gen(function* () {
-    const helperPath = yield* Effect.orDie(helperPathConfig);
+    const app = yield* App;
     const helper = yield* Helper;
-    yield* helper.check(helperPath);
-    const p = yield* Effect.scoped(helper.permissions(helperPath));
+    const present = yield* app.isInstalled();
+    const grants = present
+      ? yield* Effect.scoped(helper.permissions(appPath))
+      : null;
+    const permissions =
+      grants === null
+        ? notCheckedLines
+        : permissionItems(grants).map(permissionLine);
     const launchd = yield* Launchd;
     const collector = yield* launchd.state();
     const store = yield* Store;
@@ -101,7 +106,7 @@ export const readStatus = (): Effect.Effect<
     const databasePath = yield* Effect.orDie(dbPathConfig);
     let iosImport: IosImport | null = null;
     const devices: Array<DeviceStatus> = [];
-    if (p.fullDiskAccess === "granted") {
+    if (grants?.fullDiskAccess === "granted") {
       const raw = yield* store.getSetting(importStatusKey);
       const blob = Option.isSome(raw)
         ? yield* Effect.option(Schema.decodeUnknown(ImportResult)(raw.value))
@@ -144,7 +149,8 @@ export const readStatus = (): Effect.Effect<
     }
     return {
       collector,
-      permissions: permissionItems(p).map(permissionLine),
+      app: present ? "present" : "missing",
+      permissions,
       lastActivity: Option.getOrNull(last),
       iosImport,
       devices,
@@ -170,6 +176,7 @@ export const statusLines = (
       s.collector === "running"
         ? "collector: running"
         : "collector: stopped, run clocktrace start",
+      ...(s.app === "missing" ? ["app: missing, run clocktrace setup"] : []),
       ...s.permissions.map(
         (p) => `${p.name}: ${p.state}${p.note === null ? "" : `, ${p.note}`}`,
       ),

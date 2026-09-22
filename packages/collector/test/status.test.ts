@@ -1,10 +1,8 @@
 import { Store } from "@clocktrace/core";
-import { NodeContext } from "@effect/platform-node";
 import {
   ConfigProvider,
   DateTime,
   Effect,
-  Exit,
   Layer,
   Ref,
   Stream,
@@ -13,7 +11,8 @@ import {
 } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { Helper, HelperNotFoundError } from "../src/helper.js";
+import { App } from "../src/app.js";
+import { Helper } from "../src/helper.js";
 import { fakeLaunchd, Launchd, type LaunchdState } from "../src/launchd.js";
 import type { Permissions } from "../src/permissions.js";
 import { readStatus, statusLines } from "../src/status.js";
@@ -40,20 +39,30 @@ const config = ConfigProvider.fromMap(
   ]),
 );
 
-const runWith = (
+const runWith = <A>(
   p: Permissions,
   launchdState: LaunchdState,
   inside: Effect.Effect<
-    ReadonlyArray<string>,
+    A,
     unknown,
-    Store | Helper | Launchd | DateTime.CurrentTimeZone
+    | Store
+    | Helper
+    | Launchd
+    | App
+    | DateTime.CurrentTimeZone
   >,
+  appLayer: Layer.Layer<App> = App.Test,
 ) =>
   Effect.runPromise(
     Effect.flatMap(Ref.make(launchdState), (state) =>
       inside.pipe(
         Effect.provide(
-          Layer.mergeAll(stubHelper(p), fakeLaunchd(state), Store.Test),
+          Layer.mergeAll(
+            stubHelper(p),
+            fakeLaunchd(state),
+            Store.Test,
+            appLayer,
+          ),
         ),
         Effect.withConfigProvider(config),
         DateTime.withCurrentZoneNamed("America/Los_Angeles"),
@@ -214,32 +223,55 @@ describe("status", () => {
     ]);
   });
 
-  it("readStatus fails with HelperNotFoundError when the binary is missing", async () => {
-    // Given: CLOCKTRACE_HELPER points at a path that does not exist
-    const layers = Layer.mergeAll(
-      Helper.Default,
-      Launchd.Test,
-      Store.Test,
-      NodeContext.layer,
+  it("a missing app prints app missing and every permission not checked", async () => {
+    // Given: App.isInstalled is false, a running agent, the all-granted Helper stub
+    const appMissing = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(false),
+        install: () => Effect.succeed("written" as const),
+      }),
     );
     // When
-    const exit = await Effect.runPromise(
-      Effect.exit(readStatus()).pipe(
-        Effect.provide(layers),
-        Effect.withConfigProvider(
-          ConfigProvider.fromMap(
-            new Map([
-              ["CLOCKTRACE_HELPER", "/nope/clocktrace-helper"],
-              ["CLOCKTRACE_DB", dbPath],
-            ]),
-          ),
-        ),
-      ),
+    const lines = await runWith(
+      {
+        accessibility: "granted",
+        automation: {},
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      Effect.flatMap(readStatus(), statusLines),
+      appMissing,
     );
     // Then
-    expect(exit).toEqual(
-      Exit.fail(new HelperNotFoundError({ path: "/nope/clocktrace-helper" })),
+    expect(lines).toEqual([
+      "collector: running",
+      "app: missing, run clocktrace setup",
+      "accessibility: not checked",
+      "full disk access: not checked",
+      "last activity: none yet",
+      `database: ${dbPath}`,
+    ]);
+  });
+
+  it("readStatus reports app present when the bundle exists", async () => {
+    // Given: App.Test, a running agent, every grant
+    // When
+    const status = await runWith(
+      {
+        accessibility: "granted",
+        automation: {},
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      readStatus(),
     );
+    // Then
+    expect(status.app).toBe("present");
+    expect(status.permissions).toEqual([
+      { name: "accessibility", state: "granted", note: null },
+      { name: "full disk access", state: "granted", note: null },
+    ]);
   });
 
   it("iOS import ok with a syncing iPhone and a stale iPad", async () => {
