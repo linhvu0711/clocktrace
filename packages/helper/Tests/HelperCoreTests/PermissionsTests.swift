@@ -126,6 +126,47 @@ final class PermissionsTests: XCTestCase {
     XCTAssertEqual(probes, [["com.apple.Safari", "true"]])
   }
 
+  func testRequestAutomationExits3WithoutTheProbeWhenNotRunning() {
+    // Given: the browser is not running; the probe would answer granted
+    let reads = reads(
+      running: { _ in false },
+      automationStatus: { _, _ in 0 })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 3)
+  }
+
+  func testRequestAutomationNeverProbesAClosedBrowser() {
+    // Given: the browser is not running; the probe records (bundleId, ask)
+    var probes: [[String]] = []
+    let reads = reads(
+      running: { _ in false },
+      automationStatus: { bundleId, ask in
+        probes.append([bundleId, String(ask)])
+        return 0
+      })
+    // When
+    _ = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(probes, [])
+  }
+
+  func testRequestAutomationWaitsForASlowAnswer() {
+    // Given: a running browser whose probe takes 0.3 s to answer denied
+    let reads = reads(automationStatus: { _, _ in
+      Thread.sleep(forTimeInterval: 0.3)
+      return -1743
+    })
+    // When
+    let code = requestAutomation(
+      bundleId: "com.apple.Safari", reads: reads, emitError: { _ in })
+    // Then
+    XCTAssertEqual(code, 0)
+  }
+
   func testRequestAutomationExits3WhenNotRunning() {
     // Given: a fake whose automationStatus returns -600
     let reads = reads(automationStatus: { _, _ in -600 })

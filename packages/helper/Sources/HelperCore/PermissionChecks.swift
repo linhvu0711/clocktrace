@@ -37,6 +37,10 @@ public func requestAutomation(
   reads: PermissionReads = .live,
   emitError: @escaping (String) -> Void = HelperCore.emitError
 ) -> Int32 {
+  guard reads.running(bundleId) else {
+    emitError("\(bundleId) is not running, open it and retry")
+    return 3
+  }
   if reads.automationStatus(bundleId, true) == -600 {
     emitError("\(bundleId) is not running, open it and retry")
     return 3
