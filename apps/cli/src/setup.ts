@@ -1,4 +1,9 @@
 import {
+  App,
+  type AppError,
+  type AppMissingError,
+  appMainPath,
+  appPath,
   collectorPlist,
   dbPathConfig,
   entryPath,
@@ -93,6 +98,8 @@ export const setup = (
   void,
   | HelperNotFoundError
   | HelperExitedError
+  | AppError
+  | AppMissingError
   | ParseError
   | StoreError
   | DatabaseNewerError
@@ -101,6 +108,7 @@ export const setup = (
   | Prompt
   | Stdin
   | Helper
+  | App
   | Launchd
   | Hosts
   | FileSystem.FileSystem
@@ -119,21 +127,24 @@ export const setup = (
       Effect.gen(function* () {
         const launchd = yield* Launchd;
         const prompt = yield* Prompt;
+        const app = yield* App;
+        const written = yield* app.install(helperPath);
+        yield* prompt.print(`app: ${written} ${appPath}`);
         const installed = yield* launchd.isInstalled();
-        if (!installed) {
-          yield* launchd.install(
-            collectorPlist({
-              node: process.execPath,
-              entry: entryPath,
-              databasePath,
-              helperPath,
-              logPath,
-            }),
-          );
-          yield* prompt.print(`launchd agent: written ${plistPath}`);
-        } else {
-          yield* launchd.bootstrap();
+        if (installed) {
+          yield* launchd.bootout();
         }
+        yield* launchd.install(
+          collectorPlist({
+            app: appMainPath,
+            node: process.execPath,
+            entry: entryPath,
+            databasePath,
+            helperPath,
+            logPath,
+          }),
+        );
+        yield* prompt.print(`launchd agent: written ${plistPath}`);
         yield* launchd.state().pipe(
           Effect.flatMap((collector) =>
             collector === "running"
@@ -144,11 +155,9 @@ export const setup = (
                 }),
           ),
           Effect.retry({ schedule: loadRetry }),
-          // A fresh install wrote this plist; drop it so a later run can
-          // rewrite it. A repair reuses an existing plist, so leave it.
-          Effect.tapError(() =>
-            installed ? Effect.void : launchd.uninstall().pipe(Effect.ignore),
-          ),
+          // A plist that does not start is removed so the next run
+          // rewrites it.
+          Effect.tapError(() => launchd.uninstall().pipe(Effect.ignore)),
         );
         const interactive = yield* prompt.interactive;
         if (!interactive) {
