@@ -7,6 +7,8 @@ import {
   type HelperExitedError,
   type HelperNotFoundError,
 } from "./helper.js";
+import { ImportResult, importStatusKey } from "./importer.js";
+import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
 import {
   browserName,
@@ -22,10 +24,39 @@ export const PermissionLine = Schema.Struct({
 
 export type PermissionLine = Schema.Schema.Type<typeof PermissionLine>;
 
+export const IosImport = Schema.Union(
+  Schema.Struct({
+    state: Schema.Literal("ok"),
+    at: Schema.DateTimeUtc,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("broken"),
+    reason: Schema.String,
+  }),
+  Schema.Struct({
+    state: Schema.Literal("notTested"),
+    macosVersion: Schema.String,
+  }),
+);
+
+export type IosImport = Schema.Schema.Type<typeof IosImport>;
+
+export const DeviceStatus = Schema.Struct({
+  name: Schema.String,
+  kind: Schema.Literal("iphone", "ipad"),
+  lastSync: Schema.NullOr(Schema.DateTimeUtc),
+  sync: Schema.Literal("synced", "stale", "never"),
+  lastActivity: Schema.NullOr(Schema.DateTimeUtc),
+});
+
+export type DeviceStatus = Schema.Schema.Type<typeof DeviceStatus>;
+
 export const Status = Schema.Struct({
   collector: Schema.Literal("running", "stopped"),
   permissions: Schema.Array(PermissionLine),
   lastActivity: Schema.NullOr(Schema.DateTimeUtc),
+  iosImport: Schema.NullOr(IosImport),
+  devices: Schema.Array(DeviceStatus),
   databasePath: Schema.String,
 });
 
@@ -68,15 +99,67 @@ export const readStatus = (): Effect.Effect<
     const store = yield* Store;
     const last = yield* store.latestActivityEnd();
     const databasePath = yield* Effect.orDie(dbPathConfig);
+    let iosImport: IosImport | null = null;
+    const devices: Array<DeviceStatus> = [];
+    if (p.fullDiskAccess === "granted") {
+      const raw = yield* store.getSetting(importStatusKey);
+      const blob = Option.isSome(raw)
+        ? yield* Effect.option(Schema.decodeUnknown(ImportResult)(raw.value))
+        : Option.none<ImportResult>();
+      if (Option.isSome(blob)) {
+        const result = blob.value;
+        iosImport =
+          result.state === "ok"
+            ? { state: "ok", at: result.at }
+            : result.state === "broken"
+              ? { state: "broken", reason: result.reason }
+              : { state: "notTested", macosVersion: result.macosVersion };
+        const now = yield* DateTime.now;
+        const lastSyncs = new Map(
+          result.state === "notTested"
+            ? []
+            : result.devices.map((d) => [d.externalId, d.lastSync] as const),
+        );
+        for (const device of yield* store.listDevices()) {
+          if (device.kind === "mac") {
+            continue;
+          }
+          const lastSync = lastSyncs.get(device.externalId) ?? null;
+          const lastActivity = yield* store.latestActivityEnd(device.id);
+          devices.push({
+            name: device.name,
+            kind: device.kind,
+            lastSync,
+            sync:
+              lastSync === null
+                ? "never"
+                : now.epochMillis - lastSync.epochMillis > syncStaleAfterMillis
+                  ? "stale"
+                  : "synced",
+            lastActivity: Option.getOrNull(lastActivity),
+          });
+        }
+      }
+    }
     return {
       collector,
       permissions: permissionItems(p).map(permissionLine),
       lastActivity: Option.getOrNull(last),
+      iosImport,
+      devices,
       databasePath,
     };
   });
 
 const pad = (n: number): string => String(n).padStart(2, "0");
+
+const stamp = (
+  t: DateTime.Utc,
+): Effect.Effect<string, never, DateTime.CurrentTimeZone> =>
+  Effect.map(DateTime.setZoneCurrent(t), (zoned) => {
+    const parts = DateTime.toParts(zoned);
+    return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hours)}:${pad(parts.minutes)}`;
+  });
 
 export const statusLines = (
   s: Status,
@@ -90,15 +173,33 @@ export const statusLines = (
         (p) => `${p.name}: ${p.state}${p.note === null ? "" : `, ${p.note}`}`,
       ),
     ];
+    if (s.iosImport !== null) {
+      lines.push(
+        s.iosImport.state === "ok"
+          ? `iOS import: ok ${yield* stamp(s.iosImport.at)}`
+          : s.iosImport.state === "broken"
+            ? `iOS import: broken: ${s.iosImport.reason}`
+            : `iOS import: not tested on macOS ${s.iosImport.macosVersion}`,
+      );
+    }
+    for (const d of s.devices) {
+      lines.push(
+        d.sync === "synced" && d.lastSync !== null
+          ? `${d.name}: last synced ${yield* stamp(d.lastSync)}`
+          : d.sync === "stale" && d.lastSync !== null
+            ? `${d.name}: not syncing since ${yield* stamp(d.lastSync)}`
+            : `${d.name}: never synced`,
+      );
+      lines.push(
+        d.lastActivity === null
+          ? `${d.name}: last activity none yet`
+          : `${d.name}: last activity ${yield* stamp(d.lastActivity)}`,
+      );
+    }
     if (s.lastActivity === null) {
       lines.push("last activity: none yet");
     } else {
-      const parts = DateTime.toParts(
-        yield* DateTime.setZoneCurrent(s.lastActivity),
-      );
-      lines.push(
-        `last activity: ${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hours)}:${pad(parts.minutes)}`,
-      );
+      lines.push(`last activity: ${yield* stamp(s.lastActivity)}`);
     }
     lines.push(`database: ${s.databasePath}`);
     return lines;
