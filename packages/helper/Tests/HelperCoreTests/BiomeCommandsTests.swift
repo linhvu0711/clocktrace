@@ -12,8 +12,8 @@ final class BiomeCommandsTests: XCTestCase {
   private func reads(
     canOpenSyncDb: @escaping () -> Bool = { true },
     deviceFolders: @escaping () -> [String]? = { ["a-device"] },
-    segments: @escaping (String) -> [BiomeSegment] = { _ in
-      [BiomeSegment(name: "1", modifiedAt: 100)]
+    segments: @escaping (String) -> SegmentsRead = { _ in
+      .listed([BiomeSegment(name: "1", modifiedAt: 100)])
     },
     segmentData: ((String, String) -> Data?)? = nil,
     devicePeers: @escaping () -> DevicePeerRead = { .rows([]) }
@@ -51,6 +51,24 @@ final class BiomeCommandsTests: XCTestCase {
     XCTAssertEqual(
       lines,
       [.parseError(BiomeParseErrorLine(segment: "1", offset: 0))])
+  }
+
+  func testReportsAParseErrorForAnEntryWhoseCrc32DoesNotMatchAndKeepsTheOthers() {
+    // Given: the fixture with the last payload byte of the entry at offset 32 flipped
+    var data = fixture
+    data[105] ^= 0xff
+    // When
+    let lines =
+      decodeSegment(data, device: "fixture-device", segment: "infocus.segb")
+      .map { $0.json() }
+    // Then
+    XCTAssertEqual(
+      lines,
+      [
+        "{\"error\":\"parse\",\"offset\":32,\"segment\":\"infocus.segb\"}",
+        "{\"appVersion\":null,\"build\":null,\"bundleId\":\"com.example.alpha\",\"device\":\"fixture-device\",\"focus\":\"end\",\"offset\":108,\"reason\":null,\"segment\":\"infocus.segb\",\"ts\":1758307260.25}",
+        "{\"error\":\"parse\",\"offset\":148,\"segment\":\"infocus.segb\"}",
+      ])
   }
 
   func testExits3WithoutFullDiskAccess() {
@@ -101,11 +119,11 @@ final class BiomeCommandsTests: XCTestCase {
       deviceFolders: { ["b-device", "a-device"] },
       segments: {
         $0 == "a-device"
-          ? [
+          ? .listed([
             BiomeSegment(name: "2", modifiedAt: 100),
             BiomeSegment(name: "1", modifiedAt: 100),
-          ]
-          : [BiomeSegment(name: "1", modifiedAt: 100)]
+          ])
+          : .listed([BiomeSegment(name: "1", modifiedAt: 100)])
       })
     var out: [String] = []
     var err: [String] = []
@@ -133,7 +151,7 @@ final class BiomeCommandsTests: XCTestCase {
   func testSkipsSegmentsOlderThanSince() {
     // Given: two segments, only "2" newer than the --since flag
     let reads = reads(segments: { _ in
-      [BiomeSegment(name: "1", modifiedAt: 100), BiomeSegment(name: "2", modifiedAt: 200)]
+      .listed([BiomeSegment(name: "1", modifiedAt: 100), BiomeSegment(name: "2", modifiedAt: 200)])
     })
     var out: [String] = []
     var err: [String] = []
@@ -151,7 +169,7 @@ final class BiomeCommandsTests: XCTestCase {
 
   func testKeepsASegmentModifiedExactlyAtSince() {
     // Given: one segment modified exactly at the --since flag
-    let reads = reads(segments: { _ in [BiomeSegment(name: "1", modifiedAt: 150)] })
+    let reads = reads(segments: { _ in .listed([BiomeSegment(name: "1", modifiedAt: 150)]) })
     var out: [String] = []
     var err: [String] = []
     // When
@@ -168,7 +186,7 @@ final class BiomeCommandsTests: XCTestCase {
     let fixture = self.fixture
     let reads = reads(
       segments: { _ in
-        [BiomeSegment(name: "1", modifiedAt: 100), BiomeSegment(name: "2", modifiedAt: 100)]
+        .listed([BiomeSegment(name: "1", modifiedAt: 100), BiomeSegment(name: "2", modifiedAt: 100)])
       },
       segmentData: { _, name in name == "1" ? nil : fixture })
     var out: [String] = []
@@ -188,7 +206,7 @@ final class BiomeCommandsTests: XCTestCase {
     let fixture = self.fixture
     let reads = reads(
       segments: { _ in
-        [BiomeSegment(name: "1", modifiedAt: 100), BiomeSegment(name: "2", modifiedAt: 100)]
+        .listed([BiomeSegment(name: "1", modifiedAt: 100), BiomeSegment(name: "2", modifiedAt: 100)])
       },
       segmentData: { _, name in name == "1" ? Data("not a segment".utf8) : fixture })
     var out: [String] = []
@@ -201,6 +219,43 @@ final class BiomeCommandsTests: XCTestCase {
     XCTAssertEqual(err, [])
     XCTAssertEqual(out.count, 4)
     XCTAssertEqual(out.first, "{\"error\":\"parse\",\"offset\":0,\"segment\":\"1\"}")
+  }
+
+  func testContinuesAfterAnUnlistableDeviceFolderAndExits6() {
+    // Given: a-device cannot be listed, b-device holds the fixture
+    let reads = reads(
+      deviceFolders: { ["a-device", "b-device"] },
+      segments: {
+        $0 == "a-device"
+          ? .failed("/remote/a-device: Permission denied")
+          : .listed([BiomeSegment(name: "1", modifiedAt: 100)])
+      })
+    var out: [String] = []
+    var err: [String] = []
+    // When
+    let code = biomeRecords(
+      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+    // Then
+    XCTAssertEqual(code, 6)
+    XCTAssertEqual(err, ["cannot list /remote/a-device: Permission denied"])
+    XCTAssertEqual(out.count, 3)
+    XCTAssertEqual(
+      out.first,
+      "{\"appVersion\":\"1.2.3\",\"build\":\"456\",\"bundleId\":\"com.example.alpha\",\"device\":\"b-device\",\"focus\":\"start\",\"offset\":32,\"reason\":\"com.example.reason\",\"segment\":\"1\",\"ts\":1758307200.5}")
+  }
+
+  func testPrintsNothingAndExits0ForADeviceWithoutSegments() {
+    // Given: a device whose folders hold no segment file
+    let reads = reads(segments: { _ in .listed([]) })
+    var out: [String] = []
+    var err: [String] = []
+    // When
+    let code = biomeRecords(
+      reads: reads, since: nil, emit: { out.append($0) }, emitError: { err.append($0) })
+    // Then
+    XCTAssertEqual(code, 0)
+    XCTAssertEqual(out, [])
+    XCTAssertEqual(err, [])
   }
 
   func testPrintsOneLinePerDevicePeerRow() {
