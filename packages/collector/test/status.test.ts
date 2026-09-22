@@ -272,25 +272,27 @@ describe("status", () => {
   });
 
   it("iOS import not tested on another macOS", async () => {
-    // Given: every grant, a not-tested import blob, no devices
+    // Given: every grant, a not-tested import blob, devices from a prior version
     // When
-    const lines = await runAt(
+    const { lines, status } = await runAt(
       allGranted,
       running,
       Effect.gen(function* () {
         const store = yield* Store;
+        yield* seed(store);
         yield* store.setSetting("importer.status", BLOB_NOT_TESTED);
         const status = yield* readStatus();
-        return yield* statusLines(status);
+        return { lines: yield* statusLines(status), status };
       }),
     );
-    // Then
+    // Then: no device rows — a not-tested run has no sync observations
+    expect(status.devices).toEqual([]);
     expect(lines).toEqual([
       "collector: running",
       "accessibility: granted",
       "full disk access: granted",
       "iOS import: not tested on macOS 26.6.2",
-      "last activity: none yet",
+      "last activity: 2026-09-19 09:06",
       `database: ${dbPath}`,
     ]);
   });

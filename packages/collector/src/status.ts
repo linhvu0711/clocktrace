@@ -115,29 +115,30 @@ export const readStatus = (): Effect.Effect<
               ? { state: "broken", reason: result.reason }
               : { state: "notTested", macosVersion: result.macosVersion };
         const now = yield* DateTime.now;
-        const lastSyncs = new Map(
-          result.state === "notTested"
-            ? []
-            : result.devices.map((d) => [d.externalId, d.lastSync] as const),
-        );
-        for (const device of yield* store.listDevices()) {
-          if (device.kind === "mac") {
-            continue;
+        if (result.state !== "notTested") {
+          const lastSyncs = new Map(
+            result.devices.map((d) => [d.externalId, d.lastSync] as const),
+          );
+          for (const device of yield* store.listDevices()) {
+            if (device.kind === "mac") {
+              continue;
+            }
+            const lastSync = lastSyncs.get(device.externalId) ?? null;
+            const lastActivity = yield* store.latestActivityEnd(device.id);
+            devices.push({
+              name: device.name,
+              kind: device.kind,
+              lastSync,
+              sync:
+                lastSync === null
+                  ? "never"
+                  : now.epochMillis - lastSync.epochMillis >
+                      syncStaleAfterMillis
+                    ? "stale"
+                    : "synced",
+              lastActivity: Option.getOrNull(lastActivity),
+            });
           }
-          const lastSync = lastSyncs.get(device.externalId) ?? null;
-          const lastActivity = yield* store.latestActivityEnd(device.id);
-          devices.push({
-            name: device.name,
-            kind: device.kind,
-            lastSync,
-            sync:
-              lastSync === null
-                ? "never"
-                : now.epochMillis - lastSync.epochMillis > syncStaleAfterMillis
-                  ? "stale"
-                  : "synced",
-            lastActivity: Option.getOrNull(lastActivity),
-          });
         }
       }
     }
