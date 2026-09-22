@@ -7,6 +7,8 @@ import type { PlatformError } from "@effect/platform/Error";
 import { Chunk, Data, Effect, Layer, Stream } from "effect";
 import { type Document, parseDocument } from "yaml";
 
+import { shellQuote } from "./format.js";
+
 export const hostNames = ["claude", "codex", "hermes", "openclaw"] as const;
 
 export type HostName = (typeof hostNames)[number];
@@ -45,10 +47,10 @@ export const hostTitle: Record<HostName, string> = {
 };
 
 export const manualCommand: Record<HostName, string> = {
-  claude: `claude mcp add --scope user clocktrace -- ${serverNode} ${serverEntry} mcp`,
-  codex: `codex mcp add clocktrace -- ${serverNode} ${serverEntry} mcp`,
+  claude: `claude mcp add --scope user clocktrace -- ${shellQuote(serverNode)} ${shellQuote(serverEntry)} mcp`,
+  codex: `codex mcp add clocktrace -- ${shellQuote(serverNode)} ${shellQuote(serverEntry)} mcp`,
   hermes: `add mcp_servers.clocktrace with command "${serverNode}" and args ["${serverEntry}", "mcp"] to ~/.hermes/config.yaml`,
-  openclaw: `openclaw mcp add clocktrace --command ${serverNode} --arg ${serverEntry} --arg mcp`,
+  openclaw: `openclaw mcp add clocktrace --command ${shellQuote(serverNode)} --arg ${shellQuote(serverEntry)} --arg mcp`,
 };
 
 export const manualRemoveCommand: Record<HostName, string> = {

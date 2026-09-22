@@ -340,7 +340,21 @@ describe("hosts", () => {
     // When
     const line = await register("codex", executor.layer);
     // Then
-    expect(line).toBe(`codex: failed. run by hand: ${addCodex}`);
+    expect(line).toBe(
+      `codex: failed. run by hand: codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
+    );
+  });
+
+  it("manual commands quote the node and entry paths", () => {
+    expect(manualCommand.claude).toBe(
+      `claude mcp add --scope user clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
+    );
+    expect(manualCommand.codex).toBe(
+      `codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
+    );
+    expect(manualCommand.openclaw).toBe(
+      `openclaw mcp add clocktrace --command '${serverNode}' --arg '${serverEntry}' --arg mcp`,
+    );
   });
 
   it("a failed add prints the ✘ line with the absolute command", async () => {
@@ -354,7 +368,9 @@ describe("hosts", () => {
     });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toContain(`  ✘ Codex failed · run by hand: ${addCodex}`);
+    expect(output).toContain(
+      `  ✘ Codex failed · run by hand: codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
+    );
   });
 
   it("hermes rewrites an existing key", async () => {
