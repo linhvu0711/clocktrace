@@ -57,6 +57,25 @@ final class CommandTests: XCTestCase {
     XCTAssertEqual(command, .requestFullDiskAccess)
   }
 
+  func testParsesSpawn() {
+    // Given: args ["spawn", "/usr/local/bin/node", "/repo/dist/main.js"]
+    let args = ["spawn", "/usr/local/bin/node", "/repo/dist/main.js"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(
+      command, .spawn(program: "/usr/local/bin/node", args: ["/repo/dist/main.js"]))
+  }
+
+  func testSpawnWithoutAProgramIsUsage() {
+    // Given: args ["spawn"]
+    let args = ["spawn"]
+    // When
+    let command = Command.parse(args)
+    // Then
+    XCTAssertEqual(command, .usage)
+  }
+
   func testReturnsUsageForAnUnknownRequestName() {
     // Given: args ["permissions", "request", "bogus"]
     let args = ["permissions", "request", "bogus"]

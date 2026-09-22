@@ -1,10 +1,10 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect, Exit, Layer, Ref, Stream } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Ref, Stream } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -180,6 +180,58 @@ describe("install cleanup (real service)", () => {
     );
     return { exit, plistPath };
   };
+
+  const runReadPlist = async () => {
+    const { Launchd: RealLaunchd, plistPath } = await import(
+      "../src/launchd.js"
+    );
+    const exit = await Effect.runPromise(
+      Effect.gen(function* () {
+        const launchd = yield* RealLaunchd;
+        return yield* Effect.exit(launchd.readPlist());
+      }).pipe(
+        Effect.provide(
+          RealLaunchd.DefaultWithoutDependencies.pipe(
+            Layer.provide(
+              Layer.merge(
+                NodeFileSystem.layer,
+                Layer.succeed(CommandExecutor.CommandExecutor, executor(0)),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    return { exit, plistPath };
+  };
+
+  it("readPlist is null when no plist exists", async () => {
+    // Given: the temp home and no plist
+    // When / Then
+    const { exit } = await runReadPlist();
+    expect(exit).toEqual(Exit.succeed(null));
+  });
+
+  it("readPlist fails when the plist cannot be read", async () => {
+    // Given: a directory at the plist path so the read hits EISDIR, not
+    // ENOENT
+    const { plistPath } = await import("../src/launchd.js");
+    mkdirSync(plistPath, { recursive: true });
+    // When / Then: a LaunchdError on the read step; the detail is the OS
+    // message
+    const { exit } = await runReadPlist();
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      const failure = Cause.failureOption(exit.cause);
+      expect(Option.isSome(failure)).toBe(true);
+      if (Option.isSome(failure)) {
+        expect(failure.value).toMatchObject({
+          _tag: "LaunchdError",
+          step: `read ${plistPath}`,
+        });
+      }
+    }
+  });
 
   it("a failed real install removes the plist it wrote", async () => {
     // Given: launchctl bootstrap fails (exit 1) after the plist is written

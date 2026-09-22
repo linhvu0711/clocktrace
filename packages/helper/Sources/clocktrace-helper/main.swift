@@ -9,15 +9,23 @@ case .watch:
 case .permissions:
   emit(checkPermissions().json())
 case .requestAccessibility:
-  exit(requestAccessibility())
+  let code = requestAccessibility()
+  emit(requestOutcomeLine(exitCode: code))
+  exit(code)
 case .requestAutomation(let bundleId):
-  exit(requestAutomation(bundleId: bundleId))
+  let code = requestAutomation(bundleId: bundleId)
+  emit(requestOutcomeLine(exitCode: code))
+  exit(code)
 case .requestFullDiskAccess:
-  exit(requestFullDiskAccess())
+  let code = requestFullDiskAccess()
+  emit(requestOutcomeLine(exitCode: code))
+  exit(code)
 case .biomeRecords(let since):
   exit(biomeRecords(since: since))
 case .biomeDevices:
   exit(biomeDevices())
+case .spawn(let program, let args):
+  exit(runSpawn(program: program, args: args))
 case .usage:
   FileHandle.standardError.write(usageText.data(using: .utf8)!)
   exit(2)

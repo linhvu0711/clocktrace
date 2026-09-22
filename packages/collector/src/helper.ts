@@ -1,9 +1,12 @@
+import { join } from "node:path";
+
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Chunk, Data, Effect, Either, Layer, Stream } from "effect";
+import { Chunk, Data, Effect, Either, Layer, type Scope, Stream } from "effect";
 
 import {
   decodePermissions,
+  decodeRequestOutcome,
   type GrantRequest,
   requestArgs,
 } from "./permissions.js";
@@ -60,6 +63,27 @@ export const sinceArgs = (
       "--since",
       `${device}=${Math.floor(seconds)}`,
     ]);
+
+// The `open` flags the Helper is always run under: wait for the app,
+// launch a fresh instance so its stdout is the app's own, and capture
+// that stdout/stderr into files because `open` is not a pipe.
+export const openArgs = (
+  app: string,
+  stdoutPath: string,
+  stderrPath: string,
+  args: ReadonlyArray<string>,
+): ReadonlyArray<string> => [
+  "-W",
+  "-n",
+  "--stdout",
+  stdoutPath,
+  "--stderr",
+  stderrPath,
+  "-a",
+  app,
+  "--args",
+  ...args,
+];
 
 export class Helper extends Effect.Service<Helper>()("Helper", {
   effect: Effect.gen(function* () {
@@ -122,40 +146,51 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
             ),
           ),
         ),
-      permissions: (path: string) =>
-        Command.make(path, "permissions").pipe(
-          Command.string,
-          Effect.provideService(CommandExecutor.CommandExecutor, executor),
-          Effect.mapError((cause) => new HelperExitedError({ cause })),
-          Effect.flatMap(decodePermissions),
-        ),
-      request: (path: string, grant: GrantRequest) =>
-        Command.make(
-          path,
-          "permissions",
-          "request",
-          ...requestArgs(grant),
-        ).pipe(
-          Command.exitCode,
-          Effect.provideService(CommandExecutor.CommandExecutor, executor),
-          Effect.mapError((cause) => new HelperExitedError({ cause })),
-          Effect.flatMap((code) =>
-            code === 0
-              ? Effect.succeed("asked" as const)
-              : code === 3
-                ? Effect.succeed("notRunning" as const)
-                : Effect.fail(
-                    new HelperExitedError({
-                      cause: `permissions request exited ${code}`,
-                    }),
-                  ),
-          ),
+      // `open -W` swallows the app's exit code, so both calls read the
+      // Helper's report back from a captured stdout file.
+      permissions: (app: string) =>
+        viaOpen(app, ["permissions"]).pipe(Effect.flatMap(decodePermissions)),
+      request: (app: string, grant: GrantRequest) =>
+        viaOpen(app, ["permissions", "request", ...requestArgs(grant)]).pipe(
+          Effect.flatMap(decodeRequestOutcome),
+          Effect.map((line) => line.outcome),
         ),
       biomeDevices: (path: string) =>
         runBiome(Command.make(path, "biome", "devices")),
       biomeRecords: (path: string, since: ReadonlyMap<string, number>) =>
         runBiome(Command.make(path, "biome", "records", ...sinceArgs(since))),
     };
+
+    // Runs the Helper as ~/Applications/Clocktrace.app and returns what it
+    // printed on stdout; a non-zero `open` exit means macOS never ran it.
+    function viaOpen(
+      app: string,
+      args: ReadonlyArray<string>,
+    ): Effect.Effect<string, HelperExitedError, Scope.Scope> {
+      return Effect.gen(function* () {
+        const dir = yield* fs
+          .makeTempDirectoryScoped()
+          .pipe(Effect.mapError((cause) => new HelperExitedError({ cause })));
+        const stdoutPath = join(dir, "stdout");
+        const stderrPath = join(dir, "stderr");
+        const code = yield* Command.make(
+          "open",
+          ...openArgs(app, stdoutPath, stderrPath, args),
+        ).pipe(
+          Command.exitCode,
+          Effect.provideService(CommandExecutor.CommandExecutor, executor),
+          Effect.mapError((cause) => new HelperExitedError({ cause })),
+        );
+        if (code !== 0) {
+          return yield* new HelperExitedError({
+            cause: `open exited ${code}`,
+          });
+        }
+        return yield* fs
+          .readFileString(stdoutPath)
+          .pipe(Effect.mapError((cause) => new HelperExitedError({ cause })));
+      });
+    }
   }),
   dependencies: [NodeContext.layer],
 }) {

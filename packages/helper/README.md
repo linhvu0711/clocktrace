@@ -19,12 +19,15 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
 - `clocktrace-helper permissions` — print one JSON line with the state of every
   grant.
 - `clocktrace-helper permissions request (accessibility | automation <bundleId> | fulldiskaccess)`
-  — raise that grant's prompt, or open its System Settings pane. Browser not
-  running: `<bundleId> is not running, open it and retry`, exit 3.
+  — raise that grant's prompt, or open its System Settings pane, then print
+  `{"outcome":"asked"}` to stdout and exit with the request's code. Browser not
+  running: `<bundleId> is not running, open it and retry` to stderr,
+  `{"outcome":"notRunning"}` to stdout, exit 3.
 - `clocktrace-helper biome records [--since <deviceId>=<unixSeconds>]...` — print one JSON line per iPhone and iPad focus record from the Biome App.InFocus stream, ordered by device, segment file, and offset; each `--since` names one device folder and skips its segment files modified before that Unix time; a device folder with no flag is read in full. Each device's `tombstone/` subfolder holds deletion markers, not records, and is skipped. An entry whose payload does not match its header CRC32 prints the `parse` error line at its offset. Exit 3 without Full Disk Access, 4 without the remote folder, 6 when a device folder cannot be listed (the other devices still print).
 - `clocktrace-helper biome devices` — print one JSON line per row of the Biome `DevicePeer` table. Exit 3 without Full Disk Access, 5 when the table cannot be read.
+- `clocktrace-helper spawn <program> [args...]` — run `<program>` with the args as a child of this binary, forward SIGTERM and SIGINT to it, and exit with its exit status (128 + signal when it dies on a signal). Prints `spawn: cannot start <program>` and exits 127 when the child does not start.
 - Anything else — print
-  `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <deviceId>=<unixSeconds>]... | biome devices)`
+  `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <deviceId>=<unixSeconds>]... | biome devices | spawn <program> [args...])`
   to stderr and exit 2.
 
 ## Lines
@@ -50,7 +53,13 @@ seconds as a heartbeat. `idleSeconds` and `ts` alone never trigger a line.
 
 ## Grants
 
-A helper started from a terminal uses that terminal's Accessibility and
+The grants belong to `Clocktrace.app`: `clocktrace setup` writes the bundle at
+`~/Applications/Clocktrace.app` with this binary as its main program, so macOS
+attributes the Accessibility, Automation, and Full Disk Access grants to the
+app — the Collector (`spawn`ed by the app binary) and `permissions`/`status`
+(run through `open -a`) read and raise them under it.
+
+A helper started from a terminal instead uses that terminal's Accessibility and
 Automation grants — macOS attributes the requests to the responsible terminal
 process, never to the binary. `watch` never prompts on its own; when a grant is
 missing it marks the line in `missing` and moves on.

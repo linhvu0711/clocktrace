@@ -7,9 +7,13 @@ public enum Command: Equatable {
   case requestFullDiskAccess
   case biomeRecords(since: [String: Int])
   case biomeDevices
+  case spawn(program: String, args: [String])
   case usage
 
   public static func parse(_ args: [String]) -> Command {
+    if args.count >= 2 && args[0] == "spawn" {
+      return .spawn(program: args[1], args: Array(args.dropFirst(2)))
+    }
     if args.count == 4 && Array(args.prefix(3)) == ["permissions", "request", "automation"] {
       return .requestAutomation(args[3])
     }
@@ -50,4 +54,4 @@ public enum Command: Equatable {
 }
 
 public let usageText =
-  "usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <deviceId>=<unixSeconds>]... | biome devices)\n"
+  "usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <deviceId>=<unixSeconds>]... | biome devices | spawn <program> [args...])\n"

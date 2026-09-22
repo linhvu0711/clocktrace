@@ -3,6 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  App,
+  AppMissingError,
+  appPath,
   fakeLaunchd,
   type GrantRequest,
   Helper,
@@ -53,6 +56,7 @@ describe("permissions", () => {
     keys: ReadonlyArray<Key>,
     interactive: boolean,
     outcome: RequestOutcome = "asked",
+    appLayer: Layer.Layer<App> = App.Test,
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -90,6 +94,7 @@ describe("permissions", () => {
           Stdin.Test,
           fakeLaunchd(state),
           helper,
+          appLayer,
           Style.Test,
         );
         const exit = yield* Effect.exit(
@@ -237,6 +242,38 @@ describe("permissions", () => {
       "accessibility: window titles",
       "  denied: window titles are not tracked",
     ]);
+  });
+
+  it("permissions with the app missing fails app missing", async () => {
+    // Given: installed and running, database present, no app
+    const appMissing = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(false),
+        install: () => Effect.succeed("written" as const),
+      }),
+    );
+    // When
+    const { exit, output } = await run(
+      {
+        accessibility: "denied",
+        automation: {},
+        fullDiskAccess: "denied",
+      },
+      installedRunning,
+      [],
+      true,
+      "asked",
+      appMissing,
+    );
+    // Then
+    expect(exit).toEqual(Exit.fail(new AppMissingError({ path: appPath })));
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      expect((exit.cause.error as AppMissingError).message).toBe(
+        "app: missing, run clocktrace setup",
+      );
+    }
+    expect(output).toEqual([]);
   });
 
   it("permissions before setup fails not set up", async () => {

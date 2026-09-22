@@ -1,9 +1,10 @@
 import {
+  App,
+  AppMissingError,
+  appPath,
   browserName,
   Helper,
   type HelperExitedError,
-  type HelperNotFoundError,
-  helperPathConfig,
   type Launchd,
   type LaunchdError,
   type PermissionItem,
@@ -30,14 +31,14 @@ const outcomeLine = (item: PermissionItem, outcome: RequestOutcome): string => {
     return `${item.name}: ${browser} is not running, open it and retry`;
   }
   if (item.request.kind === "fullDiskAccess") {
-    return "full disk access: System Settings opened, turn it on for clocktrace-helper";
+    return "full disk access: System Settings opened, turn it on for Clocktrace";
   }
   return `${item.name}: asked, answer the macOS prompt`;
 };
 
 export const walkPermissions = (): Effect.Effect<
   void,
-  | HelperNotFoundError
+  | AppMissingError
   | HelperExitedError
   | ParseError
   | StoreError
@@ -46,6 +47,7 @@ export const walkPermissions = (): Effect.Effect<
   | Prompt
   | Stdin
   | Helper
+  | App
   | Launchd
   | Store
   | DateTime.CurrentTimeZone
@@ -57,10 +59,13 @@ export const walkPermissions = (): Effect.Effect<
   Effect.gen(function* () {
     const prompt = yield* Prompt;
     const helper = yield* Helper;
-    const helperPath = yield* Effect.orDie(helperPathConfig);
-    yield* helper.check(helperPath);
+    const app = yield* App;
+    if (!(yield* app.isInstalled())) {
+      yield* new AppMissingError({ path: appPath });
+      return;
+    }
     const interactive = yield* prompt.interactive;
-    const p = yield* helper.permissions(helperPath);
+    const p = yield* Effect.scoped(helper.permissions(appPath));
     for (const item of permissionItems(p)) {
       yield* prompt.print(`${item.name}: ${item.gives}`);
       yield* prompt.print(`  denied: ${item.loss}`);
@@ -75,7 +80,9 @@ export const walkPermissions = (): Effect.Effect<
         yield* prompt.print(`${item.name}: skipped, ${item.loss}`);
         continue;
       }
-      const outcome = yield* helper.request(helperPath, item.request);
+      const outcome = yield* Effect.scoped(
+        helper.request(appPath, item.request),
+      );
       yield* prompt.print(outcomeLine(item, outcome));
     }
     yield* printStatus();
@@ -84,7 +91,7 @@ export const walkPermissions = (): Effect.Effect<
 export const permissions = (): Effect.Effect<
   void,
   | NotSetUpError
-  | HelperNotFoundError
+  | AppMissingError
   | HelperExitedError
   | ParseError
   | StoreError
@@ -94,6 +101,7 @@ export const permissions = (): Effect.Effect<
   | Prompt
   | Stdin
   | Helper
+  | App
   | Launchd
   | FileSystem.FileSystem
   | Terminal.Terminal

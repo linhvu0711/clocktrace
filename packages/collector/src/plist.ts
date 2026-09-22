@@ -4,6 +4,7 @@ const escapeXml = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 export const collectorPlist = (input: {
+  readonly app: string;
   readonly node: string;
   readonly entry: string;
   readonly databasePath: string;
@@ -17,6 +18,8 @@ export const collectorPlist = (input: {
   <string>${collectorLabel}</string>
   <key>ProgramArguments</key>
   <array>
+    <string>${escapeXml(input.app)}</string>
+    <string>spawn</string>
     <string>${escapeXml(input.node)}</string>
     <string>${escapeXml(input.entry)}</string>
   </array>
