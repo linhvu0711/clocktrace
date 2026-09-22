@@ -1,11 +1,7 @@
 import { DateTime, Effect, Option, Ref, Schema } from "effect";
 
 import { Activity } from "./activity.js";
-import {
-  needsLookup,
-  type ResolvedApp,
-  resolveAppName,
-} from "./app-names.js";
+import { needsLookup, type ResolvedApp, resolveAppName } from "./app-names.js";
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";

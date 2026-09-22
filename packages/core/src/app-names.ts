@@ -36,7 +36,9 @@ export const needsLookup = (
       return false;
     }
     const now = yield* DateTime.now;
-    return now.epochMillis - row.fetchedAt.epochMillis >= lookupRetryAfterMillis;
+    return (
+      now.epochMillis - row.fetchedAt.epochMillis >= lookupRetryAfterMillis
+    );
   });
 
 export const resolveAppName = (
