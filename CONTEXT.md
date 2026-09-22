@@ -55,7 +55,7 @@ The CLI command that pairs with an MCP tool: `clocktrace rules add` is the Twin 
 _Avoid_: Alias, wrapper, mirror, subcommand
 
 **Rollup**:
-One row per day, Device, app, Category, and Project with the seconds summed, derived from Activities each night with the Rules of that moment. Whole-day queries read it, today reads Activities. Rebuilt for affected days when Rules change. Never the source of truth.
+One row per day, Device, app, Category, and Project with the seconds summed, derived from Activities each night with the Rules of that moment. Whole-day `summary` questions read it, today reads Activities; `timeline` and `activities` always read Activities. Rebuilt for affected days when Rules change. Never the source of truth. Planned in #18, not built: no rollup table exists yet.
 _Avoid_: Aggregate, cache, summary table
 
 ### Grouping
