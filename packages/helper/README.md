@@ -21,8 +21,10 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
 - `clocktrace-helper permissions request (accessibility | automation <bundleId> | fulldiskaccess)`
   — raise that grant's prompt, or open its System Settings pane. Browser not
   running: `<bundleId> is not running, open it and retry`, exit 3.
+- `clocktrace-helper biome records [--since <unixSeconds>]` — print one JSON line per iPhone and iPad focus record from the Biome App.InFocus stream, ordered by device, segment file, and offset; `--since` skips segment files modified before that Unix time. Exit 3 without Full Disk Access, 4 without the remote folder.
+- `clocktrace-helper biome devices` — print one JSON line per row of the Biome `DevicePeer` table. Exit 3 without Full Disk Access, 5 when the table cannot be read.
 - Anything else — print
-  `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess))`
+  `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <unixSeconds>] | biome devices)`
   to stderr and exit 2.
 
 ## Lines

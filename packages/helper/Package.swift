@@ -12,7 +12,8 @@ let package = Package(
     ),
     .testTarget(
       name: "HelperCoreTests",
-      dependencies: ["HelperCore"]
+      dependencies: ["HelperCore"],
+      resources: [.copy("Fixtures")]
     ),
   ]
 )
