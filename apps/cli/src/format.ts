@@ -125,6 +125,9 @@ export const shortDuration = (seconds: number): string => {
   return h === 0 ? `${m}m` : `${h}h ${pad(m)}m`;
 };
 
+export const count = (n: number, one: string, many: string): string =>
+  `${n} ${n === 1 ? one : many}`;
+
 export class Style extends Effect.Service<Style>()("Style", {
   effect: Effect.gen(function* () {
     const terminal = yield* Terminal.Terminal;

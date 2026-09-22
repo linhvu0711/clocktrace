@@ -5,6 +5,7 @@ import {
   clock,
   colorEnabled,
   columns,
+  count,
   duration,
   line,
   mark,
@@ -150,5 +151,15 @@ describe("format", () => {
       duration(1325),
       duration(3932),
     ]).toEqual(["<1m", "<1m", "1m 00s", "15m 32s", "22m 05s", "1h 05m 32s"]);
+  });
+
+  it("count uses the singular at one", () => {
+    // Given / When / Then
+    expect(count(1, "rule", "rules")).toBe("1 rule");
+  });
+
+  it("count uses the plural otherwise", () => {
+    // Given / When / Then
+    expect(count(6, "category", "categories")).toBe("6 categories");
   });
 });
