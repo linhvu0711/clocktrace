@@ -40,7 +40,8 @@ clocktrace status --json   # the status tool's JSON
 clocktrace --version     # print the CLI version
 ```
 
-`setup` creates the database, writes
+`setup` creates the database, writes `~/Applications/Clocktrace.app` — the
+bundle that owns the macOS grants; it must not be moved — writes
 `~/Library/LaunchAgents/com.clocktrace.collector.plist`, starts the
 Collector, and walks the three permissions. At the end it shows a
 checklist of the four Hosts (Claude Code, Codex, Hermes Agent,
@@ -76,5 +77,11 @@ documented in `packages/collector/README.md`.
 3. `pnpm --filter cli exec clocktrace bogus` prints
    `Invalid subcommand for clocktrace - use one of 'setup', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects', 'summary', 'timeline', 'activities'`
    and exits 1.
-4. `CLOCKTRACE_HELPER=/nope/clocktrace-helper pnpm --filter cli exec clocktrace status`
-   prints `helper not found at /nope/clocktrace-helper` and exits 1.
+4. `rm -rf ~/Applications/Clocktrace.app` then
+   `pnpm --filter cli exec clocktrace status` prints
+   `app: missing, run clocktrace setup` with every permission `not checked`,
+   and `pnpm --filter cli exec clocktrace permissions` prints
+   `app: missing, run clocktrace setup` and exits 1.
+5. `pnpm --filter cli exec clocktrace setup` again rewrites the app and the
+   agent: `ls ~/Applications/Clocktrace.app` exists and
+   `clocktrace status --json` prints `"app":"present"`.

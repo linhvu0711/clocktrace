@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { collectorPlist } from "../src/plist.js";
 
 const input = {
+  app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
   node: "/usr/local/bin/node",
   entry: "/repo/packages/collector/dist/main.js",
   databasePath:
@@ -12,7 +13,7 @@ const input = {
 };
 
 describe("collectorPlist", () => {
-  it("runs node on the entry file with RunAtLoad and KeepAlive", () => {
+  it("runs the Collector through the app's spawn verb with RunAtLoad and KeepAlive", () => {
     // Given: input
     // When
     const plist = collectorPlist(input);
@@ -25,6 +26,8 @@ describe("collectorPlist", () => {
   <string>com.clocktrace.collector</string>
   <key>ProgramArguments</key>
   <array>
+    <string>/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace</string>
+    <string>spawn</string>
     <string>/usr/local/bin/node</string>
     <string>/repo/packages/collector/dist/main.js</string>
   </array>

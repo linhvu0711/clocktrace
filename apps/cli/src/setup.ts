@@ -1,4 +1,9 @@
 import {
+  App,
+  type AppError,
+  type AppMissingError,
+  appMainPath,
+  appPath,
   collectorPlist,
   dbPathConfig,
   entryPath,
@@ -82,7 +87,9 @@ const pickHosts: Effect.Effect<
 
 // launchctl bootstrap returns before a RunAtLoad agent has reached running,
 // so poll the state for a bounded window instead of trusting one sample.
-const defaultLoadRetry = Schedule.recurs(20).pipe(
+// A re-run boots the agent out first, and relaunching a KeepAlive job after
+// bootout takes longer than the fresh-install path, so the window covers it.
+const defaultLoadRetry = Schedule.recurs(60).pipe(
   Schedule.addDelay(() => "100 millis"),
 );
 
@@ -93,6 +100,8 @@ export const setup = (
   void,
   | HelperNotFoundError
   | HelperExitedError
+  | AppError
+  | AppMissingError
   | ParseError
   | StoreError
   | DatabaseNewerError
@@ -101,6 +110,7 @@ export const setup = (
   | Prompt
   | Stdin
   | Helper
+  | App
   | Launchd
   | Hosts
   | FileSystem.FileSystem
@@ -119,10 +129,27 @@ export const setup = (
       Effect.gen(function* () {
         const launchd = yield* Launchd;
         const prompt = yield* Prompt;
+        const app = yield* App;
+        const written = yield* app.install(helperPath);
+        yield* prompt.print(`app: ${written} ${appPath}`);
         const installed = yield* launchd.isInstalled();
-        if (!installed) {
+        const previous = installed ? yield* launchd.readPlist() : null;
+        if (installed) {
+          yield* launchd.bootout();
+        }
+        // A fresh install that fails is removed; a rewrite that fails
+        // puts the previous agent back, unloading the new one first so
+        // the old plist is the one launchd runs.
+        const restore =
+          previous === null
+            ? launchd.uninstall()
+            : launchd
+                .uninstall()
+                .pipe(Effect.andThen(launchd.install(previous)));
+        yield* Effect.gen(function* () {
           yield* launchd.install(
             collectorPlist({
+              app: appMainPath,
               node: process.execPath,
               entry: entryPath,
               databasePath,
@@ -131,25 +158,18 @@ export const setup = (
             }),
           );
           yield* prompt.print(`launchd agent: written ${plistPath}`);
-        } else {
-          yield* launchd.bootstrap();
-        }
-        yield* launchd.state().pipe(
-          Effect.flatMap((collector) =>
-            collector === "running"
-              ? Effect.void
-              : new LaunchdError({
-                  step: "launchctl bootstrap",
-                  detail: "collector did not start",
-                }),
-          ),
-          Effect.retry({ schedule: loadRetry }),
-          // A fresh install wrote this plist; drop it so a later run can
-          // rewrite it. A repair reuses an existing plist, so leave it.
-          Effect.tapError(() =>
-            installed ? Effect.void : launchd.uninstall().pipe(Effect.ignore),
-          ),
-        );
+          yield* launchd.state().pipe(
+            Effect.flatMap((collector) =>
+              collector === "running"
+                ? Effect.void
+                : new LaunchdError({
+                    step: "launchctl bootstrap",
+                    detail: "collector did not start",
+                  }),
+            ),
+            Effect.retry({ schedule: loadRetry }),
+          );
+        }).pipe(Effect.tapError(() => restore.pipe(Effect.ignore)));
         const interactive = yield* prompt.interactive;
         if (!interactive) {
           yield* prompt.print("no terminal, skipping questions");

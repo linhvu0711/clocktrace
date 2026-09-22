@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  App,
   fakeLaunchd,
   Helper,
   type LaunchdState,
@@ -89,6 +90,7 @@ describe("cli", () => {
           Stdin.Test,
           fakeLaunchd(state),
           helperStub(allGranted),
+          App.Test,
           Hosts.Test,
           Style.Test,
         );

@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import {
+  App,
   fakeLaunchd,
   Helper,
   type LaunchdState,
@@ -184,6 +185,7 @@ describe("hosts", () => {
           Stdin.Test,
           fakeLaunchd(state),
           helperStub(allGranted),
+          App.Test,
           Hosts.Default,
           executor.layer,
           Style.Test,

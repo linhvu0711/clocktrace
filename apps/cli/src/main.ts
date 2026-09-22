@@ -1,4 +1,4 @@
-import { Helper, Launchd } from "@clocktrace/collector";
+import { App, Helper, Launchd } from "@clocktrace/collector";
 import * as ValidationError from "@effect/cli/ValidationError";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { DateTime, Effect, Layer } from "effect";
@@ -10,6 +10,7 @@ import { ReportedError } from "./output.js";
 import { Prompt, Stdin, StoppedError } from "./prompt.js";
 
 const layers = Layer.mergeAll(
+  App.Default,
   Helper.Default,
   Hosts.Default,
   Launchd.Default,
