@@ -1,7 +1,10 @@
 import { Option } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { parseHardwareUuid } from "../src/mac-identity.js";
+import {
+  parseHardwareUuid,
+  parseMacosMajor,
+} from "../src/mac-identity.js";
 
 describe("mac-identity", () => {
   it("parseHardwareUuid reads the UUID from ioreg output", () => {
@@ -23,6 +26,22 @@ describe("mac-identity", () => {
     const text = "+-o MacBookPro18,3\n    {\n    }\n";
     // When
     const result = parseHardwareUuid(text);
+    // Then
+    expect(result).toEqual(Option.none());
+  });
+
+  it("parseMacosMajor reads the major of 27.0", () => {
+    // Given: sw_vers -productVersion output
+    // When
+    const result = parseMacosMajor("27.0");
+    // Then
+    expect(result).toEqual(Option.some(27));
+  });
+
+  it("parseMacosMajor is none for text", () => {
+    // Given: a version that is not a number
+    // When
+    const result = parseMacosMajor("beta");
     // Then
     expect(result).toEqual(Option.none());
   });

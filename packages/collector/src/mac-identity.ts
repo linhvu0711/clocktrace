@@ -15,6 +15,11 @@ export const parseHardwareUuid = (text: string): Option.Option<string> => {
   return uuid === undefined ? Option.none() : Option.some(uuid);
 };
 
+export const parseMacosMajor = (version: string): Option.Option<number> => {
+  const n = Number.parseInt(version.split(".")[0] ?? "", 10);
+  return Number.isNaN(n) ? Option.none() : Option.some(n);
+};
+
 export class MacIdentity extends Effect.Service<MacIdentity>()("MacIdentity", {
   effect: Effect.gen(function* () {
     const executor = yield* CommandExecutor.CommandExecutor;
@@ -40,6 +45,9 @@ export class MacIdentity extends Effect.Service<MacIdentity>()("MacIdentity", {
           }),
         ),
       ),
+      macosVersion: run(Command.make("sw_vers", "-productVersion")).pipe(
+        Effect.map((s) => s.trim()),
+      ),
     };
   }),
   dependencies: [NodeContext.layer],
@@ -50,6 +58,7 @@ export class MacIdentity extends Effect.Service<MacIdentity>()("MacIdentity", {
     new MacIdentity({
       name: Effect.succeed("Studio"),
       hardwareUuid: Effect.succeed("01234567-89AB-CDEF-0123-456789ABCDEF"),
+      macosVersion: Effect.succeed("27.0"),
     }),
   );
 }
