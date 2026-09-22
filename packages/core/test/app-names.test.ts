@@ -1,6 +1,7 @@
 import {
   DateTime,
   Effect,
+  Either,
   Layer,
   Option,
   Ref,
@@ -13,6 +14,7 @@ import type { StoreShape } from "../src/index.js";
 import {
   AppStore,
   AppStoreError,
+  classifyAppName,
   iosAppNames,
   openStore,
   resolveAppName,
@@ -62,6 +64,87 @@ describe("iosAppNames", () => {
     const count = Object.keys(iosAppNames).length;
     // Then
     expect(count).toBeGreaterThanOrEqual(50);
+  });
+});
+
+describe("classifyAppName", () => {
+  it("decides a mapped app locally", async () => {
+    // Given: a bundle ID in the built-in map
+    // When
+    const result = await run(
+      AppStore.Test,
+      classifyAppName("com.apple.mobilesafari"),
+    );
+    // Then
+    expect(result).toEqual(
+      Either.left(Option.some({ name: "Safari", genre: null })),
+    );
+  });
+
+  it("decides a stored name locally", async () => {
+    // Given: a stored Bluesky row
+    const result = await run(
+      AppStore.Test,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seededName(store);
+        return yield* classifyAppName("xyz.blueskyweb.app");
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Either.left(Option.some({ name: "Bluesky", genre: "Social Networking" })),
+    );
+  });
+
+  it("decides a fresh failed lookup locally", async () => {
+    // Given: a name-null row younger than the retry window
+    const result = await run(
+      AppStore.Test,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.upsertAppName({
+          bundleId: "com.example.notanapp",
+          name: null,
+          genre: null,
+          fetchedAt: yield* DateTime.now,
+        });
+        return yield* classifyAppName("com.example.notanapp");
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then
+    expect(result).toEqual(Either.left(Option.none()));
+  });
+
+  it("asks for a lookup when nothing is cached", async () => {
+    // Given: nothing stored for the bundle ID
+    // When
+    const result = await run(
+      AppStore.Test,
+      classifyAppName("com.example.notanapp"),
+    );
+    // Then
+    expect(result).toEqual(Either.right("com.example.notanapp"));
+  });
+
+  it("asks for a lookup once a failed attempt is stale", async () => {
+    // Given: a name-null row older than the retry window
+    const result = await run(
+      AppStore.Test,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.upsertAppName({
+          bundleId: "com.example.notanapp",
+          name: null,
+          genre: null,
+          fetchedAt: yield* DateTime.now,
+        });
+        yield* TestClock.adjust("25 hours");
+        return yield* classifyAppName("com.example.notanapp");
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    // Then
+    expect(result).toEqual(Either.right("com.example.notanapp"));
   });
 });
 

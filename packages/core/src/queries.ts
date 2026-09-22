@@ -1,7 +1,11 @@
-import { DateTime, Effect, Option, Ref, Schema } from "effect";
+import { DateTime, Effect, Either, Option, Ref, Schema } from "effect";
 
 import { Activity } from "./activity.js";
-import { needsLookup, type ResolvedApp, resolveAppName } from "./app-names.js";
+import {
+  classifyAppName,
+  lookupAndCache,
+  type ResolvedApp,
+} from "./app-names.js";
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";
@@ -111,22 +115,33 @@ const loadRange = (input: {
         const acc = yield* Ref.make<
           ReadonlyArray<readonly [string, ResolvedApp | null]>
         >([]);
-        const collect = (bundleId: string) =>
-          Effect.flatMap(resolveAppName(bundleId), (app) =>
-            Ref.update(acc, (xs) => [
-              ...xs,
-              [bundleId, Option.getOrNull(app)] as const,
-            ]),
-          );
-        // Map and cache hits resolve first so a stalled network cannot skip
-        // them; only App Store work counts against the budget, and
-        // timeoutOption preserves a StoreError where race would hide it.
-        const misses = yield* Effect.filter(iosBundleIds, needsLookup);
-        const hits = iosBundleIds.filter((id) => !misses.includes(id));
-        yield* Effect.forEach(hits, collect, { concurrency: 1 });
-        yield* Effect.forEach(misses, collect, { concurrency: 1 }).pipe(
-          Effect.timeoutOption("15 seconds"),
+        const storeResult = (bundleId: string, app: ResolvedApp | null) =>
+          Ref.update(acc, (xs) => [...xs, [bundleId, app] as const]);
+        // Classification and local resolution are one read, so a row that
+        // cools down mid-pass still lands in the timed section; only App
+        // Store work counts against the budget, and timeoutOption
+        // preserves a StoreError where race would hide it.
+        const misses: string[] = [];
+        yield* Effect.forEach(
+          iosBundleIds,
+          (bundleId) =>
+            Effect.flatMap(classifyAppName(bundleId), (decision) =>
+              Either.isLeft(decision)
+                ? storeResult(bundleId, Option.getOrNull(decision.left))
+                : Effect.sync(() => {
+                    misses.push(bundleId);
+                  }),
+            ),
+          { concurrency: 1 },
         );
+        yield* Effect.forEach(
+          misses,
+          (bundleId) =>
+            Effect.flatMap(lookupAndCache(bundleId), (app) =>
+              storeResult(bundleId, Option.getOrNull(app)),
+            ),
+          { concurrency: 1 },
+        ).pipe(Effect.timeoutOption("15 seconds"));
         return yield* Ref.get(acc);
       }),
     );

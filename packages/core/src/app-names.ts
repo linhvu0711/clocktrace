@@ -1,4 +1,4 @@
-import { DateTime, Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Either, Option, Schema } from "effect";
 
 import { AppStore } from "./app-store.js";
 import type { StoreError } from "./errors.js";
@@ -19,51 +19,43 @@ export const AppName = Schema.Struct({
 
 export const lookupRetryAfterMillis = 24 * 60 * 60 * 1000;
 
-export const needsLookup = (
+// Left carries a locally decided name (None when a failed lookup is still
+// cooling down); Right carries the bundle ID when a lookup is needed.
+export const classifyAppName = (
   bundleId: string,
-): Effect.Effect<boolean, StoreError, Store> =>
-  Effect.gen(function* () {
-    if (iosAppNames[bundleId] !== undefined) {
-      return false;
-    }
-    const store = yield* Store;
-    const stored = yield* store.getAppName(bundleId);
-    if (Option.isNone(stored)) {
-      return true;
-    }
-    const row = stored.value;
-    if (row.name !== null) {
-      return false;
-    }
-    const now = yield* DateTime.now;
-    return (
-      now.epochMillis - row.fetchedAt.epochMillis >= lookupRetryAfterMillis
-    );
-  });
-
-export const resolveAppName = (
-  bundleId: string,
-): Effect.Effect<Option.Option<ResolvedApp>, StoreError, Store | AppStore> =>
+): Effect.Effect<
+  Either.Either<string, Option.Option<ResolvedApp>>,
+  StoreError,
+  Store
+> =>
   Effect.gen(function* () {
     const name = iosAppNames[bundleId];
     if (name !== undefined) {
-      return Option.some({ name, genre: null });
+      return Either.left(Option.some({ name, genre: null }));
     }
     const store = yield* Store;
     const stored = yield* store.getAppName(bundleId);
     if (Option.isSome(stored)) {
       const row = stored.value;
       if (row.name !== null) {
-        return Option.some({ name: row.name, genre: row.genre });
+        return Either.left(Option.some({ name: row.name, genre: row.genre }));
       }
       const now = yield* DateTime.now;
       if (
         now.epochMillis - row.fetchedAt.epochMillis <
         lookupRetryAfterMillis
       ) {
-        return Option.none();
+        return Either.left(Option.none());
       }
     }
+    return Either.right(bundleId);
+  });
+
+export const lookupAndCache = (
+  bundleId: string,
+): Effect.Effect<Option.Option<ResolvedApp>, StoreError, Store | AppStore> =>
+  Effect.gen(function* () {
+    const store = yield* Store;
     const appStore = yield* AppStore;
     const found = yield* appStore
       .lookup(bundleId)
@@ -93,6 +85,17 @@ export const resolveAppName = (
       fetchedAt: now,
     });
     return found;
+  });
+
+export const resolveAppName = (
+  bundleId: string,
+): Effect.Effect<Option.Option<ResolvedApp>, StoreError, Store | AppStore> =>
+  Effect.gen(function* () {
+    const decision = yield* classifyAppName(bundleId);
+    if (Either.isLeft(decision)) {
+      return decision.left;
+    }
+    return yield* lookupAndCache(bundleId);
   });
 
 export type ResolvedApp = Schema.Schema.Type<typeof ResolvedApp>;
