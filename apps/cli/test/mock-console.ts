@@ -20,7 +20,7 @@ const pattern = new RegExp(
   "g",
 );
 
-const stripAnsi = (str: string) => str.replace(pattern, "");
+export const stripAnsi = (str: string) => str.replace(pattern, "");
 
 export const make = Effect.gen(function* () {
   const lines = yield* Ref.make<ReadonlyArray<string>>([]);

@@ -27,11 +27,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BadLimitError, parseLimit } from "../src/activities.js";
 import { renderFriendly, run } from "../src/cli.js";
 import { Hosts } from "../src/hosts.js";
-import { fakePrompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import { version } from "../src/version.js";
 import { MissingWindowError } from "../src/window.js";
 import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
 
 const helperStub = (p: Permissions) =>
   Layer.succeed(
@@ -74,13 +75,14 @@ describe("cli", () => {
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt([], false);
+        const terminal = yield* MockTerminal.make(false);
         const console = yield* MockConsole.make;
         const state = yield* Ref.make(launchdState);
         const layers = Layer.mergeAll(
           Console.setConsole(console),
           NodeContext.layer,
-          prompt.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           helperStub(allGranted),
           Hosts.Test,

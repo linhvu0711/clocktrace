@@ -12,11 +12,11 @@ import {
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, Store, StoreError } from "@clocktrace/core";
 import { Command } from "@effect/cli";
-import type { FileSystem } from "@effect/platform";
+import type { FileSystem, Path, Terminal } from "@effect/platform";
 import { type DateTime, Effect } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { Prompt } from "./prompt.js";
+import { Prompt, type StoppedError } from "./prompt.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
 import { printStatus } from "./status.js";
 
@@ -40,8 +40,16 @@ export const walkPermissions = (): Effect.Effect<
   | HelperExitedError
   | ParseError
   | StoreError
-  | LaunchdError,
-  Prompt | Helper | Launchd | Store | DateTime.CurrentTimeZone
+  | LaunchdError
+  | StoppedError,
+  | Prompt
+  | Helper
+  | Launchd
+  | Store
+  | DateTime.CurrentTimeZone
+  | Terminal.Terminal
+  | FileSystem.FileSystem
+  | Path.Path
 > =>
   Effect.gen(function* () {
     const prompt = yield* Prompt;
@@ -78,8 +86,15 @@ export const permissions = (): Effect.Effect<
   | ParseError
   | StoreError
   | DatabaseNewerError
-  | LaunchdError,
-  Prompt | Helper | Launchd | FileSystem.FileSystem | DateTime.CurrentTimeZone
+  | LaunchdError
+  | StoppedError,
+  | Prompt
+  | Helper
+  | Launchd
+  | FileSystem.FileSystem
+  | Terminal.Terminal
+  | Path.Path
+  | DateTime.CurrentTimeZone
 > => requireSetUp.pipe(Effect.andThen(withStore(walkPermissions())));
 
 export const permissionsCommand = Command.make("permissions", {}, () =>

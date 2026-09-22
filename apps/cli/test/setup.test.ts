@@ -16,6 +16,7 @@ import { type Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import {
   ConfigProvider,
+  Console,
   DateTime,
   Effect,
   Exit,
@@ -35,8 +36,12 @@ import {
   hostNames,
   manualCommand,
 } from "../src/hosts.js";
-import { fakePrompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
+
+type Key = { readonly key: string; readonly ctrl?: boolean } | string;
 
 const allGranted: Permissions = {
   accessibility: "granted",
@@ -108,7 +113,7 @@ describe("setup", () => {
     helperPath = "/stub",
     opts: {
       readonly hosts?: ReadonlyArray<HostName>;
-      readonly answers?: ReadonlyArray<string>;
+      readonly keys?: ReadonlyArray<Key>;
       readonly interactive?: boolean;
       readonly launchd?: {
         readonly failBootstrap?: boolean;
@@ -119,17 +124,27 @@ describe("setup", () => {
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt(
-          opts.answers ?? [],
+        const terminal = yield* MockTerminal.make(
           opts.interactive ?? false,
         );
+        const console = yield* MockConsole.make;
+        for (const k of opts.keys ?? []) {
+          yield* typeof k === "string"
+            ? terminal.inputText(k)
+            : terminal.inputKey(
+              k.key,
+              k.ctrl === undefined ? {} : { ctrl: k.ctrl },
+            );
+        }
         const state = yield* Ref.make(launchdState);
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state, opts.launchd),
           helperLayer,
           Hosts.Default,
-          NodeContext.layer,
           noCommandsLayer,
         );
         const exit = yield* Effect.exit(
@@ -137,8 +152,8 @@ describe("setup", () => {
         );
         return {
           exit,
-          output: yield* Ref.get(prompt.output),
-          questions: yield* Ref.get(prompt.questions),
+          output: yield* console.getLines({ stripAnsi: true }),
+          shown: yield* terminal.shown,
           state: yield* Ref.get(state),
         };
       }).pipe(
@@ -235,7 +250,7 @@ describe("setup", () => {
       helperStub(allGranted),
       { installed: true, running: true, plist: null, installs: 0 },
       "/stub",
-      { answers: [""], interactive: true },
+      { keys: [{ key: "enter" }], interactive: true },
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
@@ -244,9 +259,9 @@ describe("setup", () => {
   });
 
   it("non-tty without --hosts prints the four commands", async () => {
-    // Given: fakePrompt interactive: false; no hosts argument
+    // Given: the mock terminal is not a TTY; no hosts argument
     // When
-    const { exit, output, questions } = await run(helperStub(allGranted), {
+    const { exit, output, shown } = await run(helperStub(allGranted), {
       installed: true,
       running: true,
       plist: null,
@@ -255,7 +270,7 @@ describe("setup", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual(expect.arrayContaining(manualLines));
-    expect(questions).toEqual([]);
+    expect(shown).not.toContain("numbers toggle");
   });
 
   it("setup repairs a not-loaded Collector on a re-run", async () => {
@@ -382,9 +397,9 @@ describe("setup", () => {
   });
 
   it("non-tty with --hosts registers the named without a checklist", async () => {
-    // Given: fakePrompt interactive: false; hosts = claude, codex
+    // Given: the mock terminal is not a TTY; hosts = claude, codex
     // When
-    const { exit, output, questions } = await run(
+    const { exit, output, shown } = await run(
       helperStub(allGranted),
       { installed: true, running: true, plist: null, installs: 0 },
       "/stub",
@@ -394,6 +409,6 @@ describe("setup", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toContain("claude code: registered");
     expect(output).toContain("codex: registered");
-    expect(questions).toEqual([]);
+    expect(shown).not.toContain("numbers toggle");
   });
 });

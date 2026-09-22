@@ -13,7 +13,12 @@ import {
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
-import type { CommandExecutor, FileSystem } from "@effect/platform";
+import type {
+  CommandExecutor,
+  FileSystem,
+  Path,
+  Terminal,
+} from "@effect/platform";
 import { type DateTime, Effect, Option, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
@@ -26,7 +31,7 @@ import {
   UnknownHostError,
 } from "./hosts.js";
 import { walkPermissions } from "./permissions.js";
-import { Prompt } from "./prompt.js";
+import { Prompt, type StoppedError } from "./prompt.js";
 import { withStore } from "./set-up.js";
 
 const printManualCommands: Effect.Effect<void, never, Prompt> = Effect.gen(
@@ -53,8 +58,12 @@ const registerHosts = (
 
 const pickHosts: Effect.Effect<
   ReadonlyArray<HostName>,
-  never,
-  Hosts | Prompt | HostBorders
+  StoppedError,
+  | Hosts
+  | Prompt
+  | HostBorders
+  | Terminal.Terminal
+  | Path.Path
 > = Effect.gen(function* () {
   const hostsService = yield* Hosts;
   const prompt = yield* Prompt;
@@ -106,13 +115,16 @@ export const setup = (
   | ParseError
   | StoreError
   | DatabaseNewerError
-  | LaunchdError,
+  | LaunchdError
+  | StoppedError,
   | Prompt
   | Helper
   | Launchd
   | Hosts
   | FileSystem.FileSystem
   | CommandExecutor.CommandExecutor
+  | Terminal.Terminal
+  | Path.Path
   | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {

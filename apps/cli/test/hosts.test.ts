@@ -22,6 +22,7 @@ import { type Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import {
   ConfigProvider,
+  Console,
   DateTime,
   Effect,
   Exit,
@@ -35,8 +36,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import { type HostName, Hosts, manualCommand } from "../src/hosts.js";
-import { fakePrompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
+
+type Key = { readonly key: string; readonly ctrl?: boolean } | string;
 
 const allGranted: Permissions = {
   accessibility: "granted",
@@ -144,17 +149,25 @@ describe("hosts", () => {
   const runSetup = (
     hosts: ReadonlyArray<HostName> | undefined,
     opts: {
-      readonly answers?: ReadonlyArray<string>;
+      readonly keys?: ReadonlyArray<Key>;
       readonly interactive?: boolean;
       readonly results?: Record<string, ExecResult>;
     } = {},
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt(
-          opts.answers ?? [],
+        const terminal = yield* MockTerminal.make(
           opts.interactive ?? false,
         );
+        const console = yield* MockConsole.make;
+        for (const k of opts.keys ?? []) {
+          yield* typeof k === "string"
+            ? terminal.inputText(k)
+            : terminal.inputKey(
+              k.key,
+              k.ctrl === undefined ? {} : { ctrl: k.ctrl },
+            );
+        }
         const executor = yield* fakeExecutor(opts.results ?? {});
         const state = yield* Ref.make<LaunchdState>({
           installed: false,
@@ -163,11 +176,13 @@ describe("hosts", () => {
           installs: 0,
         });
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           helperStub(allGranted),
           Hosts.Default,
-          NodeContext.layer,
           executor.layer,
         );
         const exit = yield* Effect.exit(
@@ -175,8 +190,8 @@ describe("hosts", () => {
         );
         return {
           exit,
-          output: yield* Ref.get(prompt.output),
-          questions: yield* Ref.get(prompt.questions),
+          output: yield* console.getLines({ stripAnsi: true }),
+          shown: yield* terminal.shown,
           recorded: yield* Ref.get(executor.recorded),
         };
       }).pipe(
@@ -392,7 +407,7 @@ describe("hosts", () => {
     // Given: `which claude` exits 0, the others non-zero; no host config dirs
     // When
     const { exit, output } = await runSetup(undefined, {
-      answers: [""],
+      keys: [{ key: "enter" }],
       interactive: true,
       results: {
         "which claude": { code: 0 },
@@ -410,9 +425,9 @@ describe("hosts", () => {
   });
 
   it("non-tty with --hosts registers the named without a checklist", async () => {
-    // Given: fakePrompt interactive: false; hosts = claude, codex
+    // Given: the mock terminal is not a TTY; hosts = claude, codex
     // When
-    const { exit, output, questions, recorded } = await runSetup(
+    const { exit, output, shown, recorded } = await runSetup(
       ["claude", "codex"],
       {
         interactive: false,
@@ -432,6 +447,6 @@ describe("hosts", () => {
     ]);
     expect(output).toContain("claude code: registered");
     expect(output).toContain("codex: registered");
-    expect(questions).toEqual([]);
+    expect(shown).not.toContain("numbers toggle");
   });
 });

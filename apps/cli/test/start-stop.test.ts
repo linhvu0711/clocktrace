@@ -10,13 +10,23 @@ import {
 } from "@clocktrace/collector";
 import { openStore } from "@clocktrace/core";
 import { NodeContext } from "@effect/platform-node";
-import { ConfigProvider, DateTime, Effect, Exit, Layer, Ref } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  DateTime,
+  Effect,
+  Exit,
+  Layer,
+  Ref,
+} from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { fakePrompt, type Prompt } from "../src/prompt.js";
+import { Prompt } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import { start } from "../src/start.js";
 import { stop } from "../src/stop.js";
+import * as MockConsole from "./mock-console.js";
+import * as MockTerminal from "./mock-terminal.js";
 
 describe("start and stop", () => {
   let dir: string;
@@ -42,18 +52,21 @@ describe("start and stop", () => {
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
-        const prompt = yield* fakePrompt([], true);
+        const terminal = yield* MockTerminal.make(true);
+        const console = yield* MockConsole.make;
         const state = yield* Ref.make(launchdState);
         const layers = Layer.mergeAll(
-          prompt.layer,
+          Console.setConsole(console),
+          NodeContext.layer,
+          terminal.layer,
+          Prompt.Default,
           fakeLaunchd(state),
           Helper.Test,
-          NodeContext.layer,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
         return {
           exit,
-          output: yield* Ref.get(prompt.output),
+          output: yield* console.getLines({ stripAnsi: true }),
           state: yield* Ref.get(state),
         };
       }).pipe(
