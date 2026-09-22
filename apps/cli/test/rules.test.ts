@@ -302,7 +302,7 @@ describe("rules", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       const { r0, rules } = exit.value;
-      expect(output).toEqual([`removed ${r0.id}`]);
+      expect(output).toEqual([`✔ removed rule ${r0.id}`]);
       expect(rules).toEqual([]);
     }
   });

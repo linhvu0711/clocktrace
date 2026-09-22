@@ -124,11 +124,18 @@ export const printAddedRule = (
 export const printRemovedRule = (
   id: string,
   json: boolean,
-): Effect.Effect<void, RuleNotFoundError | StoreError, Store | Prompt> =>
-  Effect.andThen(
-    removeRule(id),
-    report(json, { removed: id }, ({ removed }) => [`removed ${removed}`]),
-  );
+): Effect.Effect<
+  void,
+  RuleNotFoundError | StoreError,
+  Store | Prompt | Style
+> =>
+  Effect.gen(function* () {
+    const look = yield* Style;
+    yield* removeRule(id);
+    yield* report(json, { removed: id }, ({ removed }) => [
+      line([mark("ok", look), ` removed rule ${removed}`], look),
+    ]);
+  });
 
 const field = Options.choice("field", RuleField.literals).pipe(
   Options.withDescription("the Activity field to test"),
