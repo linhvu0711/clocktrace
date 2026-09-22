@@ -19,6 +19,8 @@ Full Disk Access opens System Settings asynchronously; wait for the actual appli
 
 Record the native dialog before consenting. Capture JSON before and after grants; a repeated granted Automation request should be silent and must not show another dialog. Check `$?` immediately after each request.
 
+For CLI walks (e.g. `clocktrace setup`) inside Terminal.app, `pnpm` may fail with `ERR_PNPM_WORKSPACE_WALK_ERROR` because Terminal lacks Full Disk Access and the workspace walk reads protected files under `~/Library`. Run the built entrypoint directly instead: `node apps/cli/bin/clocktrace.js <command>` from the repo root. If `osascript` cannot set window size ("Access not allowed"), resize from the shell with `printf '\e[8;<rows>;<cols>t'`.
+
 ## Devin Secrets Needed
 
 - Local macOS administrator credentials for Full Disk Access authorization. Obtain from the lead through an approved channel; do not put values in this skill.
