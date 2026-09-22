@@ -84,7 +84,7 @@ Rules for `packages/helper`. Nothing above applies to Swift unless it is repeate
 - Layout is SwiftPM: `Sources/HelperCore/` for logic, `Sources/clocktrace-helper/main.swift` for the entry point, `Tests/HelperCoreTests/` for tests. `package.json` holds only `build` (`swift build -c release`) and `test` (`swift test`) so `pnpm -r` reaches it.
 - An expected failure is an exit code from the executable or an enum case in `HelperCore` (`UrlRead.missing`, `GrantState.denied`). No `throws` across the `HelperCore` API, no `try!`.
 - stdout carries only JSON lines. stderr carries only text for a person. A window title or URL never goes to stderr.
-- Tests are XCTest in `Tests/HelperCoreTests/<Type>Tests.swift`. Every file in `Sources/HelperCore` with logic has one. `LiveReads`, `LivePermissionReads`, and `Watcher` are the seam that fakes replace and are left out.
+- Tests are XCTest in `Tests/HelperCoreTests/<Type>Tests.swift`. Every file in `Sources/HelperCore` with logic has one. `LiveReads`, `LivePermissionReads`, `LiveBiomeReads`, and `Watcher` are the seam that fakes replace and are left out.
 - System reads come in as structs of closures (`Reads`, `PermissionReads`) so a test can inject fakes. No mocks.
 - No external SwiftPM dependencies. Apple frameworks only.
 - Formatting: 2 spaces, trailing commas in multi-line literals. No formatter runs on Swift yet.
