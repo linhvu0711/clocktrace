@@ -138,14 +138,24 @@ export const setup = (
           yield* launchd.bootout();
         }
         // A fresh install that fails is removed; a rewrite that fails
-        // puts the previous agent back, unloading the new one first so
-        // the old plist is the one launchd runs.
-        const restore =
-          previous === null
-            ? launchd.uninstall()
-            : launchd
-                .uninstall()
-                .pipe(Effect.andThen(launchd.install(previous)));
+        // puts the previous app and agent back, unloading the new one
+        // first so the old plist is the one launchd runs.
+        const restore = launchd
+          .uninstall()
+          .pipe(
+            Effect.andThen(
+              app
+                .rollback()
+                .pipe(
+                  Effect.catchAll(() =>
+                    prompt.print("app: could not restore the previous install"),
+                  ),
+                ),
+            ),
+            Effect.andThen(
+              previous === null ? Effect.void : launchd.install(previous),
+            ),
+          );
         yield* Effect.gen(function* () {
           yield* launchd.install(
             collectorPlist({
@@ -170,6 +180,9 @@ export const setup = (
             Effect.retry({ schedule: loadRetry }),
           );
         }).pipe(Effect.tapError(() => restore.pipe(Effect.ignore)));
+        // Outside the failure guard: a failed .old delete must not roll
+        // back a Collector that is already running.
+        yield* Effect.ignore(app.commit());
         const interactive = yield* prompt.interactive;
         if (!interactive) {
           yield* prompt.print("no terminal, skipping questions");
