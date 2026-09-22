@@ -62,6 +62,7 @@ describe("start and stop", () => {
         return {
           exit,
           output: yield* Ref.get(prompt.output),
+          errors: yield* Ref.get(prompt.errors),
           state: yield* Ref.get(state),
         };
       }).pipe(
@@ -106,14 +107,14 @@ describe("start and stop", () => {
   it("a failed start prints the mark, the step, and the log path", async () => {
     // Given: set up, the Collector stopped, the bootstrap step fails
     // When
-    const { exit, output } = await run(
+    const { exit, errors } = await run(
       { installed: true, running: false, plist: null, installs: 0 },
       start(),
       (state) => fakeLaunchd(state, { failBootstrap: true }),
     );
     // Then
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(output).toEqual([
+    expect(errors).toEqual([
       "✘ launchctl bootstrap: exit 1",
       "  log  ~/Library/Logs/clocktrace/collector.log",
     ]);
@@ -161,14 +162,14 @@ describe("start and stop", () => {
         }),
       );
     // When
-    const { exit, output } = await run(
+    const { exit, errors } = await run(
       { installed: true, running: true, plist: null, installs: 0 },
       stop(),
       stub,
     );
     // Then
     expect(Exit.isFailure(exit)).toBe(true);
-    expect(output).toEqual([
+    expect(errors).toEqual([
       "✘ launchctl bootout: exit 1",
       "  log  ~/Library/Logs/clocktrace/collector.log",
     ]);

@@ -33,10 +33,10 @@ export const reportLaunchd = <A, R>(
     Effect.gen(function* () {
       const prompt = yield* Prompt;
       const look = yield* Style;
-      yield* prompt.print(
+      yield* prompt.printError(
         line([mark("bad", look), ` ${e.step}: ${e.detail}`], look),
       );
-      yield* prompt.print(
+      yield* prompt.printError(
         line(["  log  ", span("dim", shortPath(logPath, homedir()))], look),
       );
       return yield* new ReportedError({ cause: e });
