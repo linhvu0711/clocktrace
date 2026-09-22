@@ -116,22 +116,10 @@ const addArgvFor = (
         ];
 };
 
-const addArgv: Record<CliHost, ReadonlyArray<string>> = {
-  claude: addArgvFor("claude", {
-    command: serverNode,
-    args: [serverEntry, "mcp"],
-    env: {},
-  }),
-  codex: addArgvFor("codex", {
-    command: serverNode,
-    args: [serverEntry, "mcp"],
-    env: {},
-  }),
-  openclaw: addArgvFor("openclaw", {
-    command: serverNode,
-    args: [serverEntry, "mcp"],
-    env: {},
-  }),
+const serverRegistration: Registration = {
+  command: serverNode,
+  args: [serverEntry, "mcp"],
+  env: {},
 };
 
 const removeArgv: Record<CliHost, ReadonlyArray<string>> = {
@@ -509,7 +497,13 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
         : Effect.gen(function* () {
             const prior = yield* readPrior(host);
             yield* runHost(host, removeArgv[host]);
-            const { code } = yield* runHost(host, addArgv[host]);
+            const { code } = yield* runHost(
+              host,
+              addArgvFor(host, {
+                ...serverRegistration,
+                env: prior?.env ?? {},
+              }),
+            );
             if (code === 0) {
               return `${hostLabel[host]}: registered`;
             }

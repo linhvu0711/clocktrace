@@ -442,9 +442,10 @@ describe("hosts", () => {
       join(home, ".codex", "config.toml"),
       '[mcp_servers.clocktrace]\ncommand = "clocktrace"\nargs = ["mcp"]\n\n[mcp_servers.clocktrace.env]\nCLOCKTRACE_DB = "/work/db.db"\n',
     );
+    const addCodexWithEnv = `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`;
     const executor = await Effect.runPromise(
       fakeExecutor({
-        [addCodex]: { code: 1, output: "boom" },
+        [addCodexWithEnv]: { code: 1, output: "boom" },
         "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp":
           { code: 0 },
       }),
@@ -455,10 +456,34 @@ describe("hosts", () => {
     // Then
     expect(recorded).toEqual([
       removeCodex,
-      addCodex,
+      addCodexWithEnv,
       "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp",
     ]);
     expect(line).toContain("codex: failed");
+  });
+
+  it("re-registration keeps the prior env map", async () => {
+    // Given: config.toml holds a clocktrace entry with an env sub-table
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.clocktrace]\ncommand = "clocktrace"\nargs = ["mcp"]\n\n[mcp_servers.clocktrace.env]\nCLOCKTRACE_DB = "/work/db.db"\n',
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [`codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`]:
+          { code: 0 },
+      }),
+    );
+    // When
+    const line = await register("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: the replacement carries the env the old entry had
+    expect(recorded).toEqual([
+      removeCodex,
+      `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`,
+    ]);
+    expect(line).toBe("codex: registered");
   });
 
   it("a failed add does not restore a url-based registration", async () => {
