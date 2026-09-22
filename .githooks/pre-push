@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Runs the CI gates before every push, in the same order as .github/workflows/ci.yml,
+# and blocks the push when one fails. The GitHub workflow runs only by hand, so this
+# hook is the check that keeps a red branch off GitHub.
+# pnpm install turns it on (scripts/install-hooks.sh sets core.hooksPath).
+set -uo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# git passes one line per ref on stdin: <local ref> <local sha> <remote ref> <remote sha>.
+# A delete has an all-zero local sha; a push made only of deletes has nothing to check.
+zero="0000000000000000000000000000000000000000"
+has_commits=0
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+  [[ "$local_sha" != "$zero" ]] && has_commits=1
+done
+[[ "$has_commits" == "1" ]] || exit 0
+
+for gate in lint build typecheck test; do
+  echo "pre-push: pnpm $gate"
+  if ! pnpm "$gate"; then
+    echo "pre-push: pnpm $gate failed, push blocked"
+    exit 1
+  fi
+done
+echo "pre-push: all gates passed"

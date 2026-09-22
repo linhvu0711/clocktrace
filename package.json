@@ -12,7 +12,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "pnpm -r run typecheck",
-    "postinstall": "bash scripts/sync-repos.sh"
+    "postinstall": "bash scripts/sync-repos.sh && bash scripts/install-hooks.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
