@@ -37,7 +37,9 @@ export const printProjects = (
 ): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     const projects = yield* store.listProjects();
     const header = [span("dim", "  name"), span("dim", "id")];
     yield* report(json, { projects }, ({ projects }) =>
@@ -67,7 +69,9 @@ export const printSetProject = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     const p = yield* setProject(input);
     const verb = input.id === null ? "created" : "updated";
     yield* report(json, p, (p) => [
@@ -91,7 +95,9 @@ export const printRemovedProject = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     yield* removeProject(id);
     yield* report(json, { removed: id }, ({ removed }) => [
       line([mark("ok", look), ` removed project ${removed}`], look),

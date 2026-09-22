@@ -38,7 +38,9 @@ export const printCategories = (
 ): Effect.Effect<void, StoreError, Store | Prompt | Style> =>
   Effect.gen(function* () {
     const store = yield* Store;
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     const categories = yield* store.listCategories();
     const header = [
       span("dim", "  name"),
@@ -72,7 +74,9 @@ export const printSetCategory = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     const c = yield* setCategory(input);
     const verb = input.id === null ? "created" : "updated";
     yield* report(json, c, (c) => [
@@ -99,7 +103,9 @@ export const printRemovedCategory = (
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
-    const look: Look = json ? { color: false, unicode: true } : yield* Style;
+    const look: Look = json
+      ? { color: false, unicode: true, width: 0 }
+      : yield* Style;
     yield* removeCategory(id);
     yield* report(json, { removed: id }, ({ removed }) => [
       line([mark("ok", look), ` removed category ${removed}`], look),

@@ -3,6 +3,7 @@ import { Terminal } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Ansi, AnsiDoc } from "@effect/printer-ansi";
 import { Config, DateTime, Effect, Layer, Option } from "effect";
+import stringWidth from "string-width";
 
 export type Tone = "ok" | "warn" | "bad" | "dim" | "head";
 
@@ -10,7 +11,23 @@ export type Span = { readonly text: string; readonly tone?: Tone };
 
 export type Cell = string | Span | ReadonlyArray<string | Span>;
 
-export type Look = { readonly color: boolean; readonly unicode: boolean };
+export type Look = {
+  readonly color: boolean;
+  readonly unicode: boolean;
+  /** Terminal columns; 0 when stdout is not a TTY, and nothing is cut. */
+  readonly width: number;
+};
+
+export type ColumnsOptions = {
+  /**
+   * What to do with a last cell wider than the room `Look.width` leaves:
+   * cut it with an ellipsis (the default), or wrap it onto lines indented
+   * to the column's start.
+   */
+  readonly overflow?: "truncate" | "wrap";
+  /** Per column, by index; a missing entry is `"left"`. */
+  readonly align?: ReadonlyArray<"left" | "right">;
+};
 
 const ansi: Record<Tone, Ansi.Ansi> = {
   ok: Ansi.green,
@@ -73,26 +90,167 @@ export const shortPath = (path: string, home: string): string =>
       : path;
 
 const visible = (cell: Cell): number =>
-  spans(cell).reduce((n, s) => n + s.text.length, 0);
+  spans(cell).reduce((n, s) => n + stringWidth(s.text), 0);
+
+type Grapheme = {
+  readonly text: string;
+  readonly tone: Tone | undefined;
+  readonly width: number;
+};
+
+const segmenter = new Intl.Segmenter();
+
+const graphemes = (cell: Cell): ReadonlyArray<Grapheme> =>
+  spans(cell).flatMap((s) =>
+    Array.from(segmenter.segment(s.text), ({ segment }) => ({
+      text: segment,
+      tone: s.tone,
+      width: stringWidth(segment),
+    })),
+  );
+
+const regroup = (gs: ReadonlyArray<Grapheme>): ReadonlyArray<Span> => {
+  const out: Array<Span> = [];
+  for (const g of gs) {
+    const last = out[out.length - 1];
+    if (last !== undefined && last.tone === g.tone) {
+      out[out.length - 1] = { ...last, text: last.text + g.text };
+    } else {
+      out.push(
+        g.tone === undefined
+          ? { text: g.text }
+          : { text: g.text, tone: g.tone },
+      );
+    }
+  }
+  return out;
+};
+
+const take = (
+  gs: ReadonlyArray<Grapheme>,
+  room: number,
+): ReadonlyArray<Grapheme> => {
+  const out: Array<Grapheme> = [];
+  let used = 0;
+  for (const g of gs) {
+    if (used + g.width > room) {
+      break;
+    }
+    out.push(g);
+    used += g.width;
+  }
+  return out;
+};
+
+const cut = (cell: Cell, room: number, look: Look): ReadonlyArray<Span> => {
+  const ellipsis = look.unicode ? "…" : "...";
+  const e = stringWidth(ellipsis);
+  const gs = graphemes(cell);
+  return e > room
+    ? regroup(take(gs, room))
+    : [...regroup(take(gs, room - e)), { text: ellipsis }];
+};
+
+const widthOf = (gs: ReadonlyArray<Grapheme>): number =>
+  gs.reduce((n, g) => n + g.width, 0);
+
+/** Splits at spaces; a run of spaces is one break and the spaces are dropped. */
+const tokens = (
+  gs: ReadonlyArray<Grapheme>,
+): ReadonlyArray<ReadonlyArray<Grapheme>> => {
+  const out: Array<Array<Grapheme>> = [];
+  let open: Array<Grapheme> = [];
+  for (const g of gs) {
+    if (g.text !== " ") {
+      open.push(g);
+    } else if (open.length > 0) {
+      out.push(open);
+      open = [];
+    }
+  }
+  return open.length > 0 ? [...out, open] : out;
+};
+
+const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
+  const lines: Array<ReadonlyArray<Grapheme>> = [];
+  let open: Array<Grapheme> = [];
+  let openWidth = 0;
+  const flush = () => {
+    if (open.length > 0) {
+      lines.push(open);
+      open = [];
+      openWidth = 0;
+    }
+  };
+  for (const token of tokens(graphemes(cell))) {
+    const w = widthOf(token);
+    if (w > room) {
+      flush();
+      let rest = token;
+      while (rest.length > 0) {
+        const chunk = take(rest, room);
+        // A grapheme wider than the room can never fit: drop it, as cut does.
+        if (chunk.length > 0) {
+          lines.push(chunk);
+        }
+        rest = rest.slice(Math.max(chunk.length, 1));
+      }
+    } else if (open.length === 0) {
+      open = [...token];
+      openWidth = w;
+    } else if (openWidth + 1 + w <= room) {
+      const first = token[0];
+      open.push({ text: " ", tone: first?.tone, width: 1 }, ...token);
+      openWidth += 1 + w;
+    } else {
+      flush();
+      open = [...token];
+      openWidth = w;
+    }
+  }
+  flush();
+  return lines.map(regroup);
+};
 
 export const columns = (
   rows: ReadonlyArray<ReadonlyArray<Cell>>,
   look: Look,
+  options: ColumnsOptions = {},
 ): ReadonlyArray<string> => {
-  const widthAt = (i: number): number =>
-    Math.max(...rows.map((r) => visible(r[i] ?? ""))) + 2;
-  return rows.map((r) =>
-    r
-      .map((cell, i) => {
-        const rendered = spans(cell)
-          .map((s) => renderSpan(s, look))
-          .join("");
-        return i < r.length - 1
-          ? rendered + " ".repeat(widthAt(i) - visible(cell))
-          : rendered;
+  const widest = (i: number): number =>
+    Math.max(...rows.map((r) => visible(r[i] ?? "")));
+  const render = (ss: ReadonlyArray<Span>): string =>
+    ss.map((s) => renderSpan(s, look)).join("");
+  return rows.flatMap((r) => {
+    const last = r.length - 1;
+    const cell = r[last];
+    if (cell === undefined) {
+      return [""];
+    }
+    const lead = r.slice(0, last);
+    const start = lead.reduce((n, _, i) => n + widest(i) + 2, 0);
+    const right = (i: number): boolean => options.align?.[i] === "right";
+    const head = lead
+      .map((c, i) => {
+        const pad = " ".repeat(widest(i) - visible(c));
+        const rendered = render(spans(c));
+        return (right(i) ? pad + rendered : rendered + pad) + "  ";
       })
-      .join(""),
-  );
+      .join("");
+    const room = look.width - start;
+    if (look.width === 0 || visible(cell) <= room) {
+      const pad = right(last) ? " ".repeat(widest(last) - visible(cell)) : "";
+      return [head + pad + render(spans(cell))];
+    }
+    if (room <= 0) {
+      return [head];
+    }
+    if (options.overflow === "wrap") {
+      const [first, ...rest] = wrap(cell, room).map(render);
+      return [head + (first ?? ""), ...rest.map((l) => " ".repeat(start) + l)];
+    }
+    return [head + render(cut(cell, room, look))];
+  });
 };
 
 export const clock = (t: DateTime.Utc, now: DateTime.Zoned): string => {
@@ -134,6 +292,7 @@ export class Style extends Effect.Service<Style>()("Style", {
   effect: Effect.gen(function* () {
     const terminal = yield* Terminal.Terminal;
     const isTTY = yield* terminal.isTTY;
+    const width = yield* terminal.columns;
     const noColor = yield* Effect.orDie(
       Config.option(Config.string("NO_COLOR")),
     );
@@ -141,10 +300,14 @@ export class Style extends Effect.Service<Style>()("Style", {
     return {
       color: colorEnabled(isTTY, noColor),
       unicode: unicodeEnabled(term),
+      width,
     };
   }),
   dependencies: [NodeContext.layer],
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
-  static Test = Layer.succeed(this, new Style({ color: false, unicode: true }));
+  static Test = Layer.succeed(
+    this,
+    new Style({ color: false, unicode: true, width: 0 }),
+  );
 }

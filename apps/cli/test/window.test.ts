@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { windowLine } from "../src/window.js";
 
-const plain = { color: false, unicode: true };
+const plain = { color: false, unicode: true, width: 0 };
 
 describe("windowLine", () => {
   it("a bare from and to on one day print the day and whole day", () => {
@@ -88,7 +88,7 @@ describe("windowLine", () => {
 
   it("the day is bold and the rest dim when color is on", () => {
     // Given
-    const color = { color: true, unicode: true };
+    const color = { color: true, unicode: true, width: 0 };
     // When / Then
     expect(
       windowLine(
