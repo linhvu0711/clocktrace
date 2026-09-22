@@ -245,6 +245,8 @@ describe("App.install", () => {
     ).toBe("helper-bytes-2");
     expect(existsSync(join(appHome, "Contents", "stale"))).toBe(false);
     expect(existsSync(join(mod.appPath, "Contents", "stale"))).toBe(false);
+    expect(existsSync(`${mod.appPath}.new`)).toBe(false);
+    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
   });
 
   it("install copies a built app next to the Helper whole and signs nothing", async () => {

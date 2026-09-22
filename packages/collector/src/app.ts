@@ -153,19 +153,43 @@ export class App extends Effect.Service<App>()("App", {
             }
             return "written" as const;
           });
+          // The live app moves aside first so a failed staging rename puts
+          // it back; the rollback is deleted once the new app is in place.
+          const rollback = `${appPath}.old`;
           const result = yield* build.pipe(
             Effect.flatMap((r) =>
-              fs
-                .remove(appPath, { recursive: true, force: true })
-                .pipe(
-                  Effect.mapError(fsError(`write ${appPath}`)),
-                  Effect.andThen(
-                    fs
-                      .rename(staging, appPath)
-                      .pipe(Effect.mapError(fsError(`rename ${staging}`))),
+              fs.remove(rollback, { recursive: true, force: true }).pipe(
+                Effect.mapError(fsError(`write ${rollback}`)),
+                Effect.andThen(
+                  fs.exists(appPath).pipe(
+                    Effect.mapError(fsError(`rename ${appPath}`)),
+                    Effect.flatMap((exists) =>
+                      exists
+                        ? fs
+                            .rename(appPath, rollback)
+                            .pipe(Effect.mapError(fsError(`rename ${appPath}`)))
+                        : Effect.void,
+                    ),
                   ),
-                  Effect.as(r),
                 ),
+                Effect.andThen(
+                  fs.rename(staging, appPath).pipe(
+                    Effect.mapError(fsError(`rename ${staging}`)),
+                    Effect.tapError(() =>
+                      Effect.ignore(fs.rename(rollback, appPath)),
+                    ),
+                    Effect.tap(() =>
+                      Effect.ignore(
+                        fs.remove(rollback, {
+                          recursive: true,
+                          force: true,
+                        }),
+                      ),
+                    ),
+                  ),
+                ),
+                Effect.as(r),
+              ),
             ),
             Effect.tapError(() =>
               Effect.ignore(
