@@ -135,6 +135,9 @@ const fakeExecutor = (
 const addClaude = `claude mcp add --scope user clocktrace -- ${serverNode} ${serverEntry} mcp`;
 const addCodex = `codex mcp add clocktrace -- ${serverNode} ${serverEntry} mcp`;
 const addOpenclaw = `openclaw mcp add clocktrace --command ${serverNode} --arg ${serverEntry} --arg mcp`;
+const removeClaude = "claude mcp remove clocktrace --scope user";
+const removeCodex = "codex mcp remove clocktrace";
+const removeOpenclaw = "openclaw mcp unset clocktrace";
 
 const register = (
   host: HostName,
@@ -285,8 +288,15 @@ describe("hosts", () => {
       await register("openclaw", executor.layer),
     ];
     const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then
-    expect(recorded).toEqual([addClaude, addCodex, addOpenclaw]);
+    // Then: each register removes first, then adds
+    expect(recorded).toEqual([
+      removeClaude,
+      addClaude,
+      removeCodex,
+      addCodex,
+      removeOpenclaw,
+      addOpenclaw,
+    ]);
     expect(lines).toEqual([
       "claude code: registered",
       "codex: registered",
@@ -317,22 +327,6 @@ describe("hosts", () => {
     });
   });
 
-  it("an add that reports the server exists is already registered", async () => {
-    // Given: claude exits 1 printing "already exists"
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [addClaude]: {
-          code: 1,
-          output: "error: already exists",
-        },
-      }),
-    );
-    // When
-    const line = await register("claude", executor.layer);
-    // Then
-    expect(line).toBe("claude code: already registered");
-  });
-
   it("a failed add shows the manual command", async () => {
     // Given: codex exits 1 printing "boom"
     const executor = await Effect.runPromise(
@@ -349,13 +343,28 @@ describe("hosts", () => {
     expect(line).toBe(`codex: failed. run by hand: ${addCodex}`);
   });
 
-  it("hermes already registered leaves the file unchanged", async () => {
-    // Given: config.yaml already holds mcp_servers.clocktrace plus other keys
+  it("a failed add prints the ✘ line with the absolute command", async () => {
+    // Given: the codex add exits 1 printing "boom"
+    // When
+    const { exit, output } = await runSetup(["codex"], {
+      interactive: false,
+      results: {
+        [addCodex]: { code: 1, output: "boom" },
+      },
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toContain(`  ✘ Codex failed · run by hand: ${addCodex}`);
+  });
+
+  it("hermes rewrites an existing key", async () => {
+    // Given: config.yaml holds a stale mcp_servers.clocktrace plus other keys
     mkdirSync(join(home, ".hermes"), { recursive: true });
     const path = join(home, ".hermes", "config.yaml");
-    const text =
-      'model: nous-1\nmcp_servers:\n  clocktrace:\n    command: clocktrace\n    args: ["mcp"]\n';
-    writeFileSync(path, text);
+    writeFileSync(
+      path,
+      'model: nous-1\nmcp_servers:\n  clocktrace:\n    command: clocktrace\n    args: ["mcp"]\n',
+    );
     // When
     const line = await Effect.runPromise(
       Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
@@ -364,8 +373,14 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe("hermes agent: already registered");
-    expect(readFileSync(path, "utf8")).toBe(text);
+    expect(line).toBe("hermes agent: registered");
+    expect(parse(readFileSync(path, "utf8"))).toEqual({
+      model: "nous-1",
+      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
+      mcp_servers: {
+        clocktrace: { command: serverNode, args: [serverEntry, "mcp"] },
+      },
+    });
   });
 
   it("an unreadable hermes config fails by hand instead of overwriting", async () => {
@@ -461,7 +476,12 @@ describe("hosts", () => {
     expect(shown).toContain("  ☐ Hermes Agent");
     expect(shown).toContain("  ☐ OpenClaw");
     expect(shown).toContain("  ☒ Codex");
-    expect(recorded.slice(-2)).toEqual([addClaude, addCodex]);
+    expect(recorded.slice(-4)).toEqual([
+      removeClaude,
+      addClaude,
+      removeCodex,
+      addCodex,
+    ]);
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
   });
@@ -520,7 +540,7 @@ describe("hosts", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(recorded).toEqual([addClaude, addCodex]);
+    expect(recorded).toEqual([removeClaude, addClaude, removeCodex, addCodex]);
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");

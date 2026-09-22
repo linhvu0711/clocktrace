@@ -218,9 +218,6 @@ const writeHermes = (
 const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
   Effect.gen(function* () {
     const { doc, exists } = yield* readHermes;
-    if (doc.getIn(["mcp_servers", "clocktrace"]) !== undefined) {
-      return `${hostLabel.hermes}: already registered`;
-    }
     doc.setIn(["mcp_servers", "clocktrace"], {
       command: serverNode,
       args: [serverEntry, "mcp"],
@@ -270,13 +267,12 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
     register: (host: HostName): Effect.Effect<string, never, Borders> =>
       host === "hermes"
         ? registerHermes
-        : runHost(host, addArgv[host]).pipe(
-            Effect.map(({ code, output }) =>
+        : runHost(host, removeArgv[host]).pipe(
+            Effect.andThen(runHost(host, addArgv[host])),
+            Effect.map(({ code }) =>
               code === 0
                 ? `${hostLabel[host]}: registered`
-                : /already|exists/i.test(output)
-                  ? `${hostLabel[host]}: already registered`
-                  : `${hostLabel[host]}: failed. run by hand: ${manualCommand[host]}`,
+                : `${hostLabel[host]}: failed. run by hand: ${manualCommand[host]}`,
             ),
           ),
     unregister: (

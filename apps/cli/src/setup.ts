@@ -69,12 +69,7 @@ const registerHosts = (
             mark("bad", look),
             ` ${hostTitle[host]} failed · run by hand: ${manualCommand[host]}`,
           ]
-        : [
-            mark("ok", look),
-            result.endsWith("already registered")
-              ? ` ${hostTitle[host]} already registered`
-              : ` ${hostTitle[host]} registered`,
-          ];
+        : [mark("ok", look), ` ${hostTitle[host]} registered`];
       yield* prompt.print(line(["  ", ...row], look));
     }
   });
