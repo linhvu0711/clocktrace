@@ -12,7 +12,7 @@ pnpm build
 pnpm test
 ```
 
-`pnpm lint` runs Biome. A `pre-push` hook runs lint, build, typecheck, and test before every push and blocks the push when one fails; `pnpm install` turns it on (`scripts/install-hooks.sh`). The GitHub workflow runs the same gates on macOS, only when started by hand from the Actions tab.
+`pnpm lint` runs Biome. A `pre-push` hook runs lint, build, typecheck, and test before every push and blocks the push when one fails, or when the pushed commit is not the clean checkout; `pnpm install` turns it on (`scripts/install-hooks.sh`). The GitHub workflow runs the same gates on macOS, only when started by hand from the Actions tab.
 
 Run the summary benchmark by hand with `pnpm --filter core bench`; the target is under 2 seconds on a Mac. CI does not run it.
 
