@@ -80,6 +80,7 @@ const openExecutor = (
   recorded: Ref.Ref<ReadonlyArray<ReadonlyArray<string>>>,
   stdoutText: string,
   code: number = 0,
+  stderrText: string = "",
 ): CommandExecutor.CommandExecutor => ({
   [CommandExecutor.TypeId]: CommandExecutor.TypeId,
   exitCode: (command) =>
@@ -97,6 +98,11 @@ const openExecutor = (
             if (target !== undefined) {
               writeFileSync(target, stdoutText);
             }
+            const errAt = command.args.indexOf("--stderr");
+            const errTarget = command.args[errAt + 1];
+            if (errTarget !== undefined) {
+              writeFileSync(errTarget, stderrText);
+            }
           }
         }),
       ),
@@ -113,6 +119,7 @@ const runHelper = <A>(
   use: (helper: Helper) => Effect.Effect<A, unknown, Scope.Scope>,
   stdoutText: string,
   code: number = 0,
+  stderrText: string = "",
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -125,7 +132,7 @@ const runHelper = <A>(
             NodeFileSystem.layer,
             Layer.succeed(
               CommandExecutor.CommandExecutor,
-              openExecutor(recorded, stdoutText, code),
+              openExecutor(recorded, stdoutText, code, stderrText),
             ),
           ),
         ),
@@ -242,5 +249,26 @@ describe("Helper via open", () => {
     );
     // Then
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it("open exiting non-zero names its stderr", async () => {
+    // Given: open exits 5 and macOS printed a reason on stderr
+    // When
+    const { exit } = await runHelper(
+      (helper) => helper.permissions("/x/Clocktrace.app"),
+      "",
+      5,
+      "the application cannot be opened\n",
+    );
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
+      const error = exit.cause.error;
+      expect(error instanceof HelperExitedError && error.message).toBe(
+        "helper exited: the application cannot be opened",
+      );
+    } else {
+      expect.unreachable("expected HelperExitedError");
+    }
   });
 });

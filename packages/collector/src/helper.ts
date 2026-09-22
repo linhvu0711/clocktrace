@@ -182,8 +182,11 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
           Effect.mapError((cause) => new HelperExitedError({ cause })),
         );
         if (code !== 0) {
+          const stderr = yield* fs
+            .readFileString(stderrPath)
+            .pipe(Effect.orElseSucceed(() => ""));
           return yield* new HelperExitedError({
-            cause: `open exited ${code}`,
+            cause: stderr.trim() || `open exited ${code}`,
           });
         }
         return yield* fs
