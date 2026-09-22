@@ -36,7 +36,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import { type HostName, Hosts, manualCommand } from "../src/hosts.js";
-import { Prompt } from "../src/prompt.js";
+import { Prompt, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -405,9 +405,69 @@ describe("hosts", () => {
 
   it("the checklist registers the ticked hosts", async () => {
     // Given: `which claude` exits 0, the others non-zero; no host config dirs
+    // When: down to Codex, space ticks it, enter registers claude and codex
+    const { exit, output, shown, recorded } = await runSetup(undefined, {
+      keys: [
+        { key: "down" },
+        { key: "down" },
+        { key: "down" },
+        { key: "space" },
+        { key: "enter" },
+      ],
+      interactive: true,
+      results: {
+        "which claude": { code: 0 },
+        "which codex": { code: 1 },
+        "which openclaw": { code: 1 },
+        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
+          code: 0,
+        },
+        "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
+      },
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain(
+      "? Hosts  ↑↓ move · space toggle · enter register ›",
+    );
+    expect(shown).toContain("  ☒ Claude Code - found");
+    expect(shown).toContain("  ☐ Codex");
+    expect(shown).toContain("  ☐ Hermes Agent");
+    expect(shown).toContain("  ☐ OpenClaw");
+    expect(shown).toContain("  ☒ Codex");
+    expect(recorded.slice(-2)).toEqual([
+      "claude mcp add --scope user clocktrace -- clocktrace mcp",
+      "codex mcp add clocktrace -- clocktrace mcp",
+    ]);
+    expect(output).toContain("claude code: registered");
+    expect(output).toContain("codex: registered");
+  });
+
+  it("ctrl-c at the checklist stops setup and registers nothing", async () => {
+    // Given: claude detected; ctrl-c arrives at the checklist
     // When
-    const { exit, output } = await runSetup(undefined, {
-      keys: [{ key: "enter" }],
+    const { exit, output, recorded } = await runSetup(undefined, {
+      keys: [{ key: "c", ctrl: true }],
+      interactive: true,
+      results: {
+        "which claude": { code: 0 },
+        "which codex": { code: 1 },
+        "which openclaw": { code: 1 },
+      },
+    });
+    // Then
+    expect(exit).toEqual(Exit.fail(new StoppedError()));
+    expect(recorded).not.toContain(
+      "claude mcp add --scope user clocktrace -- clocktrace mcp",
+    );
+    expect(output.every((line) => !line.endsWith("registered"))).toBe(true);
+  });
+
+  it("a key other than arrows, space, enter does nothing at the checklist", async () => {
+    // Given: claude detected; an unrelated key, then enter
+    // When
+    const { exit, output, shown } = await runSetup(undefined, {
+      keys: ["x", { key: "enter" }],
       interactive: true,
       results: {
         "which claude": { code: 0 },
@@ -420,7 +480,7 @@ describe("hosts", () => {
     });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toContain("1. [x] claude code");
+    expect(shown.split("Inverse Selection")).toHaveLength(2);
     expect(output).toContain("claude code: registered");
   });
 
@@ -447,6 +507,6 @@ describe("hosts", () => {
     ]);
     expect(output).toContain("claude code: registered");
     expect(output).toContain("codex: registered");
-    expect(shown).not.toContain("numbers toggle");
+    expect(shown).not.toContain("Hosts");
   });
 });

@@ -15,6 +15,18 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
       CliPrompt.run(CliPrompt.text({ message: question })).pipe(
         Effect.mapError(() => new StoppedError()),
       ),
+    checklist: <A>(options: {
+      message: string;
+      choices: ReadonlyArray<{
+        title: string;
+        value: A;
+        description?: string;
+        selected?: boolean;
+      }>;
+    }) =>
+      CliPrompt.run(CliPrompt.multiSelect(options)).pipe(
+        Effect.mapError(() => new StoppedError()),
+      ),
     print: (line: string) => Console.log(line),
   },
 }) {
@@ -24,6 +36,7 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
     new Prompt({
       interactive: Effect.succeed(false),
       ask: () => Effect.succeed(""),
+      checklist: () => Effect.succeed([]),
       print: () => Effect.void,
     }),
   );

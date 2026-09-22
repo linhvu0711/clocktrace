@@ -27,6 +27,7 @@ import {
   Hosts,
   hostLabel,
   hostNames,
+  hostTitle,
   manualCommand,
   UnknownHostError,
 } from "./hosts.js";
@@ -68,35 +69,20 @@ const pickHosts: Effect.Effect<
   const hostsService = yield* Hosts;
   const prompt = yield* Prompt;
   const detected = yield* hostsService.detect();
-  const ticked = new Set<HostName>(hostNames.filter((h) => detected[h]));
-  if (ticked.size === 0) {
-    return [];
+  const picked = yield* prompt.checklist({
+    message: "Hosts  ↑↓ move · space toggle · enter register",
+    choices: hostNames.map((h) => ({
+      title: hostTitle[h],
+      value: h,
+      ...(detected[h]
+        ? { description: "found" as const, selected: true }
+        : {}),
+    })),
+  });
+  if (picked.length === 0) {
+    yield* prompt.print("no host picked");
   }
-  for (;;) {
-    let i = 0;
-    for (const host of hostNames) {
-      i += 1;
-      yield* prompt.print(
-        `${i}. ${ticked.has(host) ? "[x]" : "[ ]"} ${hostLabel[host]}`,
-      );
-    }
-    const answer = yield* prompt.ask("numbers toggle, enter to register > ");
-    if (answer.trim() === "") {
-      break;
-    }
-    for (const part of answer.split(/[\s,]+/)) {
-      const host = hostNames[Number(part) - 1];
-      if (host === undefined) {
-        continue;
-      }
-      if (ticked.has(host)) {
-        ticked.delete(host);
-      } else {
-        ticked.add(host);
-      }
-    }
-  }
-  return [...ticked];
+  return picked;
 });
 
 // launchctl bootstrap returns before a RunAtLoad agent has reached running,

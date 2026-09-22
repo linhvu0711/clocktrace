@@ -243,10 +243,10 @@ describe("setup", () => {
     expect(output).toEqual([]);
   });
 
-  it("no host found prints the four commands and exits 0", async () => {
+  it("enter with nothing ticked prints no host picked and the four commands", async () => {
     // Given: no host on PATH and no host config dir (HOME is empty)
-    // When
-    const { exit, output } = await run(
+    // When: enter submits the checklist untouched
+    const { exit, output, shown } = await run(
       helperStub(allGranted),
       { installed: true, running: true, plist: null, installs: 0 },
       "/stub",
@@ -254,8 +254,10 @@ describe("setup", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain("  ☐ Claude Code");
+    expect(output).toContain("no host picked");
     expect(output).toEqual(expect.arrayContaining(manualLines));
-    expect(output.filter((l) => l.startsWith("1. ["))).toEqual([]);
+    expect(output.every((l) => !l.endsWith("registered"))).toBe(true);
   });
 
   it("non-tty without --hosts prints the four commands", async () => {
@@ -270,7 +272,7 @@ describe("setup", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual(expect.arrayContaining(manualLines));
-    expect(shown).not.toContain("numbers toggle");
+    expect(shown).not.toContain("Hosts");
   });
 
   it("setup repairs a not-loaded Collector on a re-run", async () => {
@@ -396,6 +398,22 @@ describe("setup", () => {
     expect(state.installs).toBe(1);
   });
 
+  it("--hosts on a terminal registers the named without a checklist", async () => {
+    // Given: a TTY and hosts = claude, codex
+    // When
+    const { exit, output, shown } = await run(
+      helperStub(allGranted),
+      { installed: true, running: true, plist: null, installs: 0 },
+      "/stub",
+      { hosts: ["claude", "codex"], interactive: true },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toContain("claude code: registered");
+    expect(output).toContain("codex: registered");
+    expect(shown).not.toContain("Hosts");
+  });
+
   it("non-tty with --hosts registers the named without a checklist", async () => {
     // Given: the mock terminal is not a TTY; hosts = claude, codex
     // When
@@ -409,6 +427,6 @@ describe("setup", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toContain("claude code: registered");
     expect(output).toContain("codex: registered");
-    expect(shown).not.toContain("numbers toggle");
+    expect(shown).not.toContain("Hosts");
   });
 });

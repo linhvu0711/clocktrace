@@ -26,6 +26,13 @@ export const hostLabel: Record<HostName, string> = {
   openclaw: "openclaw",
 };
 
+export const hostTitle: Record<HostName, string> = {
+  claude: "Claude Code",
+  codex: "Codex",
+  hermes: "Hermes Agent",
+  openclaw: "OpenClaw",
+};
+
 export const manualCommand: Record<HostName, string> = {
   claude: "claude mcp add --scope user clocktrace -- clocktrace mcp",
   codex: "codex mcp add clocktrace -- clocktrace mcp",
