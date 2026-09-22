@@ -27,6 +27,10 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
       CliPrompt.run(CliPrompt.text({ message: question })).pipe(
         Effect.mapError(() => new StoppedError()),
       ),
+    confirm: (options: { message: string; initial: boolean }) =>
+      CliPrompt.run(CliPrompt.confirm(options)).pipe(
+        Effect.mapError(() => new StoppedError()),
+      ),
     checklist: <A>(options: {
       message: string;
       choices: ReadonlyArray<{
@@ -43,6 +47,17 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
       ),
     print: (line: string) => Console.log(line),
     printError: (line: string) => Console.error(line),
+    wait: <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
+      Effect.flatMap(Terminal.Terminal, (t) =>
+        Effect.flatMap(t.isTTY, (tty) =>
+          tty
+            ? t.display(label).pipe(
+                Effect.andThen(effect),
+                Effect.ensuring(t.display("\r\u001b[2K")),
+              )
+            : Console.log(label).pipe(Effect.andThen(effect)),
+        ),
+      ),
   },
 }) {
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
@@ -51,9 +66,11 @@ export class Prompt extends Effect.Service<Prompt>()("Prompt", {
     new Prompt({
       interactive: Effect.succeed(false),
       ask: () => Effect.succeed(""),
+      confirm: () => Effect.succeed(false),
       checklist: () => Effect.succeed([]),
       print: () => Effect.void,
       printError: () => Effect.void,
+      wait: (_label, effect) => effect,
     }),
   );
 }
