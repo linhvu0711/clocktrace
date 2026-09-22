@@ -13,6 +13,7 @@ import {
   type Permissions,
 } from "@clocktrace/collector";
 import {
+  AppStore,
   DatabaseNewerError,
   openStore,
   Store,
@@ -48,7 +49,7 @@ const connect = async (
   ),
 ) => {
   const { server, dispose } = await makeServer(
-    Layer.mergeAll(store, zone, collector, config),
+    Layer.mergeAll(store, zone, collector, config, AppStore.Test),
   );
   const client = new Client({ name: "test-client", version: "0" });
   const [clientTransport, serverTransport] =

@@ -2,6 +2,7 @@ import { type DateTime, Effect, type Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import type { Activity, NewActivity } from "./activity.js";
+import type { AppName } from "./app-names.js";
 import type { Category, NewCategory } from "./category.js";
 import type { Device, NewDevice } from "./device.js";
 import type { StoreError } from "./errors.js";
@@ -58,6 +59,10 @@ export interface StoreShape {
   readonly deleteRule: (id: string) => Effect.Effect<boolean, StoreError>;
   readonly deleteCategory: (id: string) => Effect.Effect<boolean, StoreError>;
   readonly deleteProject: (id: string) => Effect.Effect<boolean, StoreError>;
+  readonly getAppName: (
+    bundleId: string,
+  ) => Effect.Effect<Option.Option<AppName>, StoreError>;
+  readonly upsertAppName: (input: AppName) => Effect.Effect<void, StoreError>;
   readonly getSetting: (
     key: string,
   ) => Effect.Effect<Option.Option<string>, StoreError>;

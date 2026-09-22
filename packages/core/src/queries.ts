@@ -2,6 +2,7 @@ import { DateTime, Effect, Option, Schema } from "effect";
 
 import { Activity } from "./activity.js";
 import { type ResolvedApp, resolveAppName } from "./app-names.js";
+import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";
 import type { InvalidRangeError, StoreError } from "./errors.js";
@@ -81,7 +82,7 @@ const loadRange = (input: {
 }): Effect.Effect<
   RangeRows,
   InvalidRangeError | StoreError,
-  Store | DateTime.CurrentTimeZone
+  Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
     const store = yield* Store;
@@ -145,7 +146,7 @@ export const summary = (
 ): Effect.Effect<
   Summary,
   InvalidRangeError | StoreError,
-  Store | DateTime.CurrentTimeZone
+  Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
     const { rows, categories, projects, devices } = yield* loadRange(input);
@@ -221,7 +222,7 @@ export const timeline = (
 ): Effect.Effect<
   ReadonlyArray<TimelineBlock>,
   InvalidRangeError | StoreError,
-  Store | DateTime.CurrentTimeZone
+  Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
     const { rows, categories, projects, from, to } = yield* loadRange(input);
@@ -291,7 +292,7 @@ export const activities = (
 ): Effect.Effect<
   ActivitiesPage,
   InvalidRangeError | StoreError,
-  Store | DateTime.CurrentTimeZone
+  Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
     const { rows } = yield* loadRange(input);

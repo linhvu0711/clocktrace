@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import {
+  AppStore,
   type DatabaseNewerError,
   Store,
   type StoreError,
@@ -16,12 +17,15 @@ export class NotInstalledError extends Data.TaggedError("NotInstalledError")<{
 
 export const InstalledStore = (
   path: string,
-): Layer.Layer<Store, NotInstalledError | StoreError | DatabaseNewerError> =>
+): Layer.Layer<
+  Store | AppStore,
+  NotInstalledError | StoreError | DatabaseNewerError
+> =>
   Layer.unwrapEffect(
     Effect.gen(function* () {
       if (!existsSync(path)) {
         return yield* new NotInstalledError({ path });
       }
-      return Store.Default(path);
+      return Layer.mergeAll(Store.Default(path), AppStore.Default);
     }),
   );

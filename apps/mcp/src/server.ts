@@ -9,6 +9,7 @@ import {
 } from "@clocktrace/collector";
 import {
   ActivitiesPage,
+  type AppStore,
   activities,
   addRule,
   type CategoryInUseError,
@@ -60,7 +61,12 @@ export type StoreLayerError =
   | DatabaseNewerError
   | NotInstalledError;
 
-export type Services = Store | Launchd | Helper | DateTime.CurrentTimeZone;
+export type Services =
+  | Store
+  | AppStore
+  | Launchd
+  | Helper
+  | DateTime.CurrentTimeZone;
 
 type ToolError =
   | InvalidRuleError

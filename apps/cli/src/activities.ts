@@ -2,6 +2,7 @@ import {
   type ActivitiesInput,
   ActivitiesPage,
   type Activity,
+  type AppStore,
   activities,
   emptyNote,
   type InvalidRangeError,
@@ -85,7 +86,7 @@ export const printActivities = (
 ): Effect.Effect<
   void,
   InvalidRangeError | StoreError | ParseError,
-  Store | Prompt | DateTime.CurrentTimeZone | Style
+  Store | AppStore | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
     const look = yield* Style;

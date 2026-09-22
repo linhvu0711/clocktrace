@@ -3,6 +3,7 @@ import {
   Effect,
   Either,
   Layer,
+  Option,
   Schema,
   TestClock,
   TestContext,
@@ -12,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import type { StoreShape, TimelineBlock } from "../src/index.js";
 import {
   ActivitiesInput,
+  AppStore,
   activities,
   addRule,
   emptyNote,
@@ -27,12 +29,12 @@ const EmptyStore = Layer.scoped(
 );
 
 const run = <A, E>(
-  effect: Effect.Effect<A, E, Store | DateTime.CurrentTimeZone>,
+  effect: Effect.Effect<A, E, Store | AppStore | DateTime.CurrentTimeZone>,
 ): Promise<A> =>
   Effect.runPromise(
     effect.pipe(
       DateTime.withCurrentZoneNamed("America/Los_Angeles"),
-      Effect.provide(EmptyStore),
+      Effect.provide(Layer.merge(EmptyStore, AppStore.Test)),
     ),
   );
 
@@ -407,6 +409,37 @@ describe("timeline", () => {
         projectName: null,
       },
     ]);
+  });
+
+  it("timeline shows the looked-up name", async () => {
+    // Given: seedIphone with an unmapped id; the lookup knows it
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedIphone(store, "xyz.blueskyweb.app");
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+        }).pipe(
+          Effect.provide(
+            Layer.succeed(
+              AppStore,
+              new AppStore({
+                lookup: () =>
+                  Effect.succeed(
+                    Option.some({
+                      name: "Bluesky",
+                      genre: "Social Networking",
+                    }),
+                  ),
+              }),
+            ),
+          ),
+        );
+      }),
+    );
+    // Then
+    expect(isoBlocks(result).map((b) => b.app)).toEqual(["Bluesky"]);
   });
 
   it("an unmapped iOS bundle id keeps its bundle id", async () => {

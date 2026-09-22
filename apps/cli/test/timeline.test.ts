@@ -1,4 +1,5 @@
 import {
+  AppStore,
   type InvalidRangeError,
   openStore,
   Store,
@@ -20,7 +21,11 @@ const EmptyStore = Layer.scoped(
 );
 
 const runPrint = <A, E>(
-  body: Effect.Effect<A, E, Store | Prompt | DateTime.CurrentTimeZone | Style>,
+  body: Effect.Effect<
+    A,
+    E,
+    Store | AppStore | Prompt | DateTime.CurrentTimeZone | Style
+  >,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -37,6 +42,7 @@ const runPrint = <A, E>(
                 terminal.layer,
                 Prompt.Default,
                 EmptyStore,
+                AppStore.Test,
                 Style.Test,
               ),
             ),
