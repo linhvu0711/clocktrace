@@ -482,6 +482,73 @@ describe("permissions", () => {
     );
   });
 
+  it("full disk access opens System Settings and re-checks on y", async () => {
+    // Given
+    const p = {
+      accessibility: "granted" as const,
+      automation: {},
+      fullDiskAccess: "denied" as const,
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [p, { ...p, fullDiskAccess: "granted" }],
+      [{ key: "enter" }, { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
+    expect(output).toEqual([
+      "Permissions   1 of 2 granted",
+      "  ✔ Accessibility     window titles",
+      "  → System Settings opened, turn it on for Clocktrace",
+      "  ✔ Full Disk Access  granted",
+    ]);
+  });
+
+  it("accessibility opens the macOS dialog and re-checks on y", async () => {
+    // Given
+    const p = {
+      accessibility: "denied" as const,
+      automation: {},
+      fullDiskAccess: "granted" as const,
+    };
+    // When
+    const { exit, output } = await run(
+      [p, { ...p, accessibility: "granted" }],
+      [{ key: "enter" }, { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Permissions   1 of 2 granted",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "  → macOS dialog opened, turn it on for Clocktrace",
+      "  ✔ Accessibility     granted",
+    ]);
+  });
+
+  it("n at the re-check prints the turn-it-on later line", async () => {
+    // Given
+    const p = {
+      accessibility: "granted" as const,
+      automation: {},
+      fullDiskAccess: "denied" as const,
+    };
+    // When
+    const { exit, output } = await run(
+      [p],
+      [{ key: "enter" }, "n", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output[output.length - 1]).toBe(
+      "  ○ Full Disk Access  later: turn it on, then run clocktrace permissions",
+    );
+  });
+
   it("a browser that stays closed after polling shows the warn line", async () => {
     // Given
     const p = {

@@ -248,6 +248,28 @@ export const walkPermissions = (
             yield* printRow(perm);
             return;
           }
+          if (item.request.kind !== "automation") {
+            yield* prompt.print(
+              item.request.kind === "fullDiskAccess"
+                ? "  → System Settings opened, turn it on for Clocktrace"
+                : "  → macOS dialog opened, turn it on for Clocktrace",
+            );
+            const turnedOn = yield* prompt.confirm({
+              message: "Turned on for Clocktrace?",
+              initial: true,
+            });
+            if (!turnedOn) {
+              perm.row = [
+                lead("warn", item),
+                span(
+                  "warn",
+                  "later: turn it on, then run clocktrace permissions",
+                ),
+              ];
+              yield* printRow(perm);
+              return;
+            }
+          }
           const after = yield* Effect.scoped(helper.permissions(appPath));
           perm.state =
             item.request.kind === "automation"
