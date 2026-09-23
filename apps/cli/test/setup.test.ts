@@ -4,16 +4,14 @@ import { join } from "node:path";
 
 import {
   App,
-  AppError,
+  CollectorNotLoadedError,
   CollectorPaths,
-  type CollectorPlist,
-  collectorPaths,
-  entryPath,
-  fakeLaunchd,
+  type CollectorSettings,
   Helper,
   HelperNotFoundError,
+  type InstallProgress,
   LaunchdError,
-  type LaunchdState,
+  Lifecycle,
   type Permissions,
 } from "@clocktrace/collector";
 import { type Command, CommandExecutor } from "@effect/platform";
@@ -26,7 +24,6 @@ import {
   Exit,
   Layer,
   Ref,
-  Schedule,
   Sink,
   Stream,
 } from "effect";
@@ -96,34 +93,51 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
   streamLines: () => Stream.empty,
 } satisfies CommandExecutor.CommandExecutor);
 
-// Tracks how many bundles were written; isInstalled flips true after
-// the first install, like the real app on disk. commit and rollback
-// count the calls setup makes around the running check.
-const fakeApp = (
-  installs: Ref.Ref<number>,
-  committed: Ref.Ref<number>,
-  rolledBack: Ref.Ref<number>,
+// How the fake Lifecycle ends: loaded, or not loaded at the agent step or
+// while it waits for the start.
+type Outcome =
+  | "loaded"
+  | { readonly failAt: "agent" | "start"; readonly appRestored: boolean };
+
+// Reports progress as the real install does and keeps the settings of
+// every call.
+const fakeLifecycle = (
+  outcome: Outcome,
+  installs: Ref.Ref<ReadonlyArray<CollectorSettings>>,
 ) =>
   Layer.succeed(
-    App,
-    new App({
-      isInstalled: () => Effect.map(Ref.get(installs), (n) => n > 0),
-      install: () =>
-        Ref.update(installs, (n) => n + 1).pipe(Effect.as("written" as const)),
-      commit: () => Ref.update(committed, (n) => n + 1),
-      rollback: () => Ref.update(rolledBack, (n) => n + 1),
-      remove: () => Ref.set(installs, 0).pipe(Effect.as("removed" as const)),
+    Lifecycle,
+    new Lifecycle({
+      install: <R>(settings: CollectorSettings, progress: InstallProgress<R>) =>
+        Effect.gen(function* () {
+          yield* Ref.update(installs, (all) => [...all, settings]);
+          yield* progress.done("app");
+          if (outcome !== "loaded" && outcome.failAt === "agent") {
+            return yield* new CollectorNotLoadedError({
+              cause: new LaunchdError({
+                step: "launchctl bootstrap",
+                detail: "exit 1",
+              }),
+              appRestored: outcome.appRestored,
+            });
+          }
+          yield* progress.done("agent");
+          yield* progress.starting(Effect.void);
+          if (outcome !== "loaded") {
+            return yield* new CollectorNotLoadedError({
+              cause: new LaunchdError({
+                step: "launchctl bootstrap",
+                detail: "collector did not start",
+              }),
+              appRestored: outcome.appRestored,
+            });
+          }
+          return "loaded" as const;
+        }),
+      settings: () => Effect.succeed(null),
+      databasePath: () => Effect.die("setup does not read the database path"),
     }),
   );
-
-const samplePlist: CollectorPlist = {
-  app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
-  node: "/usr/local/bin/node",
-  entry: "/repo/main.js",
-  databasePath: "/old/clocktrace.db",
-  helperPath: "/old-helper",
-  logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
-};
 
 const manualLines = hostNames.map(
   (h) => `${hostLabel[h]}: ${manualCommand[h]}`,
@@ -149,19 +163,13 @@ describe("setup", () => {
 
   const run = (
     helperLayer: Layer.Layer<Helper>,
-    launchdState: LaunchdState,
+    outcome: Outcome = "loaded",
     helperPath = "/stub",
     opts: {
       readonly hosts?: ReadonlyArray<HostName>;
       readonly keys?: ReadonlyArray<Key>;
       readonly interactive?: boolean;
       readonly stdin?: boolean;
-      readonly launchd?: {
-        readonly failBootstrap?: boolean;
-        readonly bootstrapStuck?: boolean;
-        readonly stalledSamples?: number;
-      };
-      readonly app?: Layer.Layer<App>;
       readonly hostLayer?: Layer.Layer<Hosts>;
     } = {},
   ) =>
@@ -177,10 +185,7 @@ describe("setup", () => {
                 k.ctrl === undefined ? {} : { ctrl: k.ctrl },
               );
         }
-        const state = yield* Ref.make(launchdState);
-        const appInstalls = yield* Ref.make(0);
-        const appCommits = yield* Ref.make(0);
-        const appRollbacks = yield* Ref.make(0);
+        const installs = yield* Ref.make<ReadonlyArray<CollectorSettings>>([]);
         const layers = Layer.mergeAll(
           Console.setConsole(console),
           NodeContext.layer,
@@ -189,25 +194,22 @@ describe("setup", () => {
           (opts.stdin ?? true)
             ? Stdin.Test
             : Layer.succeed(Stdin, new Stdin({ isTTY: Effect.succeed(false) })),
-          fakeLaunchd(state, opts.launchd),
+          fakeLifecycle(outcome, installs),
           helperLayer,
-          opts.app ?? fakeApp(appInstalls, appCommits, appRollbacks),
+          App.Test,
           opts.hostLayer ?? Hosts.Test(),
           noCommandsLayer,
           Style.Test,
           CollectorPaths.Default(home),
         );
         const exit = yield* Effect.exit(
-          setup(opts.hosts, Schedule.recurs(3)).pipe(Effect.provide(layers)),
+          setup(opts.hosts).pipe(Effect.provide(layers)),
         );
         return {
           exit,
           output: yield* console.getLines({ stripAnsi: true }),
           shown: yield* terminal.shown,
-          state: yield* Ref.get(state),
-          appInstalls: yield* Ref.get(appInstalls),
-          appCommits: yield* Ref.get(appCommits),
-          appRollbacks: yield* Ref.get(appRollbacks),
+          installs: yield* Ref.get(installs),
         };
       }).pipe(
         Effect.withConfigProvider(
@@ -241,57 +243,20 @@ describe("setup", () => {
   it("setup writes the app, installs the Collector, walks the permissions, and prints the manual commands", async () => {
     // Given: no plist and no database file
     // When
-    const { exit, output, state, appInstalls, appCommits } = await run(
-      helperStub(allGranted),
-      {
-        installed: false,
-        running: false,
-        plist: null,
-        installs: 0,
-      },
-    );
+    const { exit, output, installs } = await run(helperStub(allGranted));
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual(expectedSetup());
-    expect(appInstalls).toBe(1);
-    expect(appCommits).toBe(1);
     expect(existsSync(path)).toBe(true);
-    expect(state.installed).toBe(true);
-    expect(state.running).toBe(true);
-    expect(state.installs).toBe(1);
-    expect(state.plist).toEqual({
-      app: collectorPaths(home).appMainPath,
-      node: process.execPath,
-      entry: entryPath,
-      databasePath: path,
-      helperPath: "/stub",
-      logPath: collectorPaths(home).logPath,
-    });
-  });
-
-  it("setup again rewrites the app and the agent and walks the permissions", async () => {
-    // Given: one setup already run
-    const first = await run(helperStub(allGranted), {
-      installed: false,
-      running: false,
-      plist: null,
-      installs: 0,
-    });
-    // When
-    const second = await run(helperStub(allGranted), first.state);
-    // Then
-    expect(Exit.isSuccess(second.exit)).toBe(true);
-    expect(second.output).toEqual(expectedSetup());
-    expect(second.state.installs).toBe(2);
-    expect(existsSync(path)).toBe(true);
+    expect(installs).toEqual([{ helperPath: "/stub", databasePath: path }]);
   });
 
   it("setup fails when the helper binary is missing", async () => {
     // Given: CLOCKTRACE_HELPER points at a path that does not exist
     // When
-    const { exit, output, state } = await run(
+    const { exit, output, installs } = await run(
       Helper.Default,
-      { installed: false, running: false, plist: null, installs: 0 },
+      "loaded",
       "/nope/clocktrace-helper",
     );
     // Then
@@ -299,7 +264,7 @@ describe("setup", () => {
       Exit.fail(new HelperNotFoundError({ path: "/nope/clocktrace-helper" })),
     );
     expect(existsSync(path)).toBe(false);
-    expect(state.installs).toBe(0);
+    expect(installs).toEqual([]);
     expect(output).toEqual([]);
   });
 
@@ -308,7 +273,7 @@ describe("setup", () => {
     // When: enter submits the checklist untouched
     const { exit, output, shown } = await run(
       helperStub(allGranted),
-      { installed: true, running: true, plist: null, installs: 0 },
+      "loaded",
       "/stub",
       { keys: [{ key: "enter" }], interactive: true },
     );
@@ -323,12 +288,7 @@ describe("setup", () => {
   it("non-tty without --hosts prints no terminal once and the four commands", async () => {
     // Given: the mock terminal is not a TTY; no hosts argument
     // When
-    const { exit, output, shown } = await run(helperStub(allGranted), {
-      installed: true,
-      running: true,
-      plist: null,
-      installs: 0,
-    });
+    const { exit, output, shown } = await run(helperStub(allGranted), "loaded");
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(
@@ -344,7 +304,7 @@ describe("setup", () => {
     // When
     const { exit, output, shown } = await run(
       helperStub(allGranted),
-      { installed: true, running: true, plist: null, installs: 0 },
+      "loaded",
       "/stub",
       { interactive: true, stdin: false },
     );
@@ -358,30 +318,14 @@ describe("setup", () => {
     expect(shown).not.toContain("Hosts");
   });
 
-  it("setup rewrites and reloads the agent on a re-run", async () => {
-    // Given: the plist present but the Collector not loaded
-    const { exit, state } = await run(helperStub(allGranted), {
-      installed: true,
-      running: false,
-      plist: samplePlist,
-      installs: 1,
+  it("a load that fails prints the app row and the log path", async () => {
+    // Given: the Collector does not load at the agent step
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      failAt: "agent",
+      appRestored: true,
     });
-    // Then: the re-run rewrites the agent and loads the Collector
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(state.running).toBe(true);
-    expect(state.installs).toBe(2);
-    expect(state.plist?.helperPath).toBe("/stub");
-  });
-
-  it("setup fails loudly when the load step fails", async () => {
-    // Given: the plist present, not loaded, and the load step fails
-    const { exit, output, state } = await run(
-      helperStub(allGranted),
-      { installed: true, running: false, plist: samplePlist, installs: 1 },
-      "/stub",
-      { launchd: { failBootstrap: true } },
-    );
-    // Then: it fails with the launchd error and never reaches the agent
+    // Then: the launchd error is reported with the collector log
     expect(exit).toEqual(
       Exit.fail(
         new ReportedError({
@@ -397,19 +341,16 @@ describe("setup", () => {
       "  ✔ app           ~/Applications/Clocktrace.app",
       "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
     ]);
-    expect(state.installs).toBe(1);
   });
 
-  it("a rewrite that never starts puts the previous agent back", async () => {
-    // Given: the plist present, not loaded; the load returns success but the
-    // Collector never comes up (launchctl bootstrap exit 5 on a bad plist)
-    const { exit, output, state, appCommits, appRollbacks } = await run(
-      helperStub(allGranted),
-      { installed: true, running: false, plist: samplePlist, installs: 1 },
-      "/stub",
-      { launchd: { bootstrapStuck: true } },
-    );
-    // Then: setup fails loudly and restores the previous agent
+  it("a start that never comes prints starting and the log path", async () => {
+    // Given: the Collector never reaches Loaded
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      failAt: "start",
+      appRestored: true,
+    });
+    // Then
     expect(exit).toEqual(
       Exit.fail(
         new ReportedError({
@@ -427,99 +368,42 @@ describe("setup", () => {
       "  starting collector…",
       "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
     ]);
-    expect(state.plist).toEqual(samplePlist);
-    expect(state.installed).toBe(true);
-    expect(state.installs).toBe(3);
-    expect(appRollbacks).toBe(1);
-    expect(appCommits).toBe(0);
   });
 
-  it("setup tolerates a slow startup and then succeeds", async () => {
-    // Given: the load returns success and the Collector reaches running only
-    // after two stopped samples (RunAtLoad startup latency)
-    const { exit } = await run(
-      helperStub(allGranted),
-      { installed: true, running: false, plist: samplePlist, installs: 1 },
-      "/stub",
-      { launchd: { stalledSamples: 2 } },
-    );
-    // Then: the bounded poll waits it out instead of failing
-    expect(Exit.isSuccess(exit)).toBe(true);
-  });
-
-  it("a fresh load that never starts removes the plist", async () => {
-    // Given: no plist beforehand; the fresh load returns success (bootstrap
-    // exit 5) but the Collector never reaches running
-    const { exit, state } = await run(
-      helperStub(allGranted),
-      { installed: false, running: false, plist: null, installs: 0 },
-      "/stub",
-      { launchd: { bootstrapStuck: true } },
-    );
-    // Then: setup fails and clears the plist it just wrote
-    expect(exit).toEqual(
-      Exit.fail(
-        new ReportedError({
-          cause: new LaunchdError({
-            step: "launchctl bootstrap",
-            detail: "collector did not start",
-          }),
-        }),
-      ),
-    );
-    expect(state.plist).toBe(null);
-    expect(state.installed).toBe(false);
-  });
-
-  it("a failed fresh install leaves no plist", async () => {
-    // Given: no plist beforehand and the load step fails
-    const { exit, state } = await run(
-      helperStub(allGranted),
-      { installed: false, running: false, plist: null, installs: 0 },
-      "/stub",
-      { launchd: { failBootstrap: true } },
-    );
-    // Then: the failed install leaves no plist behind
-    expect(exit).toEqual(
-      Exit.fail(
-        new ReportedError({
-          cause: new LaunchdError({
-            step: "launchctl bootstrap",
-            detail: "exit 1",
-          }),
-        }),
-      ),
-    );
-    expect(state.plist).toBe(null);
-    expect(state.installs).toBe(0);
-  });
-
-  it("a failed app install stops setup before the agent", async () => {
-    // Given: the app install fails at codesign; no plist
-    const appFails = Layer.succeed(
-      App,
-      new App({
-        isInstalled: () => Effect.succeed(false),
-        install: () =>
-          Effect.fail(new AppError({ step: "codesign", detail: "exit 1" })),
-        commit: () => Effect.void,
-        rollback: () => Effect.void,
-        remove: () => Effect.succeed("absent" as const),
-      }),
-    );
+  it("an App that cannot be put back says so before the failure", async () => {
+    // Given: the Collector never reaches Loaded and the old App stays gone
     // When
-    const { exit, output, state } = await run(
+    const { output } = await run(helperStub(allGranted), {
+      failAt: "start",
+      appRestored: false,
+    });
+    // Then: the restore line comes right before the failure line
+    const failure = output.indexOf(
+      "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
+    );
+    expect(failure).toBeGreaterThan(0);
+    expect(output[failure - 1]).toBe(
+      "app: could not restore the previous install",
+    );
+  });
+
+  it("setup loads the Collector before the permissions walk and the Hosts", async () => {
+    // Given: a TTY and hosts = claude
+    // When
+    const { exit, output } = await run(
       helperStub(allGranted),
-      { installed: false, running: false, plist: null, installs: 0 },
+      "loaded",
       "/stub",
-      { app: appFails },
+      { hosts: ["claude"], interactive: true },
     );
-    // Then
-    expect(exit).toEqual(
-      Exit.fail(new AppError({ step: "codesign", detail: "exit 1" })),
-    );
-    expect(state.installs).toBe(0);
-    expect(output).toEqual(["Collector"]);
+    // Then: running, then the Permissions header, then the Host
+    expect(Exit.isSuccess(exit)).toBe(true);
+    const running = output.indexOf("  ✔ running");
+    const permissions = output.findIndex((l) => l.startsWith("Permissions"));
+    const registered = output.indexOf("  ✔ Claude Code registered");
+    expect(running).toBeGreaterThanOrEqual(0);
+    expect(running).toBeLessThan(permissions);
+    expect(permissions).toBeLessThan(registered);
   });
 
   it("--hosts on a terminal registers the named without a checklist", async () => {
@@ -527,7 +411,7 @@ describe("setup", () => {
     // When
     const { exit, output, shown } = await run(
       helperStub(allGranted),
-      { installed: true, running: true, plist: null, installs: 0 },
+      "loaded",
       "/stub",
       { hosts: ["claude", "codex"], interactive: true },
     );
@@ -543,7 +427,7 @@ describe("setup", () => {
     // When
     const { exit, output, shown } = await run(
       helperStub(allGranted),
-      { installed: true, running: true, plist: null, installs: 0 },
+      "loaded",
       "/stub",
       { hosts: ["claude", "codex"], interactive: false },
     );
@@ -570,20 +454,13 @@ describe("setup", () => {
         ),
     });
 
-  const running: LaunchdState = {
-    installed: true,
-    running: true,
-    plist: null,
-    installs: 0,
-  };
-
   it("the checklist registers the ticked hosts", async () => {
     // Given: Claude Code found, the others not
     const calls = Effect.runSync(Ref.make<ReadonlyArray<HostName>>([]));
     // When: down to Codex, space ticks it, enter registers claude and codex
     const { exit, output, shown } = await run(
       helperStub(allGranted),
-      running,
+      "loaded",
       "/stub",
       {
         keys: [
@@ -618,7 +495,7 @@ describe("setup", () => {
     // When
     const { exit, output } = await run(
       helperStub(allGranted),
-      running,
+      "loaded",
       "/stub",
       {
         keys: [{ key: "c", ctrl: true }],
@@ -638,7 +515,7 @@ describe("setup", () => {
     // When
     const { exit, output, shown } = await run(
       helperStub(allGranted),
-      running,
+      "loaded",
       "/stub",
       {
         keys: ["x", { key: "enter" }],
@@ -657,7 +534,7 @@ describe("setup", () => {
     // When
     const { exit, output } = await run(
       helperStub(allGranted),
-      running,
+      "loaded",
       "/stub",
       {
         hosts: ["codex"],

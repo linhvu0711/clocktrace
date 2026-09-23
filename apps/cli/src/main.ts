@@ -1,6 +1,13 @@
 import { homedir } from "node:os";
 
-import { App, CollectorPaths, Helper, Launchd } from "@clocktrace/collector";
+import {
+  App,
+  CollectorPaths,
+  Helper,
+  Launchd,
+  Lifecycle,
+  loadRetry,
+} from "@clocktrace/collector";
 import * as ValidationError from "@effect/cli/ValidationError";
 import { NodeContext, NodeRuntime } from "@effect/platform-node";
 import { DateTime, Effect, Layer } from "effect";
@@ -15,10 +22,11 @@ import { Prompt, Stdin, StoppedError } from "./prompt.js";
 const paths = CollectorPaths.Default(homedir());
 
 const layers = Layer.mergeAll(
-  App.Default,
+  Lifecycle.Default(loadRetry).pipe(
+    Layer.provideMerge(Layer.mergeAll(App.Default, Launchd.Default)),
+  ),
   Helper.Default,
   Hosts.Default,
-  Launchd.Default,
   Prompt.Default,
   Stdin.Default,
   Style.Default,
