@@ -14,7 +14,7 @@ public enum Sampler {
     }
 
     // A Private window sends no title and no URL; when the Helper cannot tell,
-    // it sends no URL (ADR 0010).
+    // it sends no URL (ADR 0011).
     if case .granted(let output) = url, let bundleId = front?.bundleId {
       let window: Window
       if isChromeFamily(bundleId) {
