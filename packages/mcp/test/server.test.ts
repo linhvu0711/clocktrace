@@ -971,20 +971,20 @@ describe("server", () => {
     });
   });
 
-  it("a word range is an error naming range", async () => {
+  it("a device that is not a Device id gets core's text", async () => {
     // Given: the same
     const { client, close } = await connect(withActivities(seedDay));
     // When
     const result = await callTool(client, {
       name: "summary",
-      arguments: { range: { from: "today", to: "today" }, groupBy: "app" },
+      arguments: { range: day, groupBy: "app", device: "Studio" },
     });
     await close();
     // Then
-    expect(result.isError).toBe(true);
-    expect(text(result)).toBe(
-      'range: from "today" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
-    );
+    expect({ isError: result.isError, text: text(result) }).toEqual({
+      isError: true,
+      text: "device: must be a Device id",
+    });
   });
 
   it("to before from is an error naming range", async () => {

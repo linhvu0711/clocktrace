@@ -17,6 +17,15 @@ export class InvalidRuleError extends Data.TaggedError("InvalidRuleError")<{
   }
 }
 
+export class InvalidInputError extends Data.TaggedError("InvalidInputError")<{
+  readonly field: string;
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return `${this.field}: ${this.reason}`;
+  }
+}
+
 export class RuleNotFoundError extends Data.TaggedError("RuleNotFoundError")<{
   readonly id: string;
 }> {

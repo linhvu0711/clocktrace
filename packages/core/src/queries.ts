@@ -1,4 +1,12 @@
-import { DateTime, Effect, Either, Option, Ref, Schema } from "effect";
+import {
+  DateTime,
+  Effect,
+  Either,
+  Option,
+  ParseResult,
+  Ref,
+  Schema,
+} from "effect";
 
 import { Activity } from "./activity.js";
 import {
@@ -9,13 +17,21 @@ import {
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";
-import type { InvalidRangeError, StoreError } from "./errors.js";
+import {
+  InvalidInputError,
+  type InvalidRangeError,
+  type StoreError,
+} from "./errors.js";
 import { type Resolution, resolve } from "./matcher.js";
 import type { Project } from "./project.js";
-import { Range, resolveRange } from "./range.js";
+import { Range, resolveRange, UsedRange, usedWindow } from "./range.js";
 import { Store } from "./store.js";
 
 export const GroupBy = Schema.Literal("category", "project", "app", "device");
+
+const DeviceId = Schema.UUID.annotations({
+  message: () => "must be a Device id",
+});
 
 export const SummaryRow = Schema.Struct({
   key: Schema.String,
@@ -24,15 +40,17 @@ export const SummaryRow = Schema.Struct({
   productive: Schema.optional(Schema.Boolean),
 });
 
-export const Summary = Schema.Struct({
+export const SummaryReply = Schema.Struct({
+  range: UsedRange,
   rows: Schema.Array(SummaryRow),
   total: Schema.Int,
+  note: Schema.optionalWith(Schema.String, { exact: true }),
 });
 
 export const SummaryInput = Schema.Struct({
   range: Range,
   groupBy: GroupBy,
-  deviceId: Schema.optional(Schema.UUID),
+  device: Schema.optional(DeviceId),
 });
 
 export const TimelineBlock = Schema.Struct({
@@ -67,6 +85,21 @@ export const emptyNote = (
 ): { readonly note?: string } =>
   rows.length === 0 ? { note: "no activity in this range" } : {};
 
+// Core checks every tool input itself, so the CLI Twin and the Host get the
+// same words: the first failing field and the rule it breaks.
+const decodeInput =
+  <A, I>(schema: Schema.Schema<A, I>) =>
+  (input: I): Effect.Effect<A, InvalidInputError> =>
+    Schema.decodeUnknown(schema)(input).pipe(
+      Effect.mapError((error) => {
+        const [issue] = ParseResult.ArrayFormatter.formatErrorSync(error);
+        return new InvalidInputError({
+          field: issue?.path.join(".") ?? "input",
+          reason: issue?.message ?? error.message,
+        });
+      }),
+    );
+
 interface RangeRows {
   readonly rows: ReadonlyArray<{
     readonly activity: Activity;
@@ -75,6 +108,7 @@ interface RangeRows {
   }>;
   readonly from: DateTime.Utc;
   readonly to: DateTime.Utc;
+  readonly range: UsedRange;
   readonly categories: ReadonlyArray<Category>;
   readonly projects: ReadonlyArray<Project>;
   readonly devices: ReadonlyArray<Device>;
@@ -82,7 +116,7 @@ interface RangeRows {
 
 const loadRange = (input: {
   readonly range: Range;
-  readonly deviceId?: string | undefined;
+  readonly device?: string | undefined;
 }): Effect.Effect<
   RangeRows,
   InvalidRangeError | StoreError,
@@ -93,7 +127,7 @@ const loadRange = (input: {
     const now = yield* DateTime.nowInCurrentZone;
     const { from, to } = yield* resolveRange(input.range, now);
     const stored = yield* store.readActivities({
-      deviceId: input.deviceId,
+      deviceId: input.device,
       from,
       to,
     });
@@ -171,6 +205,7 @@ const loadRange = (input: {
       }),
       from,
       to,
+      range: usedWindow(from, to, now.zone),
       categories,
       projects: yield* store.listProjects(),
       devices,
@@ -178,21 +213,23 @@ const loadRange = (input: {
   });
 
 export const summary = (
-  input: SummaryInput,
+  input: Schema.Schema.Encoded<typeof SummaryInput>,
 ): Effect.Effect<
-  Summary,
-  InvalidRangeError | StoreError,
+  SummaryReply,
+  InvalidInputError | InvalidRangeError | StoreError,
   Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
-    const { rows, categories, projects, devices } = yield* loadRange(input);
+    const decoded = yield* decodeInput(SummaryInput)(input);
+    const { range, rows, categories, projects, devices } =
+      yield* loadRange(decoded);
     const categoryById = new Map(categories.map((c) => [c.id, c]));
     const projectById = new Map(projects.map((p) => [p.id, p]));
     const deviceById = new Map(devices.map((d) => [d.id, d]));
     const groups = new Map<string, { row: SummaryRow; ms: number }>();
     for (const { activity, resolution, ms } of rows) {
       let row: SummaryRow;
-      switch (input.groupBy) {
+      switch (decoded.groupBy) {
         case "category": {
           const category =
             resolution.categoryId === null
@@ -248,8 +285,10 @@ export const summary = (
       .map(({ row, ms }) => ({ ...row, seconds: Math.round(ms / 1000) }))
       .sort((a, b) => b.seconds - a.seconds || a.name.localeCompare(b.name));
     return {
+      range,
       rows: sorted,
       total: sorted.reduce((sum, row) => sum + row.seconds, 0),
+      ...emptyNote(sorted),
     };
   });
 
@@ -261,7 +300,10 @@ export const timeline = (
   Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
-    const { rows, categories, projects, from, to } = yield* loadRange(input);
+    const { rows, categories, projects, from, to } = yield* loadRange({
+      range: input.range,
+      device: input.deviceId,
+    });
     const categoryById = new Map(categories.map((c) => [c.id, c]));
     const projectById = new Map(projects.map((p) => [p.id, p]));
     interface Block {
@@ -331,7 +373,10 @@ export const activities = (
   Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
-    const { rows } = yield* loadRange(input);
+    const { rows } = yield* loadRange({
+      range: input.range,
+      device: input.deviceId,
+    });
     const app = input.app?.toLowerCase();
     const filtered =
       app === undefined
@@ -352,7 +397,7 @@ export const activities = (
 
 export type GroupBy = Schema.Schema.Type<typeof GroupBy>;
 export type SummaryRow = Schema.Schema.Type<typeof SummaryRow>;
-export type Summary = Schema.Schema.Type<typeof Summary>;
+export type SummaryReply = Schema.Schema.Type<typeof SummaryReply>;
 export type SummaryInput = Schema.Schema.Type<typeof SummaryInput>;
 export type TimelineBlock = Schema.Schema.Type<typeof TimelineBlock>;
 export type TimelineInput = Schema.Schema.Type<typeof TimelineInput>;

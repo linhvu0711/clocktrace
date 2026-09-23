@@ -7,6 +7,7 @@ import {
   Range,
   resolveRange,
   usedRange,
+  usedWindow,
 } from "../src/index.js";
 
 const friday = DateTime.unsafeMakeZoned("2026-09-18T17:00:00Z", {
@@ -158,14 +159,13 @@ describe("range", () => {
     );
   });
 
-  it("usedRange echoes a bare day as midnight to the next midnight with the zone", async () => {
-    // Given: the Los Angeles zone
-    // When
-    const result = await Effect.runPromise(
-      usedRange({ from: "2026-09-18", to: "2026-09-18" }).pipe(
-        DateTime.withCurrentZoneNamed("America/Los_Angeles"),
-      ),
+  it("usedWindow echoes a bare day as midnight to the next midnight with the zone", () => {
+    // Given: the Friday now in Los Angeles
+    const { from, to } = Effect.runSync(
+      resolveRange({ from: "2026-09-18", to: "2026-09-18" }, friday),
     );
+    // When
+    const result = usedWindow(from, to, friday.zone);
     // Then
     expect(result).toEqual({
       from: "2026-09-18T00:00",

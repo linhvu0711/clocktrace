@@ -19,6 +19,7 @@ import {
   emptyNote,
   openStore,
   Store,
+  SummaryReply,
   summary,
   timeline,
 } from "../src/index.js";
@@ -39,6 +40,17 @@ const run = <A, E>(
   );
 
 const t = (s: string) => DateTime.unsafeMake(s);
+
+const dayWindow = {
+  from: "2026-09-18T00:00",
+  to: "2026-09-19T00:00",
+  zone: "America/Los_Angeles",
+};
+const emptyWindow = {
+  from: "2026-09-01T00:00",
+  to: "2026-09-02T00:00",
+  zone: "America/Los_Angeles",
+};
 
 const seedDay = (store: StoreShape) =>
   Effect.gen(function* () {
@@ -152,6 +164,7 @@ describe("summary", () => {
     );
     // Then: A1 is 5400 s, A4 clips to 1800 s, A2 and A3 are 900 s unmatched
     expect(result).toEqual({
+      range: dayWindow,
       rows: [
         {
           key: coding.id,
@@ -189,6 +202,7 @@ describe("summary", () => {
     );
     // Then
     expect(result).toEqual({
+      range: dayWindow,
       rows: [
         { key: "no-project", name: "No project", seconds: 7200 },
         { key: shop.id, name: "Shop", seconds: 900 },
@@ -212,6 +226,7 @@ describe("summary", () => {
     );
     // Then
     expect(result).toEqual({
+      range: dayWindow,
       rows: [
         { key: "com.microsoft.VSCode", name: "Code", seconds: 7200 },
         { key: "com.google.Chrome", name: "Google Chrome", seconds: 900 },
@@ -257,6 +272,7 @@ describe("summary", () => {
     );
     // Then
     expect(result).toEqual({
+      range: dayWindow,
       rows: [
         { key: "noid:QSanguosha.exe", name: "QSanguosha.exe", seconds: 2700 },
       ],
@@ -279,6 +295,7 @@ describe("summary", () => {
     );
     // Then
     expect(result).toEqual({
+      range: dayWindow,
       rows: [{ key: "com.apple.mobilesafari", name: "Safari", seconds: 1800 }],
       total: 1800,
     });
@@ -301,6 +318,7 @@ describe("summary", () => {
     );
     // Then
     expect(result).toEqual({
+      range: dayWindow,
       rows: [
         { key: studio.id, name: "Studio", seconds: 8100 },
         { key: laptop.id, name: "Laptop", seconds: 600 },
@@ -309,7 +327,7 @@ describe("summary", () => {
     });
   });
 
-  it("summary with deviceId reads one Device", async () => {
+  it("summary with device reads one Device", async () => {
     // Given: the two-Device seed
     const result = await run(
       Effect.gen(function* () {
@@ -320,12 +338,13 @@ describe("summary", () => {
         return yield* summary({
           range: { from: "2026-09-18", to: "2026-09-18" },
           groupBy: "category",
-          deviceId: laptop.id,
+          device: laptop.id,
         });
       }),
     );
     // Then
     expect(result).toEqual({
+      range: dayWindow,
       rows: [{ key: "uncategorized", name: "Uncategorized", seconds: 600 }],
       total: 600,
     });
@@ -348,6 +367,7 @@ describe("summary", () => {
     );
     // Then: a UTC day would count A4 in full and give 9000
     expect(result).toEqual({
+      range: dayWindow,
       rows: [
         {
           key: coding.id,
@@ -361,21 +381,79 @@ describe("summary", () => {
     });
   });
 
-  it("summary of a range with no Activities gives no rows and total 0", async () => {
+  it("summary replies with the window first, then rows and total", async () => {
     // Given: seedDay
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
         yield* seedDay(store);
         // When
-        return yield* summary({
-          range: { from: "2026-09-01", to: "2026-09-01" },
-          groupBy: "category",
+        const reply = yield* summary({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          groupBy: "app",
         });
+        return yield* Schema.encode(SummaryReply)(reply);
       }),
     );
     // Then
-    expect(result).toEqual({ rows: [], total: 0 });
+    expect({
+      keys: Object.keys(result),
+      range: result.range,
+      total: result.total,
+    }).toEqual({
+      keys: ["range", "rows", "total"],
+      range: dayWindow,
+      total: 8100,
+    });
+  });
+
+  it("summary of an empty range ends with the note", async () => {
+    // Given: seedDay
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        const reply = yield* summary({
+          range: { from: "2026-09-01", to: "2026-09-01" },
+          groupBy: "category",
+        });
+        return yield* Schema.encode(SummaryReply)(reply);
+      }),
+    );
+    // Then
+    expect({ reply: result, keys: Object.keys(result) }).toEqual({
+      reply: {
+        range: emptyWindow,
+        rows: [],
+        total: 0,
+        note: "no activity in this range",
+      },
+      keys: ["range", "rows", "total", "note"],
+    });
+  });
+
+  it("summary fails naming device on an id that is not a Device id", async () => {
+    // Given: seedDay
+    const error = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        return yield* Effect.flip(
+          summary({
+            range: { from: "2026-09-18", to: "2026-09-18" },
+            groupBy: "app",
+            device: "Studio",
+          }),
+        );
+      }),
+    );
+    // Then
+    expect({ tag: error._tag, message: error.message }).toEqual({
+      tag: "InvalidInputError",
+      message: "device: must be a Device id",
+    });
   });
 
   it("summary rounds each group once, not each Activity", async () => {
@@ -415,6 +493,7 @@ describe("summary", () => {
     );
     // Then: 1000 ms is one second, not two rounded halves
     expect(result).toEqual({
+      range: dayWindow,
       rows: [{ key: "com.microsoft.VSCode", name: "Code", seconds: 1 }],
       total: 1,
     });

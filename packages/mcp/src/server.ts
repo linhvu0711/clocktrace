@@ -19,6 +19,7 @@ import {
   type DatabaseNewerError,
   emptyNote,
   GroupBy,
+  type InvalidInputError,
   type InvalidRangeError,
   type InvalidRuleError,
   type ProjectInUseError,
@@ -32,7 +33,7 @@ import {
   removeRule,
   Store,
   type StoreError,
-  Summary,
+  SummaryReply,
   setCategory,
   setProject,
   summary,
@@ -69,6 +70,7 @@ export type Services =
 
 type ToolError =
   | InvalidRuleError
+  | InvalidInputError
   | InvalidRangeError
   | RuleNotFoundError
   | CategoryNotFoundError
@@ -332,16 +334,14 @@ export const makeServer = async (
     },
     (input) =>
       run(
-        Effect.gen(function* () {
-          const range = yield* usedRange(input.range);
-          const result = yield* summary({
+        Effect.flatMap(
+          summary({
             range: input.range,
             groupBy: input.groupBy,
-            deviceId: input.device,
-          });
-          const encoded = yield* Schema.encode(Summary)(result);
-          return { range, ...encoded, ...emptyNote(encoded.rows) };
-        }),
+            device: input.device,
+          }),
+          Schema.encode(SummaryReply),
+        ),
       ),
   );
 
