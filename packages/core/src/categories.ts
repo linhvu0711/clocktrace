@@ -5,24 +5,29 @@ import { type Category, NewCategory } from "./category.js";
 import {
   CategoryInUseError,
   CategoryNotFoundError,
+  type InvalidInputError,
   type StoreError,
 } from "./errors.js";
+import { decodeInput } from "./input.js";
 import { Store } from "./store.js";
 
 export const CategoryInput = Schema.Struct({
-  id: Schema.NullOr(Schema.String),
+  id: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
   ...NewCategory.fields,
   productive: Schema.optional(Schema.Boolean),
 });
 
 export const setCategory = (
-  input: CategoryInput,
+  encoded: Schema.Schema.Encoded<typeof CategoryInput>,
 ): Effect.Effect<
   Category,
-  CategoryNotFoundError | ParseError | StoreError,
+  CategoryNotFoundError | InvalidInputError | ParseError | StoreError,
   Store
 > =>
   Effect.gen(function* () {
+    const input = yield* decodeInput(CategoryInput)(encoded);
     const store = yield* Store;
     if (input.id === null) {
       return yield* store.insertCategory({

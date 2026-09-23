@@ -3,6 +3,7 @@ import {
   type CategoryInput,
   type CategoryInUseError,
   type CategoryNotFoundError,
+  type InvalidInputError,
   removeCategory,
   Store,
   type StoreError,
@@ -70,7 +71,7 @@ export const printSetCategory = (
   json: boolean,
 ): Effect.Effect<
   void,
-  CategoryNotFoundError | ParseError | StoreError,
+  CategoryNotFoundError | InvalidInputError | ParseError | StoreError,
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {

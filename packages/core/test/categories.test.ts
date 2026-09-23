@@ -109,6 +109,14 @@ describe("categories", () => {
     expect(categories).toEqual([result]);
   });
 
+  it("setCategory with no id and no flag creates a Category that is not productive", async () => {
+    // Given: an empty store
+    // When: the input leaves id and productive out
+    const result = await useEmpty(setCategory({ name: "Deep work" }));
+    // Then
+    expect(result).toMatchObject({ name: "Deep work", productive: false });
+  });
+
   it("setCategory with an id updates name and flag", async () => {
     // Given: an empty store with one category
     const { inserted, result } = await useEmpty(
