@@ -59,24 +59,16 @@ const allGranted: Permissions = {
 const helperStub = (...ps: ReadonlyArray<Permissions>) =>
   Layer.unwrapEffect(
     Effect.map(Ref.make(ps), (answers) =>
-      Layer.succeed(
-        Helper,
-        new Helper({
-          check: () => Effect.void,
-          lines: () => Stream.empty,
-          permissions: () =>
-            Ref.modify(answers, (as) => {
-              const head = as[0] ?? as.at(-1);
-              if (head === undefined) {
-                throw new Error("no permission answers left");
-              }
-              return [head, as.length > 1 ? as.slice(1) : as];
-            }),
-          request: () => Effect.succeed("asked"),
-          biomeDevices: () => Effect.succeed([]),
-          biomeRecords: () => Effect.succeed([]),
-        }),
-      ),
+      Helper.Test({
+        permissions: () =>
+          Ref.modify(answers, (as) => {
+            const head = as[0] ?? as.at(-1);
+            if (head === undefined) {
+              throw new Error("no permission answers left");
+            }
+            return [head, as.length > 1 ? as.slice(1) : as];
+          }),
+      }),
     ),
   );
 

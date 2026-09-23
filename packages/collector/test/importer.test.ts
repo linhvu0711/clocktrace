@@ -9,7 +9,6 @@ import {
   Option,
   Ref,
   Schema,
-  Stream,
   TestClock,
   TestContext,
 } from "effect";
@@ -24,7 +23,6 @@ import {
   importTick,
 } from "../src/importer.js";
 import { MacIdentity } from "../src/mac-identity.js";
-import type { Permissions } from "../src/permissions.js";
 
 const P2 = "00000000-0000-4000-8000-000000000002";
 const P3 = "00000000-0000-4000-8000-000000000003";
@@ -157,12 +155,6 @@ const E1 = `{"error":"parse","offset":148,"segment":"${S}"}`;
 
 const ALL = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12];
 
-const allGranted: Permissions = {
-  accessibility: "granted",
-  automation: {},
-  fullDiskAccess: "granted",
-};
-
 interface Ctx {
   calls: Ref.Ref<number>;
   sinces: Ref.Ref<ReadonlyArray<ReadonlyMap<string, number>>>;
@@ -206,21 +198,14 @@ const run = <A, E>(
           : Effect.isEffect(spec.records)
             ? spec.records
             : Effect.succeed(spec.records);
-      const stubHelper = Layer.succeed(
-        Helper,
-        new Helper({
-          check: () => Effect.void,
-          lines: () => Stream.empty,
-          permissions: () => Effect.succeed(allGranted),
-          request: () => Effect.succeed("asked"),
-          biomeDevices: () =>
-            Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(deviceEff)),
-          biomeRecords: (_path, since) =>
-            Ref.update(sinces, (ss) => [...ss, since]).pipe(
-              Effect.andThen(recordEff),
-            ),
-        }),
-      );
+      const stubHelper = Helper.Test({
+        biomeDevices: () =>
+          Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(deviceEff)),
+        biomeRecords: (_path, since) =>
+          Ref.update(sinces, (ss) => [...ss, since]).pipe(
+            Effect.andThen(recordEff),
+          ),
+      });
       const stubMac = Layer.succeed(
         MacIdentity,
         new MacIdentity({

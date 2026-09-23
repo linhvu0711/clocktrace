@@ -25,7 +25,6 @@ import {
   Layer,
   Option,
   Ref,
-  Stream,
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -91,39 +90,32 @@ describe("permissions", () => {
               );
         }
         const permCalls = yield* Ref.make(0);
-        const helper = Layer.succeed(
-          Helper,
-          new Helper({
-            check: () => Effect.void,
-            lines: () => Stream.empty,
-            permissions: () =>
-              Ref.modify(permCalls, (n) => [n, n + 1]).pipe(
-                Effect.flatMap((n) =>
-                  n === options.permissionsErrorAt
-                    ? Effect.fail(
-                        options.permissionsError ??
-                          new HelperExitedError({ cause: "gone" }),
-                      )
-                    : Ref.modify(answers, (as) => {
-                        const head = as[0] ?? as.at(-1);
-                        if (head === undefined) {
-                          throw new Error("no permission answers left");
-                        }
-                        return [head, as.length > 1 ? as.slice(1) : as];
-                      }),
-                ),
+        const helper = Helper.Test({
+          permissions: () =>
+            Ref.modify(permCalls, (n) => [n, n + 1]).pipe(
+              Effect.flatMap((n) =>
+                n === options.permissionsErrorAt
+                  ? Effect.fail(
+                      options.permissionsError ??
+                        new HelperExitedError({ cause: "gone" }),
+                    )
+                  : Ref.modify(answers, (as) => {
+                      const head = as[0] ?? as.at(-1);
+                      if (head === undefined) {
+                        throw new Error("no permission answers left");
+                      }
+                      return [head, as.length > 1 ? as.slice(1) : as];
+                    }),
               ),
-            request: (_path, grant) => {
-              const error = options.requestError?.(grant) ?? null;
-              return (error !== null ? Effect.fail(error) : Effect.void).pipe(
-                Effect.andThen(Ref.update(requests, (rs) => [...rs, grant])),
-                Effect.as(options.outcome ?? "asked"),
-              );
-            },
-            biomeDevices: () => Effect.succeed([]),
-            biomeRecords: () => Effect.succeed([]),
-          }),
-        );
+            ),
+          request: (_path, grant) => {
+            const error = options.requestError?.(grant) ?? null;
+            return (error !== null ? Effect.fail(error) : Effect.void).pipe(
+              Effect.andThen(Ref.update(requests, (rs) => [...rs, grant])),
+              Effect.as(options.outcome ?? "asked"),
+            );
+          },
+        });
         const layers = Layer.mergeAll(
           Console.setConsole(console),
           NodeContext.layer,

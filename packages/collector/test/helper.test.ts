@@ -2,7 +2,16 @@ import { writeFileSync } from "node:fs";
 
 import { CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect, Either, Exit, Layer, Ref, type Scope, Stream } from "effect";
+import {
+  Chunk,
+  Effect,
+  Either,
+  Exit,
+  Layer,
+  Ref,
+  type Scope,
+  Stream,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -283,5 +292,63 @@ describe("Helper via open", () => {
     } else {
       expect.unreachable("expected HelperExitedError");
     }
+  });
+});
+
+describe("Helper.Test", () => {
+  const readAll = Effect.gen(function* () {
+    const helper = yield* Helper;
+    return {
+      permissions: yield* Effect.scoped(
+        helper.permissions("/x/Clocktrace.app"),
+      ),
+      request: yield* Effect.scoped(
+        helper.request("/x/Clocktrace.app", { kind: "fullDiskAccess" }),
+      ),
+      devices: yield* helper.biomeDevices("/h"),
+      records: yield* helper.biomeRecords("/h", new Map()),
+      lines: Chunk.toReadonlyArray(
+        yield* Stream.runCollect(helper.lines("/h")),
+      ),
+    };
+  });
+
+  it("Helper.Test gives the defaults", async () => {
+    // Given: the Test Helper with no methods changed
+    // When
+    const result = await Effect.runPromise(
+      readAll.pipe(Effect.provide(Helper.Test())),
+    );
+    // Then
+    expect(result).toEqual({
+      permissions: {
+        accessibility: "granted",
+        automation: {},
+        fullDiskAccess: "granted",
+      },
+      request: "asked",
+      devices: [],
+      records: [],
+      lines: [],
+    });
+  });
+
+  it("Helper.Test keeps the defaults a test leaves out", async () => {
+    // Given: the Test Helper with only request changed
+    const layer = Helper.Test({ request: () => Effect.succeed("notRunning") });
+    // When
+    const result = await Effect.runPromise(readAll.pipe(Effect.provide(layer)));
+    // Then
+    expect({
+      request: result.request,
+      permissions: result.permissions,
+    }).toEqual({
+      request: "notRunning",
+      permissions: {
+        accessibility: "granted",
+        automation: {},
+        fullDiskAccess: "granted",
+      },
+    });
   });
 });

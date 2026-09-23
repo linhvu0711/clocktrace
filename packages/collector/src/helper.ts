@@ -206,21 +206,27 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
   }),
   dependencies: [NodeContext.layer],
 }) {
+  // A test passes only the methods it changes; the rest answer as a Mac
+  // with every permission granted and no iPhone or iPad.
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
-  static Test = Layer.succeed(
-    this,
-    new Helper({
-      check: () => Effect.void,
-      lines: () => Stream.empty,
-      permissions: () =>
-        Effect.succeed({
-          accessibility: "granted",
-          automation: {},
-          fullDiskAccess: "granted",
-        }),
-      request: () => Effect.succeed("asked"),
-      biomeDevices: () => Effect.succeed([]),
-      biomeRecords: () => Effect.succeed([]),
-    }),
-  );
+  static Test = (
+    methods: Partial<ConstructorParameters<typeof Helper>[0]> = {},
+  ) =>
+    Layer.succeed(
+      this,
+      new Helper({
+        check: () => Effect.void,
+        lines: () => Stream.empty,
+        permissions: () =>
+          Effect.succeed({
+            accessibility: "granted",
+            automation: {},
+            fullDiskAccess: "granted",
+          }),
+        request: () => Effect.succeed("asked"),
+        biomeDevices: () => Effect.succeed([]),
+        biomeRecords: () => Effect.succeed([]),
+        ...methods,
+      }),
+    );
 }

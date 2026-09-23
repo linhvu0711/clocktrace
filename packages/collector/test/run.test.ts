@@ -57,32 +57,19 @@ describe("run", () => {
         const starts = yield* Queue.unbounded<number>();
         const count = yield* Ref.make(0);
         const logs = yield* Queue.unbounded<string>();
-        const stubHelper = Layer.succeed(
-          Helper,
-          new Helper({
-            check: () => Effect.void,
-            permissions: () =>
-              Effect.succeed({
-                accessibility: "granted",
-                automation: {},
-                fullDiskAccess: "granted",
-              }),
-            request: () => Effect.succeed("asked"),
-            biomeDevices: () => Effect.succeed([]),
-            biomeRecords: () => Effect.succeed([]),
-            lines: () =>
-              Stream.fromEffect(
-                Ref.updateAndGet(count, (n) => n + 1).pipe(
-                  Effect.tap((n) => Queue.offer(starts, n)),
-                ),
-              ).pipe(
-                Stream.drain,
-                Stream.concat(
-                  Stream.fail(new HelperExitedError({ cause: "test" })),
-                ),
+        const stubHelper = Helper.Test({
+          lines: () =>
+            Stream.fromEffect(
+              Ref.updateAndGet(count, (n) => n + 1).pipe(
+                Effect.tap((n) => Queue.offer(starts, n)),
               ),
-          }),
-        );
+            ).pipe(
+              Stream.drain,
+              Stream.concat(
+                Stream.fail(new HelperExitedError({ cause: "test" })),
+              ),
+            ),
+        });
         const testLogger = Logger.replace(
           Logger.defaultLogger,
           Logger.make(({ message }) =>
@@ -144,28 +131,17 @@ describe("run", () => {
       Effect.gen(function* () {
         const imports = yield* Queue.unbounded<number>();
         const count = yield* Ref.make(0);
-        const stubHelper = Layer.succeed(
-          Helper,
-          new Helper({
-            check: () => Effect.void,
-            permissions: () =>
-              Effect.succeed({
-                accessibility: "granted",
-                automation: {},
-                fullDiskAccess: "granted",
-              }),
-            request: () => Effect.succeed("asked"),
-            biomeDevices: () =>
-              Ref.updateAndGet(count, (n) => n + 1).pipe(
-                Effect.tap((n) => Queue.offer(imports, n)),
-                Effect.as([
-                  '{"deviceIdentifier":"00000000-0000-4000-8000-000000000002","lastSyncDate":null,"me":false,"model":"24A437","name":"","platform":2}',
-                ]),
-              ),
-            biomeRecords: () => Effect.succeed([]),
-            lines: () => Stream.never,
-          }),
-        );
+        const stubHelper = Helper.Test({
+          biomeDevices: () =>
+            Ref.updateAndGet(count, (n) => n + 1).pipe(
+              Effect.tap((n) => Queue.offer(imports, n)),
+              Effect.as([
+                '{"deviceIdentifier":"00000000-0000-4000-8000-000000000002","lastSyncDate":null,"me":false,"model":"24A437","name":"","platform":2}',
+              ]),
+            ),
+
+          lines: () => Stream.never,
+        });
         const layers = Layer.mergeAll(stubHelper, Store.Test, MacIdentity.Test);
         // When
         const fiber = yield* Effect.fork(
@@ -193,29 +169,16 @@ describe("run", () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const starts = yield* Queue.unbounded<number>();
-        const stubHelper = Layer.succeed(
-          Helper,
-          new Helper({
-            check: () => Effect.void,
-            permissions: () =>
-              Effect.succeed({
-                accessibility: "granted",
-                automation: {},
-                fullDiskAccess: "granted",
-              }),
-            request: () => Effect.succeed("asked"),
-            biomeDevices: () =>
-              Effect.fail(
-                new BiomeExitError({ code: 5, stderr: "remote gone" }),
-              ),
-            biomeRecords: () => Effect.succeed([]),
-            lines: () =>
-              Stream.fromEffect(Queue.offer(starts, 1)).pipe(
-                Stream.drain,
-                Stream.concat(Stream.never),
-              ),
-          }),
-        );
+        const stubHelper = Helper.Test({
+          biomeDevices: () =>
+            Effect.fail(new BiomeExitError({ code: 5, stderr: "remote gone" })),
+
+          lines: () =>
+            Stream.fromEffect(Queue.offer(starts, 1)).pipe(
+              Stream.drain,
+              Stream.concat(Stream.never),
+            ),
+        });
         const layers = Layer.mergeAll(stubHelper, Store.Test, MacIdentity.Test);
         // When
         const fiber = yield* Effect.fork(
