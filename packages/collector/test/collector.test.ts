@@ -5,6 +5,7 @@ import {
   Effect,
   Fiber,
   Layer,
+  Logger,
   Option,
   Stream,
 } from "effect";
@@ -936,5 +937,140 @@ describe("collector", () => {
         endedAt: "2026-01-01T09:00:05.000Z",
       },
     ]);
+  });
+
+  it("a notAsked line removes the Saved grant once", async () => {
+    // Given: a Saved grant for Chrome, then two notAsked lines after a reset
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "notAsked",
+      }),
+      line({
+        ts: "2026-01-01T09:00:02Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "notAsked",
+      }),
+    ];
+    let deletes = 0;
+    const countedDelete = Layer.effect(
+      Store,
+      Effect.map(
+        Store,
+        (s) =>
+          new Store({
+            ...s,
+            deleteSetting: (key) => {
+              deletes += 1;
+              return s.deleteSetting(key);
+            },
+          }),
+      ),
+    );
+    // When
+    const saved = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.setSetting(
+          "grant.com.google.Chrome",
+          '{"state":"granted","checkedAt":"2025-12-31T09:00:00.000Z"}',
+        );
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }).pipe(Effect.provide(Layer.provide(countedDelete, Store.Test))),
+    );
+    // Then: the Saved grant is gone, and the second line writes nothing
+    expect(saved).toEqual(Option.none());
+    expect(deletes).toBe(1);
+  });
+
+  it("a failed Saved grant delete logs once and retries", async () => {
+    // Given: a Saved grant for Chrome; the first save and the first delete
+    // fail; Chrome denied, then notAsked three times
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+      ...["09:00:02", "09:00:04", "09:00:06"].map((t) =>
+        line({
+          ts: `2026-01-01T${t}Z`,
+          app: "Google Chrome",
+          bundleId: "com.google.Chrome",
+          grant: "notAsked",
+        }),
+      ),
+    ];
+    let seeded = false;
+    let deletes = 0;
+    const flaky = Layer.effect(
+      Store,
+      Effect.map(
+        Store,
+        (s) =>
+          new Store({
+            ...s,
+            setSetting: (key, value) => {
+              if (!seeded) {
+                seeded = true;
+                return s.setSetting(key, value);
+              }
+              return Effect.fail(new StoreError({ cause: "disk full" }));
+            },
+            deleteSetting: (key) => {
+              deletes += 1;
+              return deletes === 1
+                ? Effect.fail(new StoreError({ cause: "disk full" }))
+                : s.deleteSetting(key);
+            },
+          }),
+      ),
+    );
+    const logs: Array<string> = [];
+    const testLogger = Logger.replace(
+      Logger.defaultLogger,
+      Logger.make(({ message }) => {
+        logs.push(String(message));
+      }),
+    );
+    // When
+    const saved = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.setSetting(
+          "grant.com.google.Chrome",
+          '{"state":"granted","checkedAt":"2025-12-31T09:00:00.000Z"}',
+        );
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }).pipe(
+        Effect.provide(
+          Layer.merge(Layer.provide(flaky, Store.Test), testLogger),
+        ),
+      ),
+    );
+    // Then: one warning of each kind, the delete is tried again once and
+    // lands, and the third notAsked line writes nothing
+    expect(logs).toEqual([
+      "saved grant not written",
+      "saved grant not deleted",
+    ]);
+    expect(deletes).toBe(2);
+    expect(saved).toEqual(Option.none());
   });
 });

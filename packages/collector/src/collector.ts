@@ -3,7 +3,7 @@ import { DateTime, Effect, Option, Ref, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { decodeHelperLine, type HelperLine } from "./helper-line.js";
-import { saveGrant } from "./saved-grant.js";
+import { deleteSavedGrant, saveGrant } from "./saved-grant.js";
 
 export const idleAfterSeconds = 300;
 export const minActivityMillis = 1000;
@@ -53,29 +53,36 @@ export const collect = <E, R>(
       ReadonlyMap<
         string,
         {
-          readonly state: "granted" | "denied";
+          readonly state: "granted" | "denied" | "notAsked";
           readonly writtenAt: DateTime.Utc;
         }
       >
     >(new Map());
     const warned = yield* Ref.make<ReadonlySet<string>>(new Set());
 
+    const warnOnce = (
+      key: string,
+      message: string,
+      bundleId: string,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const seen = yield* Ref.get(warned);
+        if (seen.has(key)) {
+          return;
+        }
+        yield* Ref.update(warned, (s) => new Set(s).add(key));
+        yield* Effect.logWarning(message).pipe(
+          Effect.annotateLogs({ bundleId }),
+        );
+      });
+
     const remember = (line: HelperLine): Effect.Effect<void, never, Store> =>
       Effect.gen(function* () {
+        const grant = line.grant;
         if (
           line.bundleId === null ||
-          (line.grant !== "granted" && line.grant !== "denied")
+          (grant !== "granted" && grant !== "denied" && grant !== "notAsked")
         ) {
-          // A reset clears the stored grant but another process cannot reach
-          // this dedup: forget it here so the next same-state answer is
-          // written again.
-          if (line.bundleId !== null && line.grant === "notAsked") {
-            yield* Ref.update(remembered, (m) => {
-              const next = new Map(m);
-              next.delete(line.bundleId as string);
-              return next;
-            });
-          }
           return;
         }
         const bundleId = line.bundleId;
@@ -83,33 +90,42 @@ export const collect = <E, R>(
         const saved = last.get(bundleId);
         if (
           saved !== undefined &&
-          saved.state === line.grant &&
+          saved.state === grant &&
           DateTime.distance(saved.writtenAt, line.ts) >= 0 &&
           DateTime.distance(saved.writtenAt, line.ts) < 60_000
         ) {
           return;
         }
-        yield* saveGrant(bundleId, line.grant, line.ts).pipe(
+        // notAsked means macOS has no Grant any more (a reset, a new app
+        // identity), so the Saved grant goes. Either write counts as done only
+        // once it lands, so a failed one is tried again on the next line.
+        const deleting = grant === "notAsked";
+        yield* (
+          deleting
+            ? deleteSavedGrant(bundleId)
+            : saveGrant(bundleId, grant, line.ts)
+        ).pipe(
           Effect.tap(() =>
             Ref.set(
               remembered,
               new Map(last).set(bundleId, {
-                state: line.grant as "granted" | "denied",
+                state: grant,
                 writtenAt: line.ts,
               }),
             ),
           ),
           Effect.catchTag("StoreError", () =>
-            Effect.gen(function* () {
-              const seen = yield* Ref.get(warned);
-              if (seen.has(bundleId)) {
-                return;
-              }
-              yield* Ref.update(warned, (s) => new Set(s).add(bundleId));
-              yield* Effect.logWarning("saved grant not written").pipe(
-                Effect.annotateLogs({ bundleId }),
-              );
-            }),
+            deleting
+              ? warnOnce(
+                  `delete:${bundleId}`,
+                  "saved grant not deleted",
+                  bundleId,
+                )
+              : warnOnce(
+                  `save:${bundleId}`,
+                  "saved grant not written",
+                  bundleId,
+                ),
           ),
         );
       });

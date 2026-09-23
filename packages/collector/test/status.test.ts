@@ -512,4 +512,30 @@ describe("status", () => {
       Option.some('{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}'),
     );
   });
+
+  it("a live notAsked removes the Saved grant", async () => {
+    // Given: a Saved grant for Chrome, then a reset: Chrome answers notAsked
+    // When
+    const { lines, saved } = await runAt(
+      {
+        accessibility: "granted",
+        automation: { "com.google.Chrome": "notAsked" },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.setSetting(
+          "grant.com.google.Chrome",
+          '{"state":"granted","checkedAt":"2026-09-18T18:00:00.000Z"}',
+        );
+        const lines = yield* Effect.flatMap(readStatus(), statusLines);
+        const saved = yield* store.getSetting("grant.com.google.Chrome");
+        return { lines, saved };
+      }),
+    );
+    // Then: the Saved grant is gone, so a closed Chrome shows no row later
+    expect(saved).toEqual(Option.none());
+    expect(lines.some((l) => l.includes("Chrome"))).toBe(false);
+  });
 });
