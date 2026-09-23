@@ -1141,8 +1141,24 @@ describe("server", () => {
       collector: "running",
       app: "present",
       permissions: [
-        { name: "accessibility", state: "granted", note: null },
-        { name: "full disk access", state: "granted", note: null },
+        {
+          name: "accessibility",
+          state: "granted",
+          note: null,
+          checkedAt: null,
+        },
+        {
+          name: "automation",
+          state: "not checked",
+          note: "no browser used yet",
+          checkedAt: null,
+        },
+        {
+          name: "full disk access",
+          state: "granted",
+          note: null,
+          checkedAt: null,
+        },
       ],
       lastActivity: null,
       iosImport: null,
@@ -1273,8 +1289,24 @@ describe("server", () => {
       collector: "running",
       app: "present",
       permissions: [
-        { name: "accessibility", state: "granted", note: null },
-        { name: "full disk access", state: "granted", note: null },
+        {
+          name: "accessibility",
+          state: "granted",
+          note: null,
+          checkedAt: null,
+        },
+        {
+          name: "automation",
+          state: "not checked",
+          note: "no browser used yet",
+          checkedAt: null,
+        },
+        {
+          name: "full disk access",
+          state: "granted",
+          note: null,
+          checkedAt: null,
+        },
       ],
       lastActivity: "2026-09-19T16:06:00.000Z",
       iosImport: { state: "ok", at: "2026-09-19T17:30:00.000Z" },
@@ -1339,8 +1371,18 @@ describe("server", () => {
       iosImport: null,
       devices: [],
       permissions: [
-        { name: "accessibility", state: "not checked", note: null },
-        { name: "full disk access", state: "not checked", note: null },
+        {
+          name: "accessibility",
+          state: "not checked",
+          note: null,
+          checkedAt: null,
+        },
+        {
+          name: "full disk access",
+          state: "not checked",
+          note: null,
+          checkedAt: null,
+        },
       ],
       lastActivity: null,
       databasePath: dbPath,
@@ -1380,8 +1422,63 @@ describe("server", () => {
       name: "accessibility",
       state: "denied",
       note: "window titles are not tracked",
+      checkedAt: null,
     });
     expect(summary.isError).toBeUndefined();
     expect(summary.structuredContent?.total).toBe(6000);
+  });
+
+  it("status carries checkedAt for a closed browser with a Saved grant", async () => {
+    // Given: Safari closed with a saved denied Grant checked 2026-09-19 18:00Z
+    const withGrant = Layer.scoped(
+      Store,
+      Effect.map(
+        Effect.tap(openStore(":memory:"), (shape) =>
+          Effect.orDie(
+            shape.setSetting(
+              "grant.com.apple.Safari",
+              '{"state":"denied","checkedAt":"2026-09-19T18:00:00.000Z"}',
+            ),
+          ),
+        ),
+        (shape) => new Store(shape),
+      ),
+    );
+    const { client, close } = await connect(
+      withGrant,
+      Layer.mergeAll(
+        Launchd.Test,
+        stubHelper({
+          accessibility: "granted",
+          automation: { "com.apple.Safari": "notRunning" },
+          fullDiskAccess: "granted",
+        }),
+        App.Test,
+      ),
+    );
+    // When
+    const result = await callTool(client, { name: "status", arguments: {} });
+    await close();
+    // Then
+    expect(result.structuredContent?.permissions).toEqual([
+      {
+        name: "accessibility",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
+      {
+        name: "automation Safari",
+        state: "denied",
+        note: "URLs in Safari are not tracked",
+        checkedAt: "2026-09-19T18:00:00.000Z",
+      },
+      {
+        name: "full disk access",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
+    ]);
   });
 });
