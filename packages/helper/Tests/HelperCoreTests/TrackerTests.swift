@@ -9,12 +9,8 @@ final class TrackerTests: XCTestCase {
 
   private var finderSample: Sample {
     Sample(
-      front: FrontApp(name: "Finder", bundleId: "com.apple.finder", pid: 1),
-      axTrusted: true,
-      title: "Desktop",
-      url: .notBrowser,
-      idleSeconds: 2
-    )
+      app: "Finder", bundleId: "com.apple.finder", title: "Desktop", url: nil,
+      idleSeconds: 2, missing: [])
   }
 
   func testEmitsTheFirstLine() {
@@ -63,8 +59,8 @@ final class TrackerTests: XCTestCase {
     var tracker = Tracker()
     _ = tracker.observe(finderSample, at: t0)
     let next = Sample(
-      front: FrontApp(name: "TextEdit", bundleId: "com.apple.TextEdit", pid: 2),
-      axTrusted: true, title: "Untitled", url: .notBrowser, idleSeconds: 2)
+      app: "TextEdit", bundleId: "com.apple.TextEdit", title: "Untitled", url: nil,
+      idleSeconds: 2, missing: [])
     // When
     let line = tracker.observe(next, at: t0.addingTimeInterval(1))
     // Then
@@ -93,73 +89,16 @@ final class TrackerTests: XCTestCase {
     // Given: a tracker that emitted Safari at one URL; same sample, new URL
     var tracker = Tracker()
     let safari = Sample(
-      front: FrontApp(name: "Safari", bundleId: "com.apple.Safari", pid: 3),
-      axTrusted: true, title: "Example Domain",
-      url: .granted("https://example.com/"), idleSeconds: 0)
+      app: "Safari", bundleId: "com.apple.Safari", grant: "granted",
+      title: "Example Domain", url: "https://example.com/", idleSeconds: 0,
+      missing: [])
     _ = tracker.observe(safari, at: t0)
     var next = safari
-    next.url = .granted("https://example.org/")
+    next.url = "https://example.org/"
     // When
     let line = tracker.observe(next, at: t0.addingTimeInterval(1))
     // Then
     XCTAssertEqual(line?.url, "https://example.org/")
-  }
-
-  func testTitleNullAndMissingAccessibilityWhenNotTrusted() {
-    // Given: a fresh tracker; frontmost Finder but Accessibility not granted
-    var tracker = Tracker()
-    let sample = Sample(
-      front: FrontApp(name: "Finder", bundleId: "com.apple.finder", pid: 1),
-      axTrusted: false, title: nil, url: .notBrowser, idleSeconds: 0)
-    // When
-    let line = tracker.observe(sample, at: t0)
-    // Then
-    XCTAssertEqual(
-      line,
-      Line(
-        ts: ts0, app: "Finder", bundleId: "com.apple.finder", title: nil,
-        url: nil, idleSeconds: 0, missing: ["accessibility"]))
-  }
-
-  func testTitleFromTheFocusedWindowWhenTrusted() {
-    // Given: a fresh tracker; Accessibility granted, title available
-    var tracker = Tracker()
-    // When
-    let line = tracker.observe(finderSample, at: t0)
-    // Then
-    XCTAssertEqual(line?.title, "Desktop")
-    XCTAssertEqual(line?.missing, [])
-  }
-
-  func testUrlNullAndMissingAutomationWhenNotGranted() {
-    // Given: a fresh tracker; Safari frontmost, Automation denied
-    var tracker = Tracker()
-    let sample = Sample(
-      front: FrontApp(name: "Safari", bundleId: "com.apple.Safari", pid: 3),
-      axTrusted: true, title: "Example Domain", url: .missing(.denied), idleSeconds: 0)
-    // When
-    let line = tracker.observe(sample, at: t0)
-    // Then
-    XCTAssertEqual(
-      line,
-      Line(
-        ts: ts0, app: "Safari", bundleId: "com.apple.Safari",
-        grant: "denied",
-        title: "Example Domain", url: nil, idleSeconds: 0,
-        missing: ["automation:com.apple.Safari"]))
-  }
-
-  func testUrlNullAndNothingMissingForANonBrowser() {
-    // Given: a fresh tracker; a non-browser app is frontmost
-    var tracker = Tracker()
-    let sample = Sample(
-      front: FrontApp(name: "TextEdit", bundleId: "com.apple.TextEdit", pid: 2),
-      axTrusted: true, title: "Untitled", url: .notBrowser, idleSeconds: 0)
-    // When
-    let line = tracker.observe(sample, at: t0)
-    // Then
-    XCTAssertNil(line?.url)
-    XCTAssertEqual(line?.missing, [])
   }
 
   func testBackwardClockStillEmitsAHeartbeat() {
@@ -188,93 +127,22 @@ final class TrackerTests: XCTestCase {
     XCTAssertEqual(line?.idleSeconds, 42.5)
   }
 
-  func testAppNullWhenThereIsNoFrontmostApp() {
-    // Given: a fresh tracker; no frontmost app
-    var tracker = Tracker()
-    let sample = Sample(
-      front: nil, axTrusted: true, title: nil, url: .notBrowser, idleSeconds: 0)
-    // When
-    let line = tracker.observe(sample, at: t0)
-    // Then
-    XCTAssertEqual(
-      line,
-      Line(
-        ts: ts0, app: nil, bundleId: nil, title: nil, url: nil, idleSeconds: 0,
-        missing: []))
-  }
-
-  func testAppNullForTheLoginWindow() {
-    // Given: a fresh tracker; loginwindow is frontmost
-    var tracker = Tracker()
-    let sample = Sample(
-      front: FrontApp(
-        name: "loginwindow", bundleId: "com.apple.loginwindow", pid: 4),
-      axTrusted: true, title: "Login", url: .notBrowser, idleSeconds: 0)
-    // When
-    let line = tracker.observe(sample, at: t0)
-    // Then
-    XCTAssertEqual(
-      line,
-      Line(
-        ts: ts0, app: nil, bundleId: nil, title: nil, url: nil, idleSeconds: 0,
-        missing: []))
-  }
-
-  func testGrantGrantedForABrowserWithAUrl() {
-    // Given: Safari front with a granted URL read
-    var tracker = Tracker()
-    let sample = Sample(
-      front: FrontApp(name: "Safari", bundleId: "com.apple.Safari", pid: 4),
-      axTrusted: true, title: "Example Domain",
-      url: .granted("https://example.com/"), idleSeconds: 0)
-    // When
-    let line = tracker.observe(sample, at: t0)
-    // Then
-    XCTAssertEqual(line?.grant, "granted")
-  }
-
-  func testGrantDeniedForADeniedBrowser() {
-    // Given: Safari front with a denied Grant
-    var tracker = Tracker()
-    let sample = Sample(
-      front: FrontApp(name: "Safari", bundleId: "com.apple.Safari", pid: 4),
-      axTrusted: true, title: "Example Domain",
-      url: .missing(.denied), idleSeconds: 0)
-    // When
-    let line = tracker.observe(sample, at: t0)
-    // Then
-    XCTAssertEqual(line?.grant, "denied")
-    XCTAssertEqual(line?.missing, ["automation:com.apple.Safari"])
-  }
-
-  func testGrantNullForANonBrowser() {
-    // Given: a non-browser front
-    var tracker = Tracker()
-    // When
-    let line = tracker.observe(finderSample, at: t0)
-    // Then
-    XCTAssertNil(line?.grant)
-  }
-
   func testEmitsOnGrantChange() {
     // Given: Safari denied observed at t0
     var tracker = Tracker()
-    let safari = FrontApp(
-      name: "Safari", bundleId: "com.apple.Safari", pid: 4)
     _ = tracker.observe(
       Sample(
-        front: safari, axTrusted: true, title: "Inbox",
-        url: .missing(.denied), idleSeconds: 0),
+        app: "Safari", bundleId: "com.apple.Safari", grant: "denied", title: "Inbox",
+        url: nil, idleSeconds: 0, missing: ["automation:com.apple.Safari"]),
       at: t0)
     // When: the same sample a second later with a new Grant state
     let line = tracker.observe(
       Sample(
-        front: safari, axTrusted: true, title: "Inbox",
-        url: .missing(.noAnswer), idleSeconds: 0),
+        app: "Safari", bundleId: "com.apple.Safari", grant: "noAnswer", title: "Inbox",
+        url: nil, idleSeconds: 0, missing: ["automation:com.apple.Safari"]),
       at: t0.addingTimeInterval(1))
     // Then
     XCTAssertEqual(line?.grant, "noAnswer")
     XCTAssertEqual(line?.ts, "2026-01-01T00:00:01.000Z")
   }
 }
-

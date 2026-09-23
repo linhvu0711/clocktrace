@@ -9,21 +9,26 @@ final class SamplerTests: XCTestCase {
     name: "TextEdit", bundleId: "com.apple.TextEdit", pid: 2)
   private let brave = FrontApp(
     name: "Brave Browser", bundleId: "com.brave.Browser", pid: 4)
+  private let finder = FrontApp(
+    name: "Finder", bundleId: "com.apple.finder", pid: 1)
+  private let loginWindow = FrontApp(
+    name: "loginwindow", bundleId: "com.apple.loginwindow", pid: 4)
   private let t0 = Date(timeIntervalSince1970: 1_767_225_600)
   private let ts0 = "2026-01-01T00:00:00.000Z"
 
   private func reads(
-    front: FrontApp,
+    front: FrontApp?,
     axTrusted: Bool,
     title: String?,
     runScript: @escaping (String) -> String?,
-    safariPrivateFormats: [String] = []
+    safariPrivateFormats: [String] = [],
+    automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 }
   ) -> Reads {
     Reads(
       frontmost: { front },
       axTrusted: { axTrusted },
       focusedTitle: { _ in title },
-      automationStatus: { _, _ in 0 },
+      automationStatus: automationStatus,
       runScript: runScript,
       safariPrivateFormats: { safariPrivateFormats },
       idleSeconds: { 1 }
@@ -197,6 +202,200 @@ final class SamplerTests: XCTestCase {
       result, safariLine(title: "Example Domain", url: nil, missing: []))
   }
 
+  func testTheLoginWindowLineIsEmpty() {
+    // Given: the login window front, Accessibility on
+    let r = reads(
+      front: loginWindow, axTrusted: true, title: "Login", runScript: { _ in nil })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: nil, bundleId: nil, title: nil, url: nil, idleSeconds: 1,
+        missing: []))
+  }
+
+  func testTheNoAccessibilityLineHasNoTitle() {
+    // Given: TextEdit front, Accessibility off
+    let r = reads(
+      front: textEdit, axTrusted: false, title: "Untitled", runScript: { _ in nil })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: "TextEdit", bundleId: "com.apple.TextEdit", title: nil,
+        url: nil, idleSeconds: 1, missing: ["accessibility"]))
+  }
+
+  func testTheDeniedBrowserLineMissesAutomation() {
+    // Given: Safari front, Accessibility on, Automation denied
+    let r = reads(
+      front: safari, axTrusted: true, title: "Example Domain",
+      runScript: { _ in "https://example.com/" },
+      safariPrivateFormats: safariFormats,
+      automationStatus: { _, _ in -1743 })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: "Safari", bundleId: "com.apple.Safari", grant: "denied",
+        title: "Example Domain", url: nil, idleSeconds: 1,
+        missing: ["automation:com.apple.Safari"]))
+  }
+
+  func testTheSlowGrantCheckLineIsNoAnswer() {
+    // Given: Chrome front, Accessibility on, the Grant check sleeps past the limit
+    let chrome = FrontApp(
+      name: "Google Chrome", bundleId: "com.google.Chrome", pid: 3)
+    let r = reads(
+      front: chrome, axTrusted: true, title: "Inbox", runScript: { _ in nil },
+      automationStatus: { _, _ in
+        Thread.sleep(forTimeInterval: 0.5)
+        return 0
+      })
+    let urls = UrlReader(reads: r, checkLimit: .milliseconds(50))
+    // When
+    let result = line(r, urls: urls)
+    // Then
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: "Google Chrome", bundleId: "com.google.Chrome",
+        grant: "noAnswer", title: "Inbox", url: nil, idleSeconds: 1,
+        missing: ["automation:com.google.Chrome"]))
+  }
+
+  func testTheWineAppLineKeepsItsName() {
+    // Given: a Wine app with no bundle id front, Accessibility on, no title
+    let wine = FrontApp(name: "QSanguosha.exe", bundleId: nil, pid: 5)
+    let r = reads(front: wine, axTrusted: true, title: nil, runScript: { _ in nil })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: "QSanguosha.exe", bundleId: nil, title: nil, url: nil,
+        idleSeconds: 1, missing: []))
+  }
+
+  private func sample(_ reads: Reads) -> Sample {
+    Sampler.sample(reads, urls: UrlReader(reads: reads), at: t0)
+  }
+
+  func testTitleNullAndMissingAccessibilityWhenNotTrusted() {
+    // Given: Finder front, Accessibility not granted
+    let r = reads(front: finder, axTrusted: false, title: "Desktop", runScript: { _ in nil })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Sample(
+        app: "Finder", bundleId: "com.apple.finder", title: nil, url: nil,
+        idleSeconds: 1, missing: ["accessibility"]))
+  }
+
+  func testTitleFromTheFocusedWindowWhenTrusted() {
+    // Given: Finder front, Accessibility granted, title available
+    let r = reads(front: finder, axTrusted: true, title: "Desktop", runScript: { _ in nil })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertEqual(result.title, "Desktop")
+    XCTAssertEqual(result.missing, [])
+  }
+
+  func testUrlNullAndMissingAutomationWhenNotGranted() {
+    // Given: Safari front, Automation denied
+    let r = reads(
+      front: safari, axTrusted: true, title: "Example Domain",
+      runScript: { _ in "https://example.com/" },
+      automationStatus: { _, _ in -1743 })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Sample(
+        app: "Safari", bundleId: "com.apple.Safari", grant: "denied",
+        title: "Example Domain", url: nil, idleSeconds: 1,
+        missing: ["automation:com.apple.Safari"]))
+  }
+
+  func testUrlNullAndNothingMissingForANonBrowser() {
+    // Given: a non-browser app is front
+    let r = reads(
+      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertNil(result.url)
+    XCTAssertEqual(result.missing, [])
+  }
+
+  func testAppNullWhenThereIsNoFrontmostApp() {
+    // Given: no frontmost app
+    let r = reads(front: nil, axTrusted: true, title: nil, runScript: { _ in nil })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Sample(app: nil, bundleId: nil, title: nil, url: nil, idleSeconds: 1, missing: []))
+  }
+
+  func testAppNullForTheLoginWindow() {
+    // Given: the login window is front
+    let r = reads(
+      front: loginWindow, axTrusted: true, title: "Login", runScript: { _ in nil })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Sample(app: nil, bundleId: nil, title: nil, url: nil, idleSeconds: 1, missing: []))
+  }
+
+  func testGrantGrantedForABrowserWithAUrl() {
+    // Given: Safari front with a granted URL read
+    let r = reads(
+      front: safari, axTrusted: true, title: "Example Domain",
+      runScript: { _ in "https://example.com/" },
+      safariPrivateFormats: safariFormats)
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertEqual(result.grant, "granted")
+  }
+
+  func testGrantDeniedForADeniedBrowser() {
+    // Given: Safari front with a denied Grant
+    let r = reads(
+      front: safari, axTrusted: true, title: "Example Domain",
+      runScript: { _ in "https://example.com/" },
+      automationStatus: { _, _ in -1743 })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertEqual(result.grant, "denied")
+    XCTAssertEqual(result.missing, ["automation:com.apple.Safari"])
+  }
+
+  func testGrantNullForANonBrowser() {
+    // Given: a non-browser front
+    let r = reads(front: finder, axTrusted: true, title: "Desktop", runScript: { _ in nil })
+    // When
+    let result = sample(r)
+    // Then
+    XCTAssertNil(result.grant)
+  }
+
   func testRunsTheScriptWhenAutomationIsGranted() {
     // Given: Reads for a Safari frontmost with Automation granted
     var scripts: [String] = []
@@ -218,8 +417,9 @@ final class SamplerTests: XCTestCase {
     XCTAssertEqual(
       sample,
       Sample(
-        front: safari, axTrusted: true, title: "Example Domain",
-        url: .granted("https://example.com/"), idleSeconds: 1))
+        app: "Safari", bundleId: "com.apple.Safari", grant: "granted",
+        title: "Example Domain", url: "https://example.com/", idleSeconds: 1,
+        missing: []))
     XCTAssertEqual(
       scripts,
       ["tell application \"Safari\" to get URL of current tab of front window"])
@@ -243,7 +443,8 @@ final class SamplerTests: XCTestCase {
     // When
     let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
-    XCTAssertEqual(sample.url, .missing(.denied))
+    XCTAssertEqual(sample.grant, "denied")
+    XCTAssertNil(sample.url)
     XCTAssertEqual(scripts, [])
   }
 
@@ -269,7 +470,8 @@ final class SamplerTests: XCTestCase {
     // When
     let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
-    XCTAssertEqual(sample.url, .notBrowser)
+    XCTAssertNil(sample.grant)
+    XCTAssertNil(sample.url)
     XCTAssertEqual(automationCalls, [])
     XCTAssertEqual(scripts, [])
   }
@@ -298,8 +500,9 @@ final class SamplerTests: XCTestCase {
     XCTAssertEqual(
       sample,
       Sample(
-        front: chrome, axTrusted: true, title: "Inbox", url: .missing(.noAnswer),
-        idleSeconds: 1))
+        app: "Google Chrome", bundleId: "com.google.Chrome", grant: "noAnswer",
+        title: "Inbox", url: nil, idleSeconds: 1,
+        missing: ["automation:com.google.Chrome"]))
   }
 
   func testTheTitleStaysWhileTheAskWaits() {
@@ -329,8 +532,9 @@ final class SamplerTests: XCTestCase {
     XCTAssertEqual(
       sample,
       Sample(
-        front: chrome, axTrusted: true, title: "Inbox",
-        url: .missing(.notAsked), idleSeconds: 1))
+        app: "Google Chrome", bundleId: "com.google.Chrome", grant: "notAsked",
+        title: "Inbox", url: nil, idleSeconds: 1,
+        missing: ["automation:com.google.Chrome"]))
   }
 
   func testTitleNilWhenNotTrusted() {
@@ -352,7 +556,7 @@ final class SamplerTests: XCTestCase {
     let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
     XCTAssertNil(sample.title)
-    XCTAssertFalse(sample.axTrusted)
+    XCTAssertEqual(sample.missing, ["accessibility"])
     XCTAssertEqual(titleCalls, [])
   }
 }

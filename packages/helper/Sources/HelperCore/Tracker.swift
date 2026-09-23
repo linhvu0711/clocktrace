@@ -14,42 +14,15 @@ public struct Tracker {
   public init() {}
 
   public mutating func observe(_ s: Sample, at now: Date) -> Line? {
-    let noUsableFront = s.front == nil || s.front?.bundleId == "com.apple.loginwindow"
-
-    let app = noUsableFront ? nil : s.front?.name
-    let bundleId = noUsableFront ? nil : s.front?.bundleId
-    let title = noUsableFront ? nil : (s.axTrusted ? s.title : nil)
-    let url: String?
-    let grant: String?
-    switch s.url {
-    case .granted(let u):
-      url = noUsableFront ? nil : u
-      grant = noUsableFront ? nil : "granted"
-    case .missing(let state):
-      url = nil
-      grant = noUsableFront ? nil : state.rawValue
-    case .notBrowser:
-      url = nil
-      grant = nil
-    }
-
-    var missing: [String] = []
-    if !s.axTrusted {
-      missing.append("accessibility")
-    }
-    if case .missing = s.url, let id = s.front?.bundleId, !noUsableFront {
-      missing.append("automation:\(id)")
-    }
-
     let candidate = Line(
       ts: Self.isoFormatter.string(from: now),
-      app: app,
-      bundleId: bundleId,
-      grant: grant,
-      title: title,
-      url: url,
+      app: s.app,
+      bundleId: s.bundleId,
+      grant: s.grant,
+      title: s.title,
+      url: s.url,
       idleSeconds: s.idleSeconds,
-      missing: missing
+      missing: s.missing
     )
 
     let changed: Bool
