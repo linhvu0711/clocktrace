@@ -3,7 +3,6 @@ import {
   Effect,
   Either,
   Option,
-  ParseResult,
   Ref,
   Schema,
 } from "effect";
@@ -17,11 +16,12 @@ import {
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
 import type { Device } from "./device.js";
-import {
+import type {
   InvalidInputError,
-  type InvalidRangeError,
-  type StoreError,
+  InvalidRangeError,
+  StoreError,
 } from "./errors.js";
+import { decodeInput } from "./input.js";
 import { type Resolution, resolve } from "./matcher.js";
 import type { Project } from "./project.js";
 import { Range, resolveRange, UsedRange, usedWindow } from "./range.js";
@@ -99,21 +99,6 @@ export const ActivitiesReply = Schema.Struct({
 /** The note a reply carries when the window holds nothing. */
 const emptyNote = (rows: ReadonlyArray<unknown>): { readonly note?: string } =>
   rows.length === 0 ? { note: "no activity in this range" } : {};
-
-// Core checks every tool input itself, so the CLI Twin and the Host get the
-// same words: the first failing field and the rule it breaks.
-const decodeInput =
-  <A, I>(schema: Schema.Schema<A, I>) =>
-  (input: I): Effect.Effect<A, InvalidInputError> =>
-    Schema.decodeUnknown(schema)(input).pipe(
-      Effect.mapError((error) => {
-        const [issue] = ParseResult.ArrayFormatter.formatErrorSync(error);
-        return new InvalidInputError({
-          field: issue?.path.join(".") ?? "input",
-          reason: issue?.message ?? error.message,
-        });
-      }),
-    );
 
 interface RangeRows {
   readonly rows: ReadonlyArray<{
