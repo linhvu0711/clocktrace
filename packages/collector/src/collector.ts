@@ -8,8 +8,8 @@ import { DateTime, Effect, Option, Ref, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { makeActivityWriter } from "./activity-writer.js";
+import { deleteSavedGrant, saveGrant } from "./grant.js";
 import type { HelperLine } from "./helper-line.js";
-import { deleteSavedGrant, saveGrant } from "./saved-grant.js";
 
 export const idleAfterSeconds = 300;
 

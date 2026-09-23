@@ -378,18 +378,24 @@ describe("status", () => {
           state: "granted",
           note: null,
           checkedAt: null,
+          kind: "accessibility",
+          bundleId: null,
         },
         {
           name: "automation",
           state: "not checked",
           note: "no browser used yet",
           checkedAt: null,
+          kind: "automation",
+          bundleId: null,
         },
         {
           name: "full disk access",
           state: "granted",
           note: null,
           checkedAt: null,
+          kind: "fullDiskAccess",
+          bundleId: null,
         },
       ],
       lastActivity: null,
@@ -416,18 +422,29 @@ describe("status", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(JSON.parse(output[0] ?? "").permissions).toEqual([
-      { name: "accessibility", state: "granted", note: null, checkedAt: null },
+      {
+        name: "accessibility",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+        kind: "accessibility",
+        bundleId: null,
+      },
       {
         name: "automation Chrome",
         state: "not checked",
         note: "Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
         checkedAt: null,
+        kind: "automation",
+        bundleId: "com.google.Chrome",
       },
       {
         name: "full disk access",
         state: "granted",
         note: null,
         checkedAt: null,
+        kind: "fullDiskAccess",
+        bundleId: null,
       },
     ]);
   });
@@ -625,18 +642,29 @@ describe("status", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(JSON.parse(output[0] ?? "").permissions).toEqual([
-      { name: "accessibility", state: "granted", note: null, checkedAt: null },
+      {
+        name: "accessibility",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+        kind: "accessibility",
+        bundleId: null,
+      },
       {
         name: "automation Safari",
         state: "denied",
         note: "URLs in Safari are not tracked",
         checkedAt: "2026-09-19T18:00:00.000Z",
+        kind: "automation",
+        bundleId: "com.apple.Safari",
       },
       {
         name: "full disk access",
         state: "granted",
         note: null,
         checkedAt: null,
+        kind: "fullDiskAccess",
+        bundleId: null,
       },
     ]);
   });

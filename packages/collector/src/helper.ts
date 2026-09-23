@@ -2,7 +2,16 @@ import { join } from "node:path";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Chunk, Data, Effect, Layer, Option, type Scope, Stream } from "effect";
+import {
+  Chunk,
+  Data,
+  Effect,
+  Layer,
+  Option,
+  Schema,
+  type Scope,
+  Stream,
+} from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import {
@@ -12,12 +21,61 @@ import {
   decodeDevicePeerLine,
 } from "./biome-line.js";
 import { decodeHelperLine, type HelperLine } from "./helper-line.js";
-import {
-  decodePermissions,
-  decodeRequestOutcome,
-  type GrantRequest,
-  requestArgs,
-} from "./permissions.js";
+
+export const GrantState = Schema.Literal(
+  "granted",
+  "denied",
+  "notAsked",
+  "notRunning",
+  "noAnswer",
+  "notInstalled",
+);
+
+export type GrantState = Schema.Schema.Type<typeof GrantState>;
+
+export const Permissions = Schema.parseJson(
+  Schema.Struct({
+    accessibility: GrantState,
+    automation: Schema.Record({ key: Schema.String, value: GrantState }),
+    fullDiskAccess: GrantState,
+  }),
+);
+
+export type Permissions = Schema.Schema.Type<typeof Permissions>;
+
+export const decodePermissions = Schema.decodeUnknown(Permissions);
+
+export const GrantRequest = Schema.Union(
+  Schema.Struct({ kind: Schema.Literal("accessibility") }),
+  Schema.Struct({
+    kind: Schema.Literal("automation"),
+    bundleId: Schema.String,
+  }),
+  Schema.Struct({ kind: Schema.Literal("fullDiskAccess") }),
+);
+
+export type GrantRequest = Schema.Schema.Type<typeof GrantRequest>;
+
+export const requestArgs = (r: GrantRequest): ReadonlyArray<string> => {
+  switch (r.kind) {
+    case "accessibility":
+      return ["accessibility"];
+    case "automation":
+      return ["automation", r.bundleId];
+    case "fullDiskAccess":
+      return ["fulldiskaccess"];
+  }
+};
+
+export const RequestOutcome = Schema.Literal("asked", "notRunning");
+
+export type RequestOutcome = Schema.Schema.Type<typeof RequestOutcome>;
+
+export const RequestOutcomeLine = Schema.parseJson(
+  Schema.Struct({ outcome: Schema.Literal("asked", "notRunning") }),
+);
+
+export const decodeRequestOutcome = Schema.decodeUnknown(RequestOutcomeLine);
 
 export class HelperNotFoundError extends Data.TaggedError(
   "HelperNotFoundError",
