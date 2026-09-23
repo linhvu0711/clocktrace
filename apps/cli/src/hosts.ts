@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
-import { Data, Effect, Layer, Option } from "effect";
+import { Data, Effect, Either, Layer, Option } from "effect";
 
 import { shellQuote } from "./format.js";
 import { removeRegistration, setRegistration } from "./hermes-config.js";
@@ -399,8 +399,18 @@ const onPath = (
 
 const hermesConfigPath = () => join(homedir(), ".hermes", "config.yaml");
 
+interface HermesRead {
+  readonly text: string;
+  readonly exists: boolean;
+}
+
+// The file no longer holds what was read: another writer saved in between.
+class HermesConfigChangedError extends Data.TaggedError(
+  "HermesConfigChangedError",
+) {}
+
 const readHermes: Effect.Effect<
-  { readonly text: string; readonly exists: boolean },
+  HermesRead,
   PlatformError,
   FileSystem.FileSystem
 > = Effect.gen(function* () {
@@ -415,29 +425,67 @@ const readHermes: Effect.Effect<
 
 // Write beside the resolved target so a symlink keeps pointing at its
 // source, and keep the target's mode on the replacement file.
+// Just before the rename, the file must still hold what was read, or a save
+// by Hermes or the user would be lost. Hermes takes no lock, so a save can
+// still land between that compare and the rename, a window of microseconds.
 const writeHermes = (
+  read: HermesRead,
   text: string,
-  exists: boolean,
-): Effect.Effect<void, PlatformError, FileSystem.FileSystem> =>
+): Effect.Effect<
+  void,
+  HermesConfigChangedError | PlatformError,
+  FileSystem.FileSystem
+> =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = hermesConfigPath();
-    const target = exists
+    const target = read.exists
       ? yield* fs
           .realPath(path)
           .pipe(Effect.catchAll(() => Effect.succeed(path)))
       : path;
-    const info = exists
+    const info = read.exists
       ? yield* fs.stat(target).pipe(Effect.catchAll(() => Effect.succeed(null)))
       : null;
     yield* fs.makeDirectory(join(homedir(), ".hermes"), { recursive: true });
     const tmp = `${target}.tmp`;
+    const unchanged = Effect.flatMap(readHermes, (now) =>
+      now.exists === read.exists && now.text === read.text
+        ? Effect.void
+        : new HermesConfigChangedError(),
+    );
     yield* fs.writeFileString(tmp, text).pipe(
       Effect.andThen(info === null ? Effect.void : fs.chmod(tmp, info.mode)),
+      Effect.andThen(unchanged),
       Effect.andThen(fs.rename(tmp, target)),
       Effect.tapError(() => fs.remove(tmp).pipe(Effect.ignore)),
     );
   });
+
+// Read, edit, write; a save that lands in between starts it over on the new
+// text, up to three tries. An edit that returns none writes nothing, and
+// the result says whether a write happened.
+const editHermes = <E>(
+  edit: (text: string) => Either.Either<Option.Option<string>, E>,
+): Effect.Effect<
+  boolean,
+  E | HermesConfigChangedError | PlatformError,
+  FileSystem.FileSystem
+> =>
+  Effect.gen(function* () {
+    const read = yield* readHermes;
+    const next = yield* edit(read.text);
+    if (Option.isNone(next)) {
+      return false;
+    }
+    yield* writeHermes(read, next.value);
+    return true;
+  }).pipe(
+    Effect.retry({
+      times: 2,
+      while: (e) => e instanceof HermesConfigChangedError,
+    }),
+  );
 
 export type RegisterOutcome =
   | { readonly outcome: "registered" }
@@ -448,12 +496,12 @@ const registerHermes: Effect.Effect<
   never,
   FileSystem.FileSystem
 > = Effect.gen(function* () {
-  const { text, exists } = yield* readHermes;
-  const next = yield* setRegistration(text, {
-    command: serverNode,
-    args: [serverEntry, "mcp"],
-  });
-  yield* writeHermes(next, exists);
+  yield* editHermes((text) =>
+    setRegistration(text, {
+      command: serverNode,
+      args: [serverEntry, "mcp"],
+    }).pipe(Either.map(Option.some)),
+  );
   return { outcome: "registered" } as const;
 }).pipe(
   Effect.catchAll(() =>
@@ -469,13 +517,8 @@ const unregisterHermes: Effect.Effect<
   HostRemoveError,
   FileSystem.FileSystem
 > = Effect.gen(function* () {
-  const { text, exists } = yield* readHermes;
-  const next = yield* removeRegistration(text);
-  if (Option.isNone(next)) {
-    return "not registered" as const;
-  }
-  yield* writeHermes(next.value, exists);
-  return "unregistered" as const;
+  const wrote = yield* editHermes(removeRegistration);
+  return wrote ? ("unregistered" as const) : ("not registered" as const);
 }).pipe(Effect.mapError(() => new HostRemoveError({ host: "hermes" })));
 
 export class Hosts extends Effect.Service<Hosts>()("Hosts", {

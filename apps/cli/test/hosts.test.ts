@@ -20,7 +20,7 @@ import {
   type LaunchdState,
   type Permissions,
 } from "@clocktrace/collector";
-import { type Command, CommandExecutor } from "@effect/platform";
+import { type Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import {
   ConfigProvider,
@@ -164,6 +164,58 @@ const unregister = (
             ? NodeContext.layer
             : Layer.mergeAll(NodeContext.layer, executorLayer),
         ),
+      ),
+    ),
+  );
+
+// A FileSystem where another writer saves `path` right after each read of
+// it: `save(n)` lands after read n, `null` deletes, `undefined` does nothing.
+const otherWriter = (
+  path: string,
+  save: (read: number) => string | null | undefined,
+) =>
+  Layer.effect(
+    FileSystem.FileSystem,
+    Effect.map(FileSystem.FileSystem, (fs) => {
+      let reads = 0;
+      return {
+        ...fs,
+        readFileString: (p: string, encoding?: string) =>
+          fs.readFileString(p, encoding).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                if (p !== path) {
+                  return;
+                }
+                const text = save(reads++);
+                if (text === null) {
+                  rmSync(path);
+                } else if (text !== undefined) {
+                  writeFileSync(path, text);
+                }
+              }),
+            ),
+          ),
+      };
+    }),
+  );
+
+const raceHermes = <A, E>(
+  op: (
+    h: Hosts,
+  ) => Effect.Effect<
+    A,
+    E,
+    FileSystem.FileSystem | CommandExecutor.CommandExecutor
+  >,
+  writer: ReturnType<typeof otherWriter>,
+) =>
+  Effect.runPromise(
+    Effect.exit(
+      Effect.flatMap(Hosts, op).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(writer),
+        Effect.provide(NodeContext.layer),
       ),
     ),
   );
@@ -989,5 +1041,101 @@ describe("hosts", () => {
     expect(readFileSync(path, "utf8")).toBe(
       "mcp_servers: {clocktrace: {command: x}}\n",
     );
+  });
+
+  it("hermes register keeps a save made during the edit", async () => {
+    // Given: Hermes saves config.yaml right after setup reads it
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "model: nous-1\n");
+    const writer = otherWriter(path, (n) =>
+      n === 0 ? "model: nous-2\n" : undefined,
+    );
+    // When
+    const outcome = await raceHermes((h) => h.register("hermes"), writer);
+    // Then
+    expect(outcome).toEqual(Exit.succeed({ outcome: "registered" }));
+    expect(parse(readFileSync(path, "utf8"))).toEqual({
+      model: "nous-2",
+      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
+      mcp_servers: {
+        clocktrace: { command: serverNode, args: [serverEntry, "mcp"] },
+      },
+    });
+  });
+
+  it("hermes unregister keeps a save made during the edit", async () => {
+    // Given: Hermes saves config.yaml right after uninstall reads it
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    const registered = (model: string) =>
+      `model: ${model}\nmcp_servers:\n  clocktrace:\n    command: x\n`;
+    writeFileSync(path, registered("nous-1"));
+    const writer = otherWriter(path, (n) =>
+      n === 0 ? registered("nous-2") : undefined,
+    );
+    // When
+    const outcome = await raceHermes((h) => h.unregister("hermes"), writer);
+    // Then
+    expect(outcome).toEqual(Exit.succeed("unregistered"));
+    expect(readFileSync(path, "utf8")).toBe("model: nous-2\n");
+  });
+
+  it("hermes gives up after 3 changed reads and keeps the other save", async () => {
+    // Given: Hermes saves config.yaml after every read, so no try is clean
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "model: nous-1\n");
+    let last = "";
+    const writer = otherWriter(path, (n) => {
+      last = `model: nous-${n + 2}\n`;
+      return last;
+    });
+    // When
+    const outcome = await raceHermes((h) => h.register("hermes"), writer);
+    // Then
+    expect(outcome).toEqual(
+      Exit.succeed({ outcome: "failed", byHand: manualCommand.hermes }),
+    );
+    expect(readFileSync(path, "utf8")).toBe(last);
+    expect(existsSync(`${path}.tmp`)).toBe(false);
+  });
+
+  it("hermes unregister gives up after 3 changed reads with a HostRemoveError", async () => {
+    // Given: Hermes saves config.yaml after every read, so no try is clean
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    const registered = (model: string) =>
+      `model: ${model}\nmcp_servers:\n  clocktrace:\n    command: x\n`;
+    writeFileSync(path, registered("nous-1"));
+    let last = "";
+    const writer = otherWriter(path, (n) => {
+      last = registered(`nous-${n + 2}`);
+      return last;
+    });
+    // When
+    const outcome = await raceHermes((h) => h.unregister("hermes"), writer);
+    // Then
+    expect(outcome).toEqual(Exit.fail(new HostRemoveError({ host: "hermes" })));
+    expect(readFileSync(path, "utf8")).toBe(last);
+    expect(existsSync(`${path}.tmp`)).toBe(false);
+  });
+
+  it("hermes register after the file is deleted mid-edit writes only the registration", async () => {
+    // Given: the user deletes config.yaml right after setup reads it
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "model: nous-1\n");
+    const writer = otherWriter(path, (n) => (n === 0 ? null : undefined));
+    // When
+    const outcome = await raceHermes((h) => h.register("hermes"), writer);
+    // Then
+    expect(outcome).toEqual(Exit.succeed({ outcome: "registered" }));
+    expect(parse(readFileSync(path, "utf8"))).toEqual({
+      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
+      mcp_servers: {
+        clocktrace: { command: serverNode, args: [serverEntry, "mcp"] },
+      },
+    });
   });
 });
