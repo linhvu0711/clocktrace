@@ -26,6 +26,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { ConfigProvider, DateTime, Effect, Layer, Ref } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { InstalledStore } from "../src/installed-store.js";
 import { makeServer, type StoreLayerError } from "../src/server.js";
@@ -193,6 +194,76 @@ describe("server", () => {
     for (const t of tools) {
       expect(t.inputSchema.type).toBe("object");
       expect(t.outputSchema?.type).toBe("object");
+    }
+  });
+
+  it("every tool's output shape accepts its real reply", async () => {
+    // Given: a server over a seeded day, and the output shape each tool lists
+    const { client, close } = await connect(withActivities(seedDay));
+    const { tools } = await client.listTools();
+    const call = (name: string, args: Record<string, unknown>) =>
+      callTool(client, { name, arguments: args });
+    const idOf = (result: CallToolResult) =>
+      (result.structuredContent as { id: string }).id;
+    // When: every tool answers once
+    const rule = await call("add_rule", {
+      field: "app",
+      compare: "is",
+      value: "com.example.proof",
+      effect: "private",
+    });
+    const category = await call("set_category", { name: "Deep work" });
+    const project = await call("set_project", { name: "Thesis" });
+    const replies: ReadonlyArray<readonly [string, CallToolResult]> = [
+      ["list_categories", await call("list_categories", {})],
+      ["list_projects", await call("list_projects", {})],
+      ["list_rules", await call("list_rules", {})],
+      ["add_rule", rule],
+      ["set_category", category],
+      ["set_project", project],
+      ["remove_rule", await call("remove_rule", { id: idOf(rule) })],
+      [
+        "remove_category",
+        await call("remove_category", { id: idOf(category) }),
+      ],
+      ["remove_project", await call("remove_project", { id: idOf(project) })],
+      ["summary", await call("summary", { range: day, groupBy: "app" })],
+      ["timeline", await call("timeline", { range: day })],
+      ["activities", await call("activities", { range: day })],
+      ["status", await call("status", {})],
+    ];
+    await close();
+    const checks = replies.map(([name, result]) => {
+      const listed = tools.find((t) => t.name === name)?.outputSchema;
+      const shape = z.fromJSONSchema(listed as z.core.JSONSchema.JSONSchema);
+      return {
+        name,
+        isError: result.isError,
+        accepted: shape.safeParse(result.structuredContent).success,
+      };
+    });
+    // Then
+    expect(checks.map((c) => c.name).sort()).toEqual([
+      "activities",
+      "add_rule",
+      "list_categories",
+      "list_projects",
+      "list_rules",
+      "remove_category",
+      "remove_project",
+      "remove_rule",
+      "set_category",
+      "set_project",
+      "status",
+      "summary",
+      "timeline",
+    ]);
+    for (const check of checks) {
+      expect(check).toEqual({
+        name: check.name,
+        isError: undefined,
+        accepted: true,
+      });
     }
   });
 
@@ -539,6 +610,23 @@ describe("server", () => {
     });
     expect(listed.structuredContent).toEqual({
       categories: [{ id, name: "Reading", productive: false }],
+    });
+  });
+
+  it("set_category with no productive creates a Category that is not productive", async () => {
+    // Given: a server over the Starter set
+    const { client, close } = await connect(Store.Test);
+    // When
+    const result = await callTool(client, {
+      name: "set_category",
+      arguments: { name: "Deep work" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      name: "Deep work",
+      productive: false,
     });
   });
 
@@ -938,6 +1026,54 @@ describe("server", () => {
     // Then
     expect(result.isError).toBe(true);
     expect(text(result)).toMatch(/at groupBy$/);
+  });
+
+  it("a from that is not a date gets core's text", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const result = await callTool(client, {
+      name: "summary",
+      arguments: { range: { from: "today", to: "2026-09-18" }, groupBy: "app" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      'range: from "today" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
+    );
+  });
+
+  it("a groupBy outside the list names the allowed values", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const result = await callTool(client, {
+      name: "summary",
+      arguments: { range: day, groupBy: "week" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      'MCP error -32602: Input validation error: Invalid arguments for tool summary: Invalid option: expected one of "category"|"project"|"app"|"device" at groupBy',
+    );
+  });
+
+  it("a wrong type is stopped by the SDK", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const result = await callTool(client, {
+      name: "activities",
+      arguments: { range: { from: 1, to: "2026-09-18" } },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "MCP error -32602: Input validation error: Invalid arguments for tool activities: Invalid input: expected string, received number at range.from",
+    );
   });
 
   it("timeline answers with the window first, then blocks in order", async () => {

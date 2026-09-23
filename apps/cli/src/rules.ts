@@ -1,5 +1,6 @@
 import {
   addRule,
+  type InvalidInputError,
   type InvalidRuleError,
   type Rule,
   RuleCompare,
@@ -92,7 +93,7 @@ export const printAddedRule = (
   json: boolean,
 ): Effect.Effect<
   void,
-  InvalidRuleError | ParseError | StoreError,
+  InvalidInputError | InvalidRuleError | ParseError | StoreError,
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {

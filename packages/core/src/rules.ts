@@ -1,23 +1,37 @@
-import { Effect, type Schema } from "effect";
+import { Effect, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import type { NewActivity } from "./activity.js";
 import {
+  type InvalidInputError,
   InvalidRuleError,
   RuleNotFoundError,
   type StoreError,
 } from "./errors.js";
+import { decodeInput } from "./input.js";
 import { resolve } from "./matcher.js";
 import { exceedsBacktrackBudget } from "./regex-budget.js";
-import { NewRule, type Rule } from "./rule.js";
+import { NewRule, Rule } from "./rule.js";
 import { Store } from "./store.js";
 
-export const RuleInput = NewRule.omit("position");
+export const RuleInput = Schema.Struct({
+  ...NewRule.omit("position").fields,
+  target: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
+});
+
+export const RulesReply = Schema.Struct({ rules: Schema.Array(Rule) });
 
 export const addRule = (
-  input: RuleInput,
-): Effect.Effect<Rule, InvalidRuleError | ParseError | StoreError, Store> =>
+  encoded: Schema.Schema.Encoded<typeof RuleInput>,
+): Effect.Effect<
+  Rule,
+  InvalidInputError | InvalidRuleError | ParseError | StoreError,
+  Store
+> =>
   Effect.gen(function* () {
+    const input = yield* decodeInput(RuleInput)(encoded);
     const store = yield* Store;
     if (input.compare === "matches") {
       try {

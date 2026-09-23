@@ -95,6 +95,14 @@ describe("projects", () => {
     expect(projects).toEqual([result]);
   });
 
+  it("setProject with no id creates the Project", async () => {
+    // Given: an empty store
+    // When: the input leaves id out
+    const result = await useEmpty(setProject({ name: "Thesis" }));
+    // Then
+    expect(result).toMatchObject({ name: "Thesis" });
+  });
+
   it("setProject with an id renames", async () => {
     // Given: an empty store with one project
     const { inserted, result } = await useEmpty(

@@ -2,26 +2,35 @@ import { Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import {
+  type InvalidInputError,
   ProjectInUseError,
   ProjectNotFoundError,
   type StoreError,
 } from "./errors.js";
-import { NewProject, type Project } from "./project.js";
+import { decodeInput } from "./input.js";
+import { NewProject, Project } from "./project.js";
 import { Store } from "./store.js";
 
 export const ProjectInput = Schema.Struct({
-  id: Schema.NullOr(Schema.String),
+  id: Schema.optionalWith(Schema.NullOr(Schema.String), {
+    default: () => null,
+  }),
   ...NewProject.fields,
 });
 
+export const ProjectsReply = Schema.Struct({
+  projects: Schema.Array(Project),
+});
+
 export const setProject = (
-  input: ProjectInput,
+  encoded: Schema.Schema.Encoded<typeof ProjectInput>,
 ): Effect.Effect<
   Project,
-  ProjectNotFoundError | ParseError | StoreError,
+  InvalidInputError | ProjectNotFoundError | ParseError | StoreError,
   Store
 > =>
   Effect.gen(function* () {
+    const input = yield* decodeInput(ProjectInput)(encoded);
     const store = yield* Store;
     if (input.id === null) {
       return yield* store.insertProject({ name: input.name });

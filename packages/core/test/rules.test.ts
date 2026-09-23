@@ -350,6 +350,40 @@ describe("rules", () => {
     }
   });
 
+  it("addRule with a category effect and no target names target", async () => {
+    // Given: an empty store
+    // When: the input leaves target out
+    const result = await useEmpty(
+      Effect.either(
+        addRule({
+          field: "app",
+          compare: "is",
+          value: "com.apple.Safari",
+          effect: "category",
+        }),
+      ),
+    );
+    // Then
+    expect(Either.isLeft(result) && result.left.message).toBe(
+      "target: a category rule needs a Category id",
+    );
+  });
+
+  it("addRule with a private effect and no target stores target null", async () => {
+    // Given: an empty store
+    // When: the input leaves target out
+    const rule = await useEmpty(
+      addRule({
+        field: "app",
+        compare: "is",
+        value: "com.apple.Safari",
+        effect: "private",
+      }),
+    );
+    // Then
+    expect(rule).toMatchObject({ effect: "private", target: null });
+  });
+
   it("readPrivate blanks title and url on a Private match", async () => {
     // Given: Store.Test seeded with the Starter set, a device, an incognito title
     const result = await useTest(

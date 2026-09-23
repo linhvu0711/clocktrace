@@ -15,6 +15,7 @@ export * from "./projects.js";
 export * from "./queries.js";
 export * from "./range.js";
 export * from "./regex-budget.js";
+export * from "./removed.js";
 export * from "./rule.js";
 export * from "./rules.js";
 export * from "./sqlite-store.js";
