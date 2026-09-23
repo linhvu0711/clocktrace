@@ -43,8 +43,8 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
 | `ts` | ISO 8601 UTC with milliseconds |
 | `app` | `NSWorkspace` frontmost app name; `null` at the login window |
 | `bundleId` | `NSWorkspace` frontmost bundle id; `null` at the login window |
-| `title` | Accessibility focused-window title; `null` when Accessibility is not granted or the app has no title |
-| `url` | Apple Event read for Safari and the Chrome family; `null` for other apps or when the read fails |
+| `title` | Accessibility focused-window title; `null` when Accessibility is not granted, the app has no title, or the window is a Private window |
+| `url` | Apple Event read for Safari and the Chrome family; `null` for other apps, when the read fails, for a Private window, and for Safari when the Helper cannot tell (Accessibility off or no private text loaded) |
 | `idleSeconds` | `CGEventSource` seconds since last input |
 | `missing` | grants the line needed but did not have: `accessibility`, `automation:<bundleId>` |
 
