@@ -7,7 +7,7 @@ import { Helper, type HelperExitedError } from "./helper.js";
 import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
-import { readSavedGrants } from "./saved-grant.js";
+import { readSavedGrants, saveLiveGrants } from "./saved-grant.js";
 import {
   browserName,
   noAnswerNote,
@@ -127,6 +127,9 @@ export const readStatus = (): Effect.Effect<
       ? yield* Effect.scoped(helper.permissions(appPath))
       : null;
     const store = yield* Store;
+    if (grants !== null) {
+      yield* saveLiveGrants(grants, yield* DateTime.now);
+    }
     const saved = yield* readSavedGrants();
     const items =
       grants === null

@@ -4,6 +4,7 @@ import {
   DateTime,
   Effect,
   Layer,
+  Option,
   Ref,
   Stream,
   TestClock,
@@ -488,5 +489,29 @@ describe("status", () => {
       "last activity: none yet",
       `database: ${dbPath}`,
     ]);
+  });
+
+  it("a live check updates the Saved grant", async () => {
+    // Given: Chrome answered granted at NOW
+    // When
+    const saved = await runAt(
+      {
+        accessibility: "granted",
+        automation: { "com.google.Chrome": "granted" },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      Effect.gen(function* () {
+        yield* readStatus();
+        const store = yield* Store;
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }),
+    );
+    // Then
+    expect(saved).toEqual(
+      Option.some(
+        '{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}',
+      ),
+    );
   });
 });
