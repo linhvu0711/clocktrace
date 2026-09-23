@@ -1,4 +1,4 @@
-import { applyPrivate, Store, type StoreError } from "@clocktrace/core";
+import { readPrivate, Store, type StoreError } from "@clocktrace/core";
 import { DateTime, Effect, Ref, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
@@ -41,12 +41,10 @@ export const collect = <E, R>(
       DateTime.distance(open.startedAt, endedAt) < minActivityMillis
         ? Effect.void
         : Effect.gen(function* () {
-            const blanked = yield* applyPrivate({
-              deviceId,
-              ...open,
-              endedAt,
-            }).pipe(Effect.provideService(Store, store));
-            yield* store.insertActivity(blanked);
+            const blank = yield* readPrivate.pipe(
+              Effect.provideService(Store, store),
+            );
+            yield* store.insertActivity(blank({ deviceId, ...open, endedAt }));
           });
 
     const remembered = yield* Ref.make<
