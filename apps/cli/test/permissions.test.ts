@@ -145,6 +145,7 @@ describe("permissions", () => {
           shown: yield* terminal.shown,
           requests: yield* Ref.get(requests),
           commands: yield* Ref.get(exec.recorded),
+          permCalls: yield* Ref.get(permCalls),
         };
       }).pipe(
         Effect.withConfigProvider(
@@ -183,278 +184,6 @@ describe("permissions", () => {
     ]);
     expect(shown).not.toContain("Allow");
     expect(requests).toEqual([]);
-  });
-
-  it("a denied browser offers the reset and asks macOS again on y", async () => {
-    // Given: Chromium denied before the walk; tccutil succeeds; the re-read
-    // after the request says granted
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "denied" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, shown, requests, commands } = await run(
-      [p, { ...p, automation: { "org.chromium.Chromium": "granted" } }],
-      ["y", { key: "enter" }],
-      true,
-      {
-        commands: {
-          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
-        },
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "org.chromium.Chromium" },
-    ]);
-    expect(shown).toContain(
-      "macOS will not ask again — reset the grant for Clocktrace?",
-    );
-    expect(shown).not.toContain("Allow");
-    expect(output).toEqual([
-      "Permissions   2 of 3 granted",
-      "  ✔ Accessibility          window titles",
-      "  ✔ Full Disk Access       iPhone and iPad import",
-      "  ✔ Automation · Chromium  granted",
-    ]);
-  });
-
-  it("n at the reset offer prints the manual reset command", async () => {
-    // Given: Chromium denied before the walk, answered n at the offer
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "denied" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, requests, commands } = await run(
-      [p],
-      ["n", { key: "enter" }],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual([]);
-    expect(requests).toEqual([]);
-    expect(output).toEqual([
-      "Permissions   2 of 3 granted",
-      "  ✔ Accessibility          window titles",
-      "  ✔ Full Disk Access       iPhone and iPad import",
-      "  ○ Automation · Chromium  later: tccutil reset AppleEvents com.clocktrace.app, then run clocktrace permissions",
-    ]);
-  });
-
-  it("a browser reset re-asks the browsers it cleared", async () => {
-    // Given: Brave granted, Chromium denied; the reset clears both, so the
-    // re-read after the Chromium ask reads Brave notAsked
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: {
-        "com.brave.Browser": "granted",
-        "org.chromium.Chromium": "denied",
-      },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, shown, requests, commands } = await run(
-      [
-        p,
-        {
-          ...p,
-          automation: {
-            "com.brave.Browser": "notAsked",
-            "org.chromium.Chromium": "granted",
-          },
-        },
-        {
-          ...p,
-          automation: {
-            "com.brave.Browser": "granted",
-            "org.chromium.Chromium": "granted",
-          },
-        },
-      ],
-      ["y", { key: "enter" }, { key: "enter" }],
-      true,
-      {
-        commands: {
-          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
-        },
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "org.chromium.Chromium" },
-      { kind: "automation", bundleId: "com.brave.Browser" },
-    ]);
-    expect(shown).toContain("Allow Automation · Brave (URLs in Brave)");
-    expect(output).toEqual([
-      "Permissions   3 of 4 granted",
-      "  ✔ Accessibility          window titles",
-      "  ✔ Automation · Brave     URLs in Brave",
-      "  ✔ Full Disk Access       iPhone and iPad import",
-      "  ✔ Automation · Chromium  granted",
-      "  ✔ Automation · Brave     granted",
-    ]);
-  });
-
-  it("a browser reset re-asks the browsers it cleared when its own ask fails", async () => {
-    // Given: Brave granted, Chromium denied; the reset clears both, then the
-    // Chromium ask dies in the helper, so nothing reads the states again
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: {
-        "com.brave.Browser": "granted",
-        "org.chromium.Chromium": "denied",
-      },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, requests } = await run(
-      [
-        p,
-        {
-          ...p,
-          automation: {
-            "com.brave.Browser": "granted",
-            "org.chromium.Chromium": "notAsked",
-          },
-        },
-      ],
-      ["y", { key: "enter" }, { key: "enter" }],
-      true,
-      {
-        commands: {
-          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
-        },
-        requestError: (grant) =>
-          grant.kind === "automation" &&
-          grant.bundleId === "org.chromium.Chromium"
-            ? new HelperExitedError({ cause: "open exited 1" })
-            : null,
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "com.brave.Browser" },
-    ]);
-    expect(output.slice(-2)).toEqual([
-      "  ✘ Automation · Chromium  helper exited: open exited 1",
-      "  ✔ Automation · Brave     granted",
-    ]);
-  });
-
-  it("a second denied browser after a reset gets Allow, not a second reset", async () => {
-    // Given: Brave and Chromium both denied; one reset clears both
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: {
-        "com.brave.Browser": "denied",
-        "org.chromium.Chromium": "denied",
-      },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, shown, requests, commands } = await run(
-      [
-        p,
-        {
-          ...p,
-          automation: {
-            "com.brave.Browser": "granted",
-            "org.chromium.Chromium": "notAsked",
-          },
-        },
-        {
-          ...p,
-          automation: {
-            "com.brave.Browser": "granted",
-            "org.chromium.Chromium": "granted",
-          },
-        },
-      ],
-      ["y", { key: "enter" }, { key: "enter" }],
-      true,
-      {
-        commands: {
-          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
-        },
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "com.brave.Browser" },
-      { kind: "automation", bundleId: "org.chromium.Chromium" },
-    ]);
-    expect(shown).toContain("Allow Automation · Chromium (URLs in Chromium)");
-    expect(output.slice(-2)).toEqual([
-      "  ✔ Automation · Brave     granted",
-      "  ✔ Automation · Chromium  granted",
-    ]);
-  });
-
-  it("a failed tccutil prints its error and the walk goes on", async () => {
-    // Given: Chromium and full disk access denied; tccutil exits 64 with its
-    // real stderr text; full disk access grants on re-read
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "denied" },
-      fullDiskAccess: "denied",
-    };
-    // When
-    const { exit, output, requests } = await run(
-      [p, { ...p, fullDiskAccess: "granted" }],
-      ["y", { key: "enter" }, { key: "enter" }, { key: "enter" }],
-      true,
-      {
-        commands: {
-          "tccutil reset AppleEvents com.clocktrace.app": {
-            code: 64,
-            output:
-              'tccutil: No such bundle identifier "com.clocktrace.app": The operation couldn’t be completed. (OSStatus error -10814.)',
-          },
-        },
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
-    const cross = output.indexOf(
-      '  ✘ Automation · Chromium  tccutil: No such bundle identifier "com.clocktrace.app": The operation couldn’t be completed. (OSStatus error -10814.)',
-    );
-    const granted = output.indexOf("  ✔ Full Disk Access       granted");
-    expect(cross).toBeGreaterThanOrEqual(0);
-    expect(granted).toBeGreaterThan(cross);
-  });
-
-  it("a tccutil failure with no output prints its exit code", async () => {
-    // Given: Chromium denied; tccutil not listed, so it exits 1 with no output
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "denied" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, requests, commands } = await run(
-      [p],
-      ["y", { key: "enter" }],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
-    expect(requests).toEqual([]);
-    expect(output[output.length - 1]).toBe(
-      "  ✘ Automation · Chromium  tccutil reset exited 1",
-    );
   });
 
   it("a browser that did not answer shows the fix and is not asked", async () => {
@@ -793,14 +522,14 @@ describe("permissions", () => {
   });
 
   it("permissions shows a closed browser's Saved grant and asks nothing for it", async () => {
-    // Given: Safari closed with a saved denied Grant checked 2026-09-19 18:00Z
+    // Given: Safari closed with a saved granted Grant checked 2026-09-19 18:00Z
     await Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
           const store = yield* openStore(path);
           yield* store.setSetting(
             "grant.com.apple.Safari",
-            '{"state":"denied","checkedAt":"2026-09-19T18:00:00.000Z"}',
+            '{"state":"granted","checkedAt":"2026-09-19T18:00:00.000Z"}',
           );
         }),
       ),
@@ -825,11 +554,11 @@ describe("permissions", () => {
     expect(requests).toEqual([]);
     expect(shown).toBe("");
     expect(output).toEqual([
-      "Permissions   3 of 4 granted",
+      "Permissions   4 of 4 granted",
       "  ✔ Accessibility        window titles",
+      "  ✔ Automation · Safari  URLs in Safari · last checked 2026-09-19 11:00",
       "  ✔ Automation · Brave   URLs in Brave",
       "  ✔ Full Disk Access     iPhone and iPad import",
-      "  ✘ Automation · Safari  denied · turn it on in System Settings › Privacy › Automation · last checked 2026-09-19 11:00",
     ]);
   });
 
@@ -858,6 +587,356 @@ describe("permissions", () => {
     );
     expect(raw).toEqual(
       Option.some(expect.stringContaining('"state":"granted"')),
+    );
+  });
+
+  it("a never-asked browser is not listed and not asked", async () => {
+    // Given: Chromium never asked and never in front; interactive, no keys
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: { "org.chromium.Chromium": "notAsked" },
+          fullDiskAccess: "granted",
+        },
+      ],
+      [],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).not.toContain("Chromium");
+    expect(requests).toEqual([]);
+    expect(commands).toEqual([]);
+    expect(output).toContain("  ○ Automation  no browser used yet");
+  });
+
+  it("no denied browser asks no browser question", async () => {
+    // Given: Chrome granted, everything granted; interactive
+    // When
+    const { exit, shown, commands } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: { "com.google.Chrome": "granted" },
+          fullDiskAccess: "granted",
+        },
+      ],
+      [],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).not.toContain("is denied");
+    expect(commands).toEqual([]);
+  });
+
+  it("a denied browser opens System Settings and turns granted", async () => {
+    // Given: Chrome denied before the walk; the re-read after Switched on
+    // says granted; opening System Settings succeeds
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "com.google.Chrome": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [p, { ...p, automation: { "com.google.Chrome": "granted" } }],
+      [{ key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain(
+      "Chrome is denied. Open System Settings to turn it on?",
+    );
+    expect(shown).toContain("Switched on?");
+    expect(commands).toEqual([
+      "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
+    ]);
+    expect(requests).toEqual([]);
+    expect(output[output.length - 1]).toBe("  ✔ Automation · Chrome  granted");
+  });
+
+  it("a browser closed during the fix flow shows as granted next time", async () => {
+    // Given: Chrome denied before the walk, then closed (notRunning) on the
+    // re-read after Switched on
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "com.google.Chrome": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown } = await run(
+      [p, { ...p, automation: { "com.google.Chrome": "notRunning" } }],
+      [{ key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain("Switched on?");
+    expect(output).toContain(
+      "  Chrome shows as granted the next time you open it",
+    );
+    expect(output[output.length - 1]).toBe(
+      "  Chrome shows as granted the next time you open it",
+    );
+  });
+
+  it("n at a denied browser opens nothing", async () => {
+    // Given: Chrome denied, answered n at the offer
+    // When
+    const { exit, output, commands } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: { "com.google.Chrome": "denied" },
+          fullDiskAccess: "granted",
+        },
+      ],
+      ["n"],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
+    expect(output[output.length - 1]).toBe(
+      "  ✘ Automation · Chrome  denied · turn it on in System Settings › Privacy › Automation",
+    );
+  });
+
+  it("each denied browser gets its own question", async () => {
+    // Given: Safari and Chrome both denied; n at each offer
+    // When
+    const { exit, shown } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: {
+            "com.apple.Safari": "denied",
+            "com.google.Chrome": "denied",
+          },
+          fullDiskAccess: "granted",
+        },
+      ],
+      ["n", "n"],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    const safari = shown.indexOf(
+      "Safari is denied. Open System Settings to turn it on?",
+    );
+    const chrome = shown.indexOf(
+      "Chrome is denied. Open System Settings to turn it on?",
+    );
+    expect(safari).toBeGreaterThanOrEqual(0);
+    expect(chrome).toBeGreaterThan(safari);
+  });
+
+  it("a closed denied browser shows as granted next time", async () => {
+    // Given: Safari closed with a saved denied Grant checked 2026-09-23 20:20Z
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          yield* store.setSetting(
+            "grant.com.apple.Safari",
+            '{"state":"denied","checkedAt":"2026-09-23T20:20:00.000Z"}',
+          );
+        }),
+      ),
+    );
+    // When
+    const { exit, output, shown, permCalls } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: { "com.apple.Safari": "notRunning" },
+          fullDiskAccess: "granted",
+        },
+      ],
+      [{ key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain("Switched on?");
+    expect(output).toContain(
+      "  Safari shows as granted the next time you open it",
+    );
+    expect(permCalls).toBe(1);
+    const raw = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flatMap(openStore(path), (store) =>
+          store.getSetting("grant.com.apple.Safari"),
+        ),
+      ),
+    );
+    expect(raw).toEqual(
+      Option.some(expect.stringContaining('"state":"denied"')),
+    );
+  });
+
+  it("System Settings that fails to open prints the path", async () => {
+    // Given: Chrome denied; the open command exits 1; n at Switched on
+    // When
+    const { exit, output, shown } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: { "com.google.Chrome": "denied" },
+          fullDiskAccess: "granted",
+        },
+      ],
+      [{ key: "enter" }, "n"],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 1 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toContain(
+      "  open System Settings › Privacy & Security › Automation › Clocktrace by hand",
+    );
+    expect(shown).toContain("Switched on?");
+  });
+
+  it("still denied after Switched on offers the reset naming every browser", async () => {
+    // Given: Safari granted, Chrome denied; the re-read still says denied;
+    // open and tccutil both succeed
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.apple.Safari": "granted",
+        "com.google.Chrome": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown, commands } = await run(
+      [p],
+      [{ key: "enter" }, { key: "enter" }, "y", { key: "enter" }],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain(
+      "Still denied. Reset the Automation Grants of Safari and Chrome? macOS asks each again the next time it comes to the front",
+    );
+    expect(commands).toContain("tccutil reset AppleEvents com.clocktrace.app");
+    expect(output).toContain(
+      "  ○ Automation · Chrome  reset · macOS asks the next time Chrome comes to the front",
+    );
+    const [safariGrant, chromeGrant] = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flatMap(openStore(path), (store) =>
+          Effect.zip(
+            store.getSetting("grant.com.apple.Safari"),
+            store.getSetting("grant.com.google.Chrome"),
+          ),
+        ),
+      ),
+    );
+    expect(safariGrant).toEqual(Option.none());
+    expect(chromeGrant).toEqual(Option.none());
+  });
+
+  it("a browser reset clears the other denied browsers without asking them", async () => {
+    // Given: Safari and Chrome both denied; Safari's re-read still says
+    // denied; y at the reset offer
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.apple.Safari": "denied",
+        "com.google.Chrome": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown } = await run(
+      [p],
+      [{ key: "enter" }, { key: "enter" }, "y", { key: "enter" }],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then: the reset cleared Chrome too, so it is never asked and gets the
+    // same reset row
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain("Safari is denied. Open System Settings");
+    expect(shown).not.toContain("Chrome is denied. Open System Settings");
+    expect(output).toContain(
+      "  ○ Automation · Safari  reset · macOS asks the next time Safari comes to the front",
+    );
+    expect(output).toContain(
+      "  ○ Automation · Chrome  reset · macOS asks the next time Chrome comes to the front",
+    );
+  });
+
+  it("n at the reset offer prints the manual reset command", async () => {
+    // Given: Safari granted, Chrome denied; the re-read still says denied;
+    // n at the reset offer
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.apple.Safari": "granted",
+        "com.google.Chrome": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, commands } = await run(
+      [p],
+      [{ key: "enter" }, { key: "enter" }, "n"],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands.filter((c) => c.startsWith("tccutil"))).toEqual([]);
+    expect(output).toContain(
+      "  ○ Automation · Chrome  later: tccutil reset AppleEvents com.clocktrace.app, then run clocktrace permissions",
     );
   });
 });

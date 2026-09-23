@@ -72,6 +72,7 @@ export interface StoreShape {
     key: string,
     value: string,
   ) => Effect.Effect<void, StoreError>;
+  readonly deleteSetting: (key: string) => Effect.Effect<void, StoreError>;
   /**
    * Writes the Starter set and its flag in one transaction. Does nothing
    * when the flag is already set. A write that fails leaves nothing behind.

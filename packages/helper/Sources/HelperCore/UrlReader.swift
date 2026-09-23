@@ -13,6 +13,7 @@ public final class UrlReader {
     var nextCheck = Date.distantPast
     var logged = false
     var readRunning = false
+    var asking = false
   }
   private var states: [String: State] = [:]
   private let lock = NSLock()
@@ -37,9 +38,33 @@ public final class UrlReader {
     }
     let state = grantState(status)
     guard state == .granted else {
+      if state == .notAsked {
+        startAsk(bundleId: bundleId)
+      }
       return .missing(state)
     }
     return readUrl(bundleId: bundleId, script: script)
+  }
+
+  private func startAsk(bundleId: String) {
+    lock.lock()
+    var state = states[bundleId] ?? State()
+    if state.asking {
+      lock.unlock()
+      return
+    }
+    state.asking = true
+    states[bundleId] = state
+    lock.unlock()
+
+    DispatchQueue.global().async {
+      _ = self.reads.automationStatus(bundleId, true)
+      self.lock.lock()
+      var s = self.states[bundleId] ?? State()
+      s.asking = false
+      self.states[bundleId] = s
+      self.lock.unlock()
+    }
   }
 
   private func check(bundleId: String, at now: Date) -> OSStatus? {

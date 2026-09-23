@@ -66,6 +66,16 @@ export const collect = <E, R>(
           line.bundleId === null ||
           (line.grant !== "granted" && line.grant !== "denied")
         ) {
+          // A reset clears the stored grant but another process cannot reach
+          // this dedup: forget it here so the next same-state answer is
+          // written again.
+          if (line.bundleId !== null && line.grant === "notAsked") {
+            yield* Ref.update(remembered, (m) => {
+              const next = new Map(m);
+              next.delete(line.bundleId as string);
+              return next;
+            });
+          }
           return;
         }
         const bundleId = line.bundleId;

@@ -12,10 +12,15 @@ import {
   type PermissionItem,
   permissionItems,
   readSavedGrants,
+  savedGrantKey,
   saveLiveGrants,
   tccService,
 } from "@clocktrace/collector";
-import type { DatabaseNewerError, Store, StoreError } from "@clocktrace/core";
+import {
+  type DatabaseNewerError,
+  Store,
+  type StoreError,
+} from "@clocktrace/core";
 import { Command } from "@effect/cli";
 import type {
   CommandExecutor,
@@ -63,11 +68,16 @@ const resetArgs = (item: PermissionItem): ReadonlyArray<string> => [
 const resetLater = (item: PermissionItem): string =>
   `later: tccutil ${resetArgs(item).join(" ")}, then run clocktrace permissions`;
 
-const askable = (item: PermissionItem, state: GrantState): boolean =>
-  item.checkedAt === null &&
-  (item.request.kind === "automation"
-    ? state === "notAsked" || state === "denied"
-    : state === "denied");
+const joinNames = (names: ReadonlyArray<string>): string =>
+  names.length <= 2
+    ? names.join(" and ")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
+
+const automationSettingsUrl =
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
+
+const askable = (_item: PermissionItem, state: GrantState): boolean =>
+  state === "denied";
 
 export const walkPermissions = (): Effect.Effect<
   void,
@@ -88,6 +98,7 @@ export const walkPermissions = (): Effect.Effect<
     const prompt = yield* Prompt;
     const helper = yield* Helper;
     const app = yield* App;
+    const store = yield* Store;
     const look = yield* Style;
     if (!(yield* app.isInstalled())) {
       yield* new AppMissingError({ path: appPath });
@@ -238,18 +249,6 @@ export const walkPermissions = (): Effect.Effect<
           yield* printRow(perm);
           return false;
         }
-        if (
-          request.outcome === "notRunning" &&
-          item.request.kind === "automation"
-        ) {
-          perm.state = "notRunning";
-          perm.row = [
-            lead("warn", item),
-            noteCell(item, `${browserName(item.request.bundleId)} is closed`),
-          ];
-          yield* printRow(perm);
-          return false;
-        }
         if (item.request.kind !== "automation") {
           yield* prompt.print(
             item.request.kind === "fullDiskAccess"
@@ -287,6 +286,7 @@ export const walkPermissions = (): Effect.Effect<
             : item.request.kind === "fullDiskAccess"
               ? after.fullDiskAccess
               : after.accessibility;
+        return perm.state;
       });
     const printResult = (perm: Perm) => {
       const { item } = perm;
@@ -307,32 +307,100 @@ export const walkPermissions = (): Effect.Effect<
     const ask = (perm: Perm) =>
       Effect.gen(function* () {
         const { item } = perm;
-        if (item.request.kind === "automation" && perm.state === "denied") {
+        if (item.request.kind === "automation") {
+          if (perm.state !== "denied") {
+            return;
+          }
+          const browser = browserName(item.request.bundleId);
+          const open = yield* prompt.confirm({
+            message: `${browser} is denied. Open System Settings to turn it on?`,
+            initial: true,
+          });
+          if (!open) {
+            perm.row = initialRow(item);
+            yield* printRow(perm);
+            return;
+          }
+          const { code } = yield* runCommand("open", [automationSettingsUrl]);
+          if (code !== 0) {
+            yield* prompt.print(
+              "  open System Settings › Privacy & Security › Automation › Clocktrace by hand",
+            );
+          }
+          const switched = yield* prompt.confirm({
+            message: "Switched on?",
+            initial: true,
+          });
+          if (!switched) {
+            perm.row = [
+              lead("warn", item),
+              span(
+                "warn",
+                "later: switch it on, then run clocktrace permissions",
+              ),
+            ];
+            yield* printRow(perm);
+            return;
+          }
+          if (item.checkedAt !== null) {
+            perm.row = initialRow(item);
+            yield* printRow(perm);
+            yield* prompt.print(
+              `  ${browser} shows as granted the next time you open it`,
+            );
+            return;
+          }
+          const state = yield* recheck(perm);
+          if (state === "notRunning") {
+            perm.row = initialRow(item);
+            yield* printRow(perm);
+            yield* prompt.print(
+              `  ${browser} shows as granted the next time you open it`,
+            );
+            return;
+          }
+          if (state !== "denied") {
+            yield* printResult(perm);
+            return;
+          }
+          const names = perms.flatMap((p) =>
+            p.item.request.kind === "automation"
+              ? [browserName(p.item.request.bundleId)]
+              : [],
+          );
           if (
             !(yield* offerReset(
               perm,
-              "macOS will not ask again — reset the grant for Clocktrace?",
+              `Still denied. Reset the Automation Grants of ${joinNames(names)}? macOS asks each again the next time it comes to the front`,
             ))
           ) {
             return;
           }
-          // A reset clears every browser's grant, not only this one, so the
-          // others are asked again: granted ones in the pass after this one,
-          // denied ones with Allow in this pass. No read needed, and none
-          // that can fail after this ask already printed its own failure.
           for (const other of perms) {
-            if (
-              other !== perm &&
-              other.item.request.kind === "automation" &&
-              (other.state === "granted" || other.state === "denied")
-            ) {
+            if (other.item.request.kind !== "automation") {
+              continue;
+            }
+            yield* store.deleteSetting(
+              savedGrantKey(other.item.request.bundleId),
+            );
+            // The reset cleared every browser's grant, so a sibling still
+            // queued as denied is already back to notAsked — it must not be
+            // asked again in this walk.
+            if (other.state === "denied") {
               other.state = "notAsked";
+              other.row = [
+                lead("warn", other.item),
+                span(
+                  "warn",
+                  `reset · macOS asks the next time ${browserName(other.item.request.bundleId)} comes to the front`,
+                ),
+              ];
+              if (other !== perm) {
+                yield* printRow(other);
+              }
             }
           }
-          if (yield* requestGrant(perm, true)) {
-            yield* recheck(perm);
-            yield* printResult(perm);
-          }
+          yield* printRow(perm);
           return;
         }
         const allow = yield* prompt.confirm({
@@ -352,7 +420,7 @@ export const walkPermissions = (): Effect.Effect<
         }
         yield* recheck(perm);
         // Turned on yet still denied: the stored grant is stale.
-        if (item.request.kind !== "automation" && perm.state === "denied") {
+        if (perm.state === "denied") {
           if (
             !(yield* offerReset(
               perm,
@@ -370,10 +438,6 @@ export const walkPermissions = (): Effect.Effect<
       });
     yield* Effect.forEach(
       perms.filter((p) => askable(p.item, p.state)),
-      ask,
-    );
-    yield* Effect.forEach(
-      perms.filter((p) => p.item.state === "granted" && p.state === "notAsked"),
       ask,
     );
   });
