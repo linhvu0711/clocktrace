@@ -18,24 +18,31 @@ public enum UrlRead: Equatable {
   case missing(GrantState)
 }
 
+/// The finished reading: the Line without its time. Sampler makes it.
 public struct Sample: Equatable {
-  public var front: FrontApp?
-  public var axTrusted: Bool
+  public var app: String?
+  public var bundleId: String?
+  public var grant: String?
   public var title: String?
-  public var url: UrlRead
+  public var url: String?
   public var idleSeconds: Double
+  public var missing: [String]
 
   public init(
-    front: FrontApp?,
-    axTrusted: Bool,
+    app: String?,
+    bundleId: String?,
+    grant: String? = nil,
     title: String?,
-    url: UrlRead,
-    idleSeconds: Double
+    url: String?,
+    idleSeconds: Double,
+    missing: [String]
   ) {
-    self.front = front
-    self.axTrusted = axTrusted
+    self.app = app
+    self.bundleId = bundleId
+    self.grant = grant
     self.title = title
     self.url = url
     self.idleSeconds = idleSeconds
+    self.missing = missing
   }
 }
