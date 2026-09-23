@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import {
   App,
+  AppError,
+  AppNotInstalledError,
   CollectorNotLoadedError,
   CollectorPaths,
   type CollectorSettings,
@@ -94,11 +96,17 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
 } satisfies CommandExecutor.CommandExecutor);
 
 // How the fake Lifecycle ends: loaded, failed reading the old plist
-// before the App step, or not loaded at the bootout of the old agent, at
-// the agent step, or while it waits for the start.
+// before the App step, failed at the App step, or not loaded at the
+// bootout of the old agent, at the agent step, or while it waits for the
+// start.
 type Outcome =
   | "loaded"
   | { readonly failAt: "read" }
+  | {
+      readonly failAt: "app";
+      readonly cause: AppError;
+      readonly appRestored: boolean;
+    }
   | {
       readonly failAt: "bootout" | "agent" | "start";
       readonly appRestored: boolean;
@@ -130,6 +138,12 @@ const fakeLifecycle = (
           yield* Ref.update(installs, (all) => [...all, settings]);
           if (outcome !== "loaded" && outcome.failAt === "read") {
             return yield* readError;
+          }
+          if (outcome !== "loaded" && outcome.failAt === "app") {
+            return yield* new AppNotInstalledError({
+              cause: outcome.cause,
+              appRestored: outcome.appRestored,
+            });
           }
           yield* progress.done("app");
           if (outcome !== "loaded" && outcome.failAt === "bootout") {
@@ -445,6 +459,57 @@ describe("setup", () => {
     expect(output[failure - 1]).toBe(
       "app: could not restore the previous install",
     );
+  });
+
+  it("an App install that cannot be undone says so before the failure", async () => {
+    // Given: lsregister fails after the swap and the undo fails too
+    const cause = new AppError({ step: "lsregister", detail: "exit 1" });
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      failAt: "app",
+      cause,
+      appRestored: false,
+    });
+    // Then: the restore line, then the cause, and no app row
+    expect(exit).toEqual(Exit.fail(new ReportedError({ cause })));
+    expect(output).toEqual([
+      "Collector",
+      "app: could not restore the previous install",
+      "  ✘ lsregister: exit 1",
+    ]);
+  });
+
+  it("an App install that was undone prints only its cause", async () => {
+    // Given: lsregister fails after the swap and the undo holds
+    const cause = new AppError({ step: "lsregister", detail: "exit 1" });
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      failAt: "app",
+      cause,
+      appRestored: true,
+    });
+    // Then: the cause alone
+    expect(exit).toEqual(Exit.fail(new ReportedError({ cause })));
+    expect(output).toEqual(["Collector", "  ✘ lsregister: exit 1"]);
+  });
+
+  it("an App swap that cannot be undone prints its rename step", async () => {
+    // Given: the staged app cannot be renamed in and .old cannot come back
+    // When
+    const { output } = await run(helperStub(allGranted), {
+      failAt: "app",
+      cause: new AppError({
+        step: "rename /x/Clocktrace.app.new",
+        detail: "EACCES",
+      }),
+      appRestored: false,
+    });
+    // Then
+    expect(output).toEqual([
+      "Collector",
+      "app: could not restore the previous install",
+      "  ✘ rename /x/Clocktrace.app.new: EACCES",
+    ]);
   });
 
   it("an agent that cannot be put back says so before the failure", async () => {
