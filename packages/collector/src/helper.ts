@@ -12,7 +12,9 @@ import {
   type Scope,
   Stream,
 } from "effect";
+import type { ParseError } from "effect/ParseResult";
 
+import { type DevicePeerLine, decodeDevicePeerLine } from "./biome-line.js";
 import { decodeHelperLine, type HelperLine } from "./helper-line.js";
 import {
   decodePermissions,
@@ -36,6 +38,36 @@ export class HelperExitedError extends Data.TaggedError("HelperExitedError")<{
 }> {
   override get message(): string {
     return `helper exited: ${this.cause}`;
+  }
+}
+
+export class NoFullDiskAccessError extends Data.TaggedError(
+  "NoFullDiskAccessError",
+) {
+  override get message(): string {
+    return "full disk access missing";
+  }
+}
+
+export class DeviceListUnreadableError extends Data.TaggedError(
+  "DeviceListUnreadableError",
+)<{
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
+export class HelperFailedError extends Data.TaggedError("HelperFailedError")<{
+  readonly code: number;
+  readonly stderr: string;
+}> {
+  override get message(): string {
+    const text = this.stderr.trim();
+    return text === ""
+      ? `helper failed with exit code ${this.code}`
+      : `helper failed with exit code ${this.code}: ${text}`;
   }
 }
 
@@ -63,6 +95,39 @@ export const biomeResult = (
           lines: lines.filter((l) => l !== ""),
         }),
       );
+
+interface BiomeOutput {
+  readonly code: number;
+  readonly lines: ReadonlyArray<string>;
+  readonly stderr: string;
+}
+
+// `biome devices` exits 3 without Full Disk Access and 5 when the DevicePeer
+// table cannot be read (packages/helper/README.md).
+const devicesResult = ({
+  code,
+  lines,
+  stderr,
+}: BiomeOutput): Effect.Effect<
+  ReadonlyArray<DevicePeerLine>,
+  | NoFullDiskAccessError
+  | DeviceListUnreadableError
+  | HelperFailedError
+  | ParseError
+> => {
+  switch (code) {
+    case 0:
+      return Effect.forEach(lines, (l) => decodeDevicePeerLine(l));
+    case 3:
+      return Effect.fail(new NoFullDiskAccessError());
+    case 5:
+      return Effect.fail(
+        new DeviceListUnreadableError({ reason: stderr.trim() }),
+      );
+    default:
+      return Effect.fail(new HelperFailedError({ code, stderr }));
+  }
+};
 
 export const sinceArgs = (
   since: ReadonlyMap<string, number>,
@@ -101,10 +166,7 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
     const executor = yield* CommandExecutor.CommandExecutor;
     const runBiome = (
       command: Command.Command,
-    ): Effect.Effect<
-      ReadonlyArray<string>,
-      HelperExitedError | BiomeExitError
-    > =>
+    ): Effect.Effect<BiomeOutput, HelperExitedError> =>
       Effect.scoped(
         Effect.gen(function* () {
           const process = yield* executor.start(command);
@@ -125,15 +187,9 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
             ],
             { concurrency: "unbounded" },
           );
-          return yield* biomeResult(code, lines, stderr);
+          return { code, lines: lines.filter((l) => l !== ""), stderr };
         }),
-      ).pipe(
-        Effect.mapError((cause) =>
-          cause instanceof BiomeExitError
-            ? cause
-            : new HelperExitedError({ cause }),
-        ),
-      );
+      ).pipe(Effect.mapError((cause) => new HelperExitedError({ cause })));
     return {
       check: (path: string) =>
         fs.exists(path).pipe(
@@ -177,9 +233,17 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
           Effect.map((line) => line.outcome),
         ),
       biomeDevices: (path: string) =>
-        runBiome(Command.make(path, "biome", "devices")),
+        runBiome(Command.make(path, "biome", "devices")).pipe(
+          Effect.flatMap(devicesResult),
+        ),
       biomeRecords: (path: string, since: ReadonlyMap<string, number>) =>
-        runBiome(Command.make(path, "biome", "records", ...sinceArgs(since))),
+        runBiome(
+          Command.make(path, "biome", "records", ...sinceArgs(since)),
+        ).pipe(
+          Effect.flatMap(({ code, lines, stderr }) =>
+            biomeResult(code, lines, stderr),
+          ),
+        ),
     };
 
     // Runs the Helper as ~/Applications/Clocktrace.app and returns what it

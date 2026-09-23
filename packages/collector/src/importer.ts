@@ -10,12 +10,15 @@ import {
 } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { decodeBiomeLine, decodeDevicePeerLine } from "./biome-line.js";
+import { decodeBiomeLine } from "./biome-line.js";
 import { minActivityMillis } from "./collector.js";
 import {
   type BiomeExitError,
+  type DeviceListUnreadableError,
   Helper,
   type HelperExitedError,
+  type HelperFailedError,
+  type NoFullDiskAccessError,
 } from "./helper.js";
 import {
   importEvery,
@@ -102,6 +105,9 @@ export const importOnce = (
 ): Effect.Effect<
   void,
   | HelperExitedError
+  | NoFullDiskAccessError
+  | DeviceListUnreadableError
+  | HelperFailedError
   | BiomeExitError
   | ParseError
   | StoreError
@@ -130,26 +136,24 @@ export const importOnce = (
       return;
     }
 
-    const deviceLines = yield* Effect.either(helper.biomeDevices(helperPath));
-    if (Either.isLeft(deviceLines)) {
-      const e = deviceLines.left;
-      if (e._tag === "BiomeExitError") {
-        if (e.code === 3) {
-          yield* Effect.logInfo("full disk access missing, iOS import skipped");
-          return;
-        }
-        if (e.code === 5) {
-          yield* store.setSetting(
-            importStatusKey,
-            encodeResult({
-              state: "broken",
-              at: now,
-              reason: e.stderr.trim(),
-              devices: yield* lastKnownSyncs(store),
-            }),
-          );
-          return;
-        }
+    const deviceRows = yield* Effect.either(helper.biomeDevices(helperPath));
+    if (Either.isLeft(deviceRows)) {
+      const e = deviceRows.left;
+      if (e._tag === "NoFullDiskAccessError") {
+        yield* Effect.logInfo("full disk access missing, iOS import skipped");
+        return;
+      }
+      if (e._tag === "DeviceListUnreadableError") {
+        yield* store.setSetting(
+          importStatusKey,
+          encodeResult({
+            state: "broken",
+            at: now,
+            reason: e.reason,
+            devices: yield* lastKnownSyncs(store),
+          }),
+        );
+        return;
       }
       return yield* e;
     }
@@ -162,8 +166,7 @@ export const importOnce = (
       externalId: string;
       lastSync: DateTime.Utc | null;
     }> = [];
-    for (const text of deviceLines.right) {
-      const row = yield* decodeDevicePeerLine(text);
+    for (const row of deviceRows.right) {
       const kind =
         row.platform === null ? undefined : platformKinds[row.platform];
       if (kind === undefined) {

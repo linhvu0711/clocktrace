@@ -16,9 +16,9 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
-  BiomeExitError,
   Helper,
   HelperExitedError,
+  HelperFailedError,
   HelperNotFoundError,
 } from "../src/helper.js";
 import { MacIdentity } from "../src/mac-identity.js";
@@ -136,7 +136,14 @@ describe("run", () => {
             Ref.updateAndGet(count, (n) => n + 1).pipe(
               Effect.tap((n) => Queue.offer(imports, n)),
               Effect.as([
-                '{"deviceIdentifier":"00000000-0000-4000-8000-000000000002","lastSyncDate":null,"me":false,"model":"24A437","name":"","platform":2}',
+                {
+                  deviceIdentifier: "00000000-0000-4000-8000-000000000002",
+                  lastSyncDate: null,
+                  me: false,
+                  model: "24A437",
+                  name: "",
+                  platform: 2,
+                },
               ]),
             ),
 
@@ -171,7 +178,12 @@ describe("run", () => {
         const starts = yield* Queue.unbounded<number>();
         const stubHelper = Helper.Test({
           biomeDevices: () =>
-            Effect.fail(new BiomeExitError({ code: 5, stderr: "remote gone" })),
+            Effect.fail(
+              new HelperFailedError({
+                code: 2,
+                stderr: "usage: clocktrace-helper\n",
+              }),
+            ),
 
           lines: () =>
             Stream.fromEffect(Queue.offer(starts, 1)).pipe(

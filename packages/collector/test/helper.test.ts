@@ -6,7 +6,6 @@ import {
   Chunk,
   DateTime,
   Effect,
-  Either,
   Exit,
   Inspectable,
   Layer,
@@ -19,9 +18,9 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
-  biomeResult,
   Helper,
   HelperExitedError,
+  HelperFailedError,
   openArgs,
   sinceArgs,
 } from "../src/helper.js";
@@ -37,28 +36,6 @@ describe("HelperExitedError", () => {
     // Then
     expect(message).toBe("helper exited: permissions request exited 3");
     expect(message.length).toBeGreaterThan(0);
-  });
-
-  it("biomeResult returns the lines on exit 0", () => {
-    // Given: a biome command that printed two lines and a blank
-    // When
-    const result = biomeResult(0, ["a", "b", ""], "");
-    // Then
-    expect(Either.getOrThrow(result)).toEqual(["a", "b"]);
-  });
-
-  it("biomeResult names the exit code and stderr", () => {
-    // Given: a biome command that exited 4 with a reason on stderr
-    // When
-    const result = biomeResult(4, [], "no App.InFocus remote folder\n");
-    // Then
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(result.left._tag).toBe("BiomeExitError");
-      expect(result.left.message).toBe(
-        "helper biome exited 4: no App.InFocus remote folder",
-      );
-    }
   });
 
   it("sinceArgs writes one --since per Device", () => {
@@ -247,6 +224,85 @@ describe("Helper watch", () => {
         { ts: "2026-01-01T00:00:10.000Z", app: "Safari", grant: null },
       ],
       logs: ["helper line rejected"],
+    });
+  });
+});
+
+// The failure a Helper call ended with, or null when it succeeded.
+const failure = (exit: Exit.Exit<unknown, unknown>): unknown =>
+  Exit.isFailure(exit) && exit.cause._tag === "Fail" ? exit.cause.error : null;
+
+describe("Helper biome devices", () => {
+  it("biome devices exit 0 gives decoded devices", async () => {
+    // Given: biome devices printed the iPad's DevicePeer row and exited 0
+    const stdout =
+      '{"deviceIdentifier":"00000000-0000-4000-8000-000000000003","lastSyncDate":1789664400,"me":false,"model":"24A437","name":"Linh\'s iPad","platform":1}\n';
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      stdout,
+    );
+    // Then
+    expect(Exit.isSuccess(exit) && exit.value).toEqual([
+      {
+        deviceIdentifier: "00000000-0000-4000-8000-000000000003",
+        me: false,
+        name: "Linh's iPad",
+        model: "24A437",
+        platform: 1,
+        lastSyncDate: 1789664400,
+      },
+    ]);
+  });
+
+  it("biome devices exit 3 is no Full Disk Access", async () => {
+    // Given: biome devices exited 3 without Full Disk Access
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      "",
+      3,
+      "full disk access needed\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({ _tag: "NoFullDiskAccessError" });
+  });
+
+  it("biome devices exit 5 is an unreadable device list", async () => {
+    // Given: biome devices exited 5 on a locked DevicePeer table
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      "",
+      5,
+      "cannot read DevicePeer: locked\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({
+      _tag: "DeviceListUnreadableError",
+      reason: "cannot read DevicePeer: locked",
+    });
+  });
+
+  it("biome devices exit 2 is Helper failed with the code and stderr", async () => {
+    // Given: biome devices exited 2 with the usage text
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      "",
+      2,
+      "usage: clocktrace-helper\n",
+    );
+    // Then
+    const error = failure(exit);
+    expect({
+      tag: error instanceof Error && "_tag" in error && error._tag,
+      code: error instanceof HelperFailedError && error.code,
+      message: error instanceof Error && error.message,
+    }).toEqual({
+      tag: "HelperFailedError",
+      code: 2,
+      message: "helper failed with exit code 2: usage: clocktrace-helper",
     });
   });
 });
