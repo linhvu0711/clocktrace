@@ -21,3 +21,9 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm test
+      # The unsigned tarball, so packaging is tested without the identity.
+      - run: bash scripts/release.sh --no-sign 0.0.0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clocktrace-darwin-arm64
+          path: release/clocktrace-0.0.0-darwin-arm64.tar.gz
