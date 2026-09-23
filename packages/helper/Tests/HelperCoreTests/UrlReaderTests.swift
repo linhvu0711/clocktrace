@@ -1,0 +1,46 @@
+import XCTest
+
+@testable import HelperCore
+
+final class UrlReaderTests: XCTestCase {
+  private let t0 = Date(timeIntervalSince1970: 1_767_225_600)
+
+  private func reads(
+    automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 },
+    runScript: @escaping (String) -> String? = { _ in nil }
+  ) -> Reads {
+    Reads(
+      frontmost: { nil },
+      axTrusted: { true },
+      focusedTitle: { _ in nil },
+      automationStatus: automationStatus,
+      runScript: runScript,
+      idleSeconds: { 0 }
+    )
+  }
+
+  private func timed(_ body: () -> UrlRead) -> (UrlRead, TimeInterval) {
+    let start = Date()
+    let result = body()
+    return (result, Date().timeIntervalSince(start))
+  }
+
+  func testACheckThatNeverAnswersIsMissingWithinTheLimit() {
+    // Given: a Grant check that sleeps past the limit
+    let reader = UrlReader(
+      reads: reads(automationStatus: { _, _ in
+        Thread.sleep(forTimeInterval: 0.5)
+        return 0
+      }),
+      checkLimit: .milliseconds(50))
+    // When
+    let (result, elapsed) = timed {
+      reader.read(
+        bundleId: "com.google.Chrome",
+        script: browserScript(bundleId: "com.google.Chrome")!, at: t0)
+    }
+    // Then
+    XCTAssertEqual(result, .missing)
+    XCTAssertLessThan(elapsed, 0.3)
+  }
+}

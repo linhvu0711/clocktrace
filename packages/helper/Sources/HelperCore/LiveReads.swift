@@ -34,8 +34,8 @@ extension Reads {
       else { return nil }
       return titleRef as? String
     },
-    automationGranted: { bundleId in
-      automationStatus(bundleId: bundleId, askUser: false) == noErr
+    automationStatus: { bundleId, ask in
+      HelperCore.automationStatus(bundleId: bundleId, askUser: ask)
     },
     runScript: { source in
       var error: NSDictionary?

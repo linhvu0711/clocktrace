@@ -21,16 +21,7 @@ public func checkPermissions(
       automation[bundleId] = .noAnswer
       continue
     }
-    switch status {
-    case 0:
-      automation[bundleId] = .granted
-    case -1744:
-      automation[bundleId] = .notAsked
-    case -600:
-      automation[bundleId] = .notRunning
-    default:
-      automation[bundleId] = .denied
-    }
+    automation[bundleId] = grantState(status)
   }
   return Permissions(
     accessibility: reads.axTrusted() ? .granted : .denied,

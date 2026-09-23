@@ -6,8 +6,10 @@ public func runWatch(
   emit: @escaping (String) -> Void = HelperCore.emit
 ) -> Never {
   var tracker = Tracker()
+  let urls = UrlReader(reads: reads)
   func poll() {
-    if let line = tracker.observe(Sampler.sample(reads), at: Date()) {
+    let now = Date()
+    if let line = tracker.observe(Sampler.sample(reads, urls: urls, at: now), at: now) {
       emit(line.json())
     }
   }
