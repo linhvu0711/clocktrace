@@ -4,7 +4,8 @@
 # (pnpm deploy), the Helper, and Clocktrace.app, and pack them (ADR 0009).
 #   scripts/release.sh [--no-sign] <version>
 # Without --no-sign the app is signed with the Developer ID, notarized through
-# the `clocktrace` keychain profile, and stapled. --no-sign signs it ad hoc,
+# the `clocktrace` keychain profile, and stapled; then the version is committed
+# on main, tagged, pushed, and published with gh. --no-sign signs it ad hoc,
 # packs, and puts the version files back; CI runs it that way. Stops on the
 # first failure.
 set -euo pipefail
@@ -29,6 +30,28 @@ fi
 if [[ -n "$(git status --porcelain)" ]]; then
   echo "release: the tree has uncommitted changes, commit or stash them first"
   exit 1
+fi
+
+# A release commits to main and pushes it, so it starts from what GitHub holds.
+if [[ "$sign" == "1" ]]; then
+  branch="$(git rev-parse --abbrev-ref HEAD)"
+  if [[ "$branch" != "main" ]]; then
+    echo "release: run from main, not $branch"
+    exit 1
+  fi
+  git fetch --quiet origin main
+  if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+    echo "release: main is not in sync with origin/main"
+    exit 1
+  fi
+  if [[ -n "$(git ls-remote --tags origin "v$version")" ]]; then
+    echo "release: tag v$version is already on origin"
+    exit 1
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    echo "release: gh is not signed in"
+    exit 1
+  fi
 fi
 
 packages=(apps/cli apps/mcp packages/core packages/collector packages/helper)
@@ -97,3 +120,13 @@ fi
 tar -czf "$tarball" -C "$stage" .
 echo "release: $tarball"
 shasum -a 256 "$tarball"
+
+if [[ "$sign" == "1" ]]; then
+  hash="$(shasum -a 256 "$tarball" | cut -d " " -f 1)"
+  git commit --quiet -m "chore: release v$version" -- "${version_files[@]}"
+  committed=1
+  git tag "v$version"
+  git push origin main "v$version"
+  gh release create "v$version" "$tarball" --title "v$version" \
+    --notes "sha256: $hash" --verify-tag
+fi
