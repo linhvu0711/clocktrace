@@ -58,6 +58,19 @@ export class AppMissingError extends Data.TaggedError("AppMissingError")<{
   }
 }
 
+// App.install failed after the live App moved. The change was undone
+// first; `appRestored` is false when it could not be.
+export class AppNotInstalledError extends Data.TaggedError(
+  "AppNotInstalledError",
+)<{
+  readonly cause: AppError;
+  readonly appRestored: boolean;
+}> {
+  override get message(): string {
+    return this.cause.message;
+  }
+}
+
 export class App extends Effect.Service<App>()("App", {
   effect: Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -228,8 +241,8 @@ export class App extends Effect.Service<App>()("App", {
             }
           });
           // The live app moves aside first so a failed staging rename puts
-          // it back; a landed rename keeps the rollback until the caller
-          // commits or rolls it back.
+          // it back and says whether it could; a landed rename keeps the
+          // rollback until the caller commits or rolls it back.
           const result: AppInstall = yield* build.pipe(
             Effect.andThen(
               fs.remove(rollback, { recursive: true, force: true }).pipe(
@@ -249,11 +262,22 @@ export class App extends Effect.Service<App>()("App", {
                     ),
                   ),
                 ),
-                Effect.tap(
+                Effect.tap((installed) =>
                   fs.rename(staging, appPath).pipe(
                     Effect.mapError(fsError(`rename ${staging}`)),
-                    Effect.tapError(() =>
-                      Effect.ignore(fs.rename(rollback, appPath)),
+                    Effect.catchAll((cause) =>
+                      (installed === "replaced"
+                        ? fs.rename(rollback, appPath).pipe(
+                            Effect.as(true),
+                            Effect.catchAll(() => Effect.succeed(false)),
+                          )
+                        : Effect.succeed(true)
+                      ).pipe(
+                        Effect.flatMap(
+                          (appRestored) =>
+                            new AppNotInstalledError({ cause, appRestored }),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -265,22 +289,33 @@ export class App extends Effect.Service<App>()("App", {
               ),
             ),
           );
-          const registered = yield* exit(
+          const register = exit(
             "lsregister",
             lsregisterPath,
             "-f",
             appPath,
+          ).pipe(
+            Effect.flatMap((code) =>
+              code === 0
+                ? Effect.void
+                : new AppError({ step: "lsregister", detail: `exit ${code}` }),
+            ),
           );
-          if (registered !== 0) {
-            // The swap already landed; undo it, so a replaced app comes
-            // back and a fresh one goes, and install never returns with an
-            // unresolved rollback.
-            yield* Effect.ignore(undo(result));
-            return yield* new AppError({
-              step: "lsregister",
-              detail: `exit ${registered}`,
-            });
-          }
+          // The swap already landed; undo it, so a replaced app comes back
+          // and a fresh one goes, and install never returns with an
+          // unresolved rollback. `appRestored` says whether the undo held.
+          yield* register.pipe(
+            Effect.catchAll((cause) =>
+              undo(result).pipe(
+                Effect.as(true),
+                Effect.catchAll(() => Effect.succeed(false)),
+                Effect.flatMap(
+                  (appRestored) =>
+                    new AppNotInstalledError({ cause, appRestored }),
+                ),
+              ),
+            ),
+          );
           return result;
         }),
       // install leaves .old behind so a caller that finds the new bundle

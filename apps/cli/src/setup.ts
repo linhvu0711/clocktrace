@@ -193,6 +193,26 @@ export const setup = (
                 return yield* new ReportedError({ cause: e.cause });
               }),
             ),
+            Effect.catchTag("AppNotInstalledError", (e) =>
+              Effect.gen(function* () {
+                if (!e.appRestored) {
+                  yield* prompt.print(
+                    "app: could not restore the previous install",
+                  );
+                }
+                yield* prompt.printError(
+                  line(
+                    [
+                      "  ",
+                      mark("bad", look),
+                      ` ${e.cause.step}: ${e.cause.detail}`,
+                    ],
+                    look,
+                  ),
+                );
+                return yield* new ReportedError({ cause: e.cause });
+              }),
+            ),
           );
         yield* prompt.print(collectorRows[2] ?? "");
         const interactive = yield* prompt.interactive;
