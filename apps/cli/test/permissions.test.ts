@@ -24,7 +24,6 @@ import {
   Effect,
   Exit,
   Layer,
-  Option,
   Ref,
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -560,34 +559,6 @@ describe("permissions", () => {
     ]);
   });
 
-  it("a live check in permissions updates the Saved grant", async () => {
-    // Given: Brave answered granted
-    // When
-    const { exit } = await run(
-      [
-        {
-          accessibility: "granted",
-          automation: { "com.brave.Browser": "granted" },
-          fullDiskAccess: "granted",
-        },
-      ],
-      [],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    const raw = await Effect.runPromise(
-      Effect.scoped(
-        Effect.flatMap(openStore(path), (store) =>
-          store.getSetting("grant.com.brave.Browser"),
-        ),
-      ),
-    );
-    expect(raw).toEqual(
-      Option.some(expect.stringContaining('"state":"granted"')),
-    );
-  });
-
   it("a never-asked browser is not listed and not asked", async () => {
     // Given: Chromium never asked and never in front; interactive, no keys
     // When
@@ -783,16 +754,6 @@ describe("permissions", () => {
       "  Safari shows as granted the next time you open it",
     );
     expect(permCalls).toBe(1);
-    const raw = await Effect.runPromise(
-      Effect.scoped(
-        Effect.flatMap(openStore(path), (store) =>
-          store.getSetting("grant.com.apple.Safari"),
-        ),
-      ),
-    );
-    expect(raw).toEqual(
-      Option.some(expect.stringContaining('"state":"denied"')),
-    );
   });
 
   it("System Settings that fails to open prints the path", async () => {
@@ -856,18 +817,6 @@ describe("permissions", () => {
     expect(output).toContain(
       "  ○ Automation · Chrome  reset · macOS asks the next time Chrome comes to the front",
     );
-    const [safariGrant, chromeGrant] = await Effect.runPromise(
-      Effect.scoped(
-        Effect.flatMap(openStore(path), (store) =>
-          Effect.zip(
-            store.getSetting("grant.com.apple.Safari"),
-            store.getSetting("grant.com.google.Chrome"),
-          ),
-        ),
-      ),
-    );
-    expect(safariGrant).toEqual(Option.none());
-    expect(chromeGrant).toEqual(Option.none());
   });
 
   it("a browser reset clears the other denied browsers without asking them", async () => {
@@ -935,6 +884,37 @@ describe("permissions", () => {
     expect(commands.filter((c) => c.startsWith("tccutil"))).toEqual([]);
     expect(output).toContain(
       "  ○ Automation · Chrome  later: tccutil reset AppleEvents com.clocktrace.app, then run clocktrace permissions",
+    );
+  });
+
+  it("a tccutil that fails prints its first line", async () => {
+    // Given: Chrome denied; the re-read still says denied; y at the reset
+    // offer; tccutil exits 1 and says why
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "com.google.Chrome": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output } = await run(
+      [p],
+      [{ key: "enter" }, { key: "enter" }, "y"],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+          "tccutil reset AppleEvents com.clocktrace.app": {
+            code: 1,
+            output: "tccutil: Failed to reset AppleEvents\n",
+          },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output[output.length - 1]).toBe(
+      "  ✘ Automation · Chrome  tccutil: Failed to reset AppleEvents",
     );
   });
 });

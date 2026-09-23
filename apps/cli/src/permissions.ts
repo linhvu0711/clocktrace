@@ -3,8 +3,8 @@ import {
   AppMissingError,
   browserName,
   CollectorPaths,
+  checkAgain,
   type GrantItem,
-  type GrantItemState,
   type GrantRequest,
   grantCount,
   grantPicture,
@@ -14,15 +14,11 @@ import {
   type Launchd,
   noAnswerNote,
   resetArgs,
+  resetGrant,
   runCommand,
-  savedGrantKey,
-  saveLiveGrants,
+  stateOf,
 } from "@clocktrace/collector";
-import {
-  type DatabaseNewerError,
-  Store,
-  type StoreError,
-} from "@clocktrace/core";
+import type { DatabaseNewerError, Store, StoreError } from "@clocktrace/core";
 import { Command } from "@effect/cli";
 import type {
   CommandExecutor,
@@ -56,9 +52,6 @@ const joinNames = (names: ReadonlyArray<string>): string =>
 const automationSettingsUrl =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
 
-const askable = (_item: GrantItem, state: GrantItemState): boolean =>
-  state === "denied";
-
 export const walkPermissions = (): Effect.Effect<
   void,
   AppMissingError | HelperExitedError | ParseError | StoppedError | StoreError,
@@ -79,9 +72,10 @@ export const walkPermissions = (): Effect.Effect<
     const prompt = yield* Prompt;
     const helper = yield* Helper;
     const { appPath } = yield* CollectorPaths;
-    const store = yield* Store;
     const look = yield* Style;
-    const picture = yield* grantPicture();
+    // The Grant module's picture. The walk reads states from it and only
+    // replaces it with what checkAgain or resetGrant gives back.
+    let picture = yield* grantPicture();
     if (picture.app === "missing") {
       return yield* new AppMissingError({ path: appPath });
     }
@@ -128,21 +122,23 @@ export const walkPermissions = (): Effect.Effect<
       }
       return [lead("warn", item), noteCell(item, "not asked")];
     };
+    // item is the first picture's: its words and checkedAt never change.
     const perms = items.flatMap((item) =>
       Option.match(grantRequest(item), {
         onNone: () => [],
-        onSome: (request) => [
-          { item, request, state: item.state, row: initialRow(item) },
-        ],
+        onSome: (request) => [{ item, request }],
       }),
     );
-    const printRow = (perm: (typeof perms)[number]) =>
-      prompt.print(
-        columns(
-          perms.map((p) => p.row),
-          look,
-        )[perms.indexOf(perm)] ?? "",
-      );
+    type Perm = (typeof perms)[number];
+    // The printed rows, one per perm, kept so the columns line up.
+    const rows = perms.map((p) => initialRow(p.item));
+    const printRow = (perm: Perm) =>
+      prompt.print(columns(rows, look)[perms.indexOf(perm)] ?? "");
+    const show = (perm: Perm, row: ReadonlyArray<Cell>) => {
+      rows[perms.indexOf(perm)] = row;
+      return printRow(perm);
+    };
+    const denied = (perm: Perm) => perm.item.state === "denied";
     yield* prompt.print(
       line(
         [span("head", "Permissions"), "   ", span("dim", grantCount(items))],
@@ -150,11 +146,9 @@ export const walkPermissions = (): Effect.Effect<
       ),
     );
     const listed = [
-      ...perms.filter((p) => p.state === "granted"),
+      ...perms.filter((p) => p.item.state === "granted"),
       ...perms.filter(
-        (p) =>
-          p.state !== "granted" &&
-          (interactive ? !askable(p.item, p.state) : true),
+        (p) => p.item.state !== "granted" && (interactive ? !denied(p) : true),
       ),
     ];
     yield* Effect.forEach(listed, printRow);
@@ -175,31 +169,32 @@ export const walkPermissions = (): Effect.Effect<
       yield* prompt.print("no terminal, skipping questions");
       return;
     }
-    type Perm = (typeof perms)[number];
     // True when tccutil cleared the grant, so macOS can ask again.
     const offerReset = (perm: Perm, message: string) =>
       Effect.gen(function* () {
         const { item, request } = perm;
         const reset = yield* prompt.confirm({ message, initial: false });
         if (!reset) {
-          perm.row = [lead("warn", item), span("warn", resetLater(request))];
-          yield* printRow(perm);
+          yield* show(perm, [
+            lead("warn", item),
+            span("warn", resetLater(request)),
+          ]);
           return false;
         }
-        const { code, output } = yield* runCommand(
-          "tccutil",
-          resetArgs(request),
+        const after = yield* resetGrant(picture, request).pipe(
+          Effect.map((next) => ({ next }) as const),
+          Effect.catchTag("GrantResetError", (e) =>
+            Effect.succeed({ error: e } as const),
+          ),
         );
-        if (code !== 0) {
-          const error =
-            output
-              .split("\n")
-              .map((l) => l.trim())
-              .find((l) => l !== "") ?? `tccutil reset exited ${code}`;
-          perm.row = [lead("bad", item), span("bad", error)];
-          yield* printRow(perm);
+        if ("error" in after) {
+          yield* show(perm, [
+            lead("bad", item),
+            span("bad", after.error.message),
+          ]);
           return false;
         }
+        picture = after.next;
         return true;
       });
     // True when macOS was asked and the grant is worth reading again.
@@ -215,8 +210,10 @@ export const walkPermissions = (): Effect.Effect<
           ),
         );
         if ("error" in asked) {
-          perm.row = [lead("bad", item), span("bad", asked.error.message)];
-          yield* printRow(perm);
+          yield* show(perm, [
+            lead("bad", item),
+            span("bad", asked.error.message),
+          ]);
           return false;
         }
         if (request.kind !== "automation") {
@@ -232,50 +229,43 @@ export const walkPermissions = (): Effect.Effect<
             initial: true,
           });
           if (!turnedOn) {
-            perm.row = [
+            yield* show(perm, [
               lead("warn", item),
               span(
                 "warn",
                 "later: turn it on, then run clocktrace permissions",
               ),
-            ];
-            yield* printRow(perm);
+            ]);
             return false;
           }
         }
         return true;
       });
-    const recheck = (perm: Perm) =>
+    const checkPerm = (perm: Perm) =>
       Effect.gen(function* () {
-        const { request } = perm;
-        const after = yield* Effect.scoped(helper.permissions(appPath));
-        yield* saveLiveGrants(after, yield* DateTime.now);
-        perm.state =
-          request.kind === "automation"
-            ? (after.automation[request.bundleId] ?? perm.state)
-            : request.kind === "fullDiskAccess"
-              ? after.fullDiskAccess
-              : after.accessibility;
-        return perm.state;
+        picture = yield* checkAgain(picture, perm.request);
+        return stateOf(picture, perm.request);
       });
     const printResult = (perm: Perm) => {
       const { item, request } = perm;
-      perm.row =
-        perm.state === "granted"
+      const state = stateOf(picture, request);
+      return show(
+        perm,
+        state === "granted"
           ? [lead("ok", item), span("dim", "granted")]
-          : perm.state === "noAnswer" && request.kind === "automation"
+          : state === "noAnswer" && request.kind === "automation"
             ? [
                 lead("warn", item),
                 noteCell(item, noAnswerNote(browserName(request.bundleId))),
               ]
-            : [lead("bad", item), span("bad", item.fix)];
-      return printRow(perm);
+            : [lead("bad", item), span("bad", item.fix)],
+      );
     };
     const ask = (perm: Perm) =>
       Effect.gen(function* () {
         const { item, request } = perm;
         if (request.kind === "automation") {
-          if (perm.state !== "denied") {
+          if (stateOf(picture, request) !== "denied") {
             return;
           }
           const browser = browserName(request.bundleId);
@@ -284,8 +274,7 @@ export const walkPermissions = (): Effect.Effect<
             initial: true,
           });
           if (!open) {
-            perm.row = initialRow(item);
-            yield* printRow(perm);
+            yield* show(perm, initialRow(item));
             return;
           }
           const { code } = yield* runCommand("open", [automationSettingsUrl]);
@@ -299,28 +288,25 @@ export const walkPermissions = (): Effect.Effect<
             initial: true,
           });
           if (!switched) {
-            perm.row = [
+            yield* show(perm, [
               lead("warn", item),
               span(
                 "warn",
                 "later: switch it on, then run clocktrace permissions",
               ),
-            ];
-            yield* printRow(perm);
+            ]);
             return;
           }
           if (item.checkedAt !== null) {
-            perm.row = initialRow(item);
-            yield* printRow(perm);
+            yield* show(perm, initialRow(item));
             yield* prompt.print(
               `  ${browser} shows as granted the next time you open it`,
             );
             return;
           }
-          const state = yield* recheck(perm);
+          const state = yield* checkPerm(perm);
           if (state === "notRunning") {
-            perm.row = initialRow(item);
-            yield* printRow(perm);
+            yield* show(perm, initialRow(item));
             yield* prompt.print(
               `  ${browser} shows as granted the next time you open it`,
             );
@@ -335,6 +321,7 @@ export const walkPermissions = (): Effect.Effect<
               ? [browserName(p.request.bundleId)]
               : [],
           );
+          const before = picture;
           if (
             !(yield* offerReset(
               perm,
@@ -343,26 +330,25 @@ export const walkPermissions = (): Effect.Effect<
           ) {
             return;
           }
+          // The reset cleared every browser. Each one still denied before
+          // it gets the reset row, and reads notAsked now, so it is not
+          // asked again in this walk.
           for (const other of perms) {
-            if (other.request.kind !== "automation") {
+            if (
+              other.request.kind !== "automation" ||
+              stateOf(before, other.request) !== "denied"
+            ) {
               continue;
             }
-            yield* store.deleteSetting(savedGrantKey(other.request.bundleId));
-            // The reset cleared every browser's grant, so a sibling still
-            // queued as denied is already back to notAsked — it must not be
-            // asked again in this walk.
-            if (other.state === "denied") {
-              other.state = "notAsked";
-              other.row = [
-                lead("warn", other.item),
-                span(
-                  "warn",
-                  `reset · macOS asks the next time ${browserName(other.request.bundleId)} comes to the front`,
-                ),
-              ];
-              if (other !== perm) {
-                yield* printRow(other);
-              }
+            rows[perms.indexOf(other)] = [
+              lead("warn", other.item),
+              span(
+                "warn",
+                `reset · macOS asks the next time ${browserName(other.request.bundleId)} comes to the front`,
+              ),
+            ];
+            if (other !== perm) {
+              yield* printRow(other);
             }
           }
           yield* printRow(perm);
@@ -373,19 +359,17 @@ export const walkPermissions = (): Effect.Effect<
           initial: true,
         });
         if (!allow) {
-          perm.row = [
+          yield* show(perm, [
             lead("warn", item),
             span("warn", "later: run clocktrace permissions"),
-          ];
-          yield* printRow(perm);
+          ]);
           return;
         }
         if (!(yield* requestGrant(perm, false))) {
           return;
         }
-        yield* recheck(perm);
         // Turned on yet still denied: the stored grant is stale.
-        if (perm.state === "denied") {
+        if ((yield* checkPerm(perm)) === "denied") {
           if (
             !(yield* offerReset(
               perm,
@@ -397,14 +381,11 @@ export const walkPermissions = (): Effect.Effect<
           if (!(yield* requestGrant(perm, true))) {
             return;
           }
-          yield* recheck(perm);
+          yield* checkPerm(perm);
         }
         yield* printResult(perm);
       });
-    yield* Effect.forEach(
-      perms.filter((p) => askable(p.item, p.state)),
-      ask,
-    );
+    yield* Effect.forEach(perms.filter(denied), ask);
   });
 
 export const permissions = (): Effect.Effect<
