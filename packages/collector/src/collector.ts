@@ -65,16 +65,11 @@ export const collect = <E, R>(
         if (last.get(line.bundleId) === line.grant) {
           return;
         }
+        yield* Ref.set(
+          remembered,
+          new Map(last).set(line.bundleId, line.grant as "granted" | "denied"),
+        );
         yield* saveGrant(line.bundleId, line.grant, line.ts).pipe(
-          Effect.tap(() =>
-            Ref.set(
-              remembered,
-              new Map(last).set(
-                line.bundleId as string,
-                line.grant as "granted" | "denied",
-              ),
-            ),
-          ),
           Effect.catchTag("StoreError", () =>
             Effect.logWarning("saved grant not written").pipe(
               Effect.annotateLogs({ bundleId: line.bundleId }),

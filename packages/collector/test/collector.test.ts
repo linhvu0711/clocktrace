@@ -713,10 +713,16 @@ describe("collector", () => {
   });
 
   it("a failed Grant save logs and keeps recording", async () => {
-    // Given: a Store whose setSetting fails; Chrome denied, then Finder
+    // Given: a Store whose setSetting fails; Chrome denied twice, then Finder
     const lines = [
       line({
         ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+      line({
+        ts: "2026-01-01T09:00:02Z",
         app: "Google Chrome",
         bundleId: "com.google.Chrome",
         grant: "denied",
@@ -727,6 +733,7 @@ describe("collector", () => {
         bundleId: "com.apple.finder",
       }),
     ];
+    let writes = 0;
     const failingSetSetting = Layer.effect(
       Store,
       Effect.map(
@@ -734,8 +741,10 @@ describe("collector", () => {
         (s) =>
           new Store({
             ...s,
-            setSetting: () =>
-              Effect.fail(new StoreError({ cause: "disk full" })),
+            setSetting: () => {
+              writes += 1;
+              return Effect.fail(new StoreError({ cause: "disk full" }));
+            },
           }),
       ),
     );
@@ -760,7 +769,8 @@ describe("collector", () => {
         }));
       }).pipe(Effect.provide(Layer.provide(failingSetSetting, Store.Test))),
     );
-    // Then
+    // Then: one failed save per Grant change, not one per heartbeat
+    expect(writes).toBe(1);
     expect(rows).toEqual([
       {
         appName: "Google Chrome",
