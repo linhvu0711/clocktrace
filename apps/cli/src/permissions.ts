@@ -22,7 +22,7 @@ import {
   Command as PlatformCommand,
   type Terminal,
 } from "@effect/platform";
-import { Data, Effect, Either, Schedule } from "effect";
+import { Data, Effect, Either, Option, Schedule } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { type Cell, columns, line, mark, Style, span } from "./format.js";
@@ -370,12 +370,20 @@ export const walkPermissions = (
           }
           const asked = yield* requestGrant(perm, true);
           // An AppleEvents reset clears every browser's grant, not only this
-          // one, so read them all again, even when this ask failed.
-          const after = yield* Effect.scoped(helper.permissions(appPath));
-          for (const other of perms) {
-            if (other.item.request.kind === "automation") {
-              other.state =
-                after.automation[other.item.request.bundleId] ?? other.state;
+          // one, so read them all again, even when this ask failed. The failed
+          // ask already printed its row; a read that fails too skips the
+          // refresh so the walk goes on, as it does after the ask.
+          const read = Effect.scoped(helper.permissions(appPath));
+          const after = asked
+            ? Option.some(yield* read)
+            : yield* Effect.option(read);
+          if (Option.isSome(after)) {
+            for (const other of perms) {
+              if (other.item.request.kind === "automation") {
+                other.state =
+                  after.value.automation[other.item.request.bundleId] ??
+                  other.state;
+              }
             }
           }
           if (asked) {

@@ -427,6 +427,41 @@ describe("permissions", () => {
     ]);
   });
 
+  it("a helper that fails the browser ask and the re-read after a reset lets the walk go on", async () => {
+    // Given: Chromium and full disk access denied; after the reset the
+    // Chromium ask and the next permissions read both die in the helper;
+    // full disk access grants on its re-check
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "denied",
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [p, { ...p, fullDiskAccess: "granted" }],
+      ["y", { key: "enter" }, { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+        requestError: (grant) =>
+          grant.kind === "automation"
+            ? new HelperExitedError({ cause: "open exited 1" })
+            : null,
+        permissionsErrorAt: 1,
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
+    expect(output.slice(-3)).toEqual([
+      "  ✘ Automation · Chromium  helper exited: open exited 1",
+      "  → System Settings opened, turn it on for Clocktrace",
+      "  ✔ Full Disk Access       granted",
+    ]);
+  });
+
   it("a failed tccutil prints its error and the walk goes on", async () => {
     // Given: Chromium and full disk access denied; tccutil exits 64 with its
     // real stderr text; full disk access grants on re-read
