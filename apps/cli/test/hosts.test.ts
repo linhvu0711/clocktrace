@@ -44,6 +44,8 @@ import {
   Hosts,
   manualCommand,
   manualRemoveCommand,
+  serverEntry,
+  serverNode,
 } from "../src/hosts.js";
 import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
@@ -129,6 +131,13 @@ const fakeExecutor = (
       layer: Layer.succeed(CommandExecutor.CommandExecutor, executor),
     };
   });
+
+const addClaude = `claude mcp add --scope user clocktrace -- ${serverNode} ${serverEntry} mcp`;
+const addCodex = `codex mcp add clocktrace -- ${serverNode} ${serverEntry} mcp`;
+const addOpenclaw = `openclaw mcp add clocktrace --command ${serverNode} --arg ${serverEntry} --arg mcp`;
+const removeClaude = "claude mcp remove clocktrace --scope user";
+const removeCodex = "codex mcp remove clocktrace";
+const removeOpenclaw = "openclaw mcp unset clocktrace";
 
 const register = (
   host: HostName,
@@ -267,11 +276,9 @@ describe("hosts", () => {
     // Given: a recording CommandExecutor whose exits are 0
     const executor = await Effect.runPromise(
       fakeExecutor({
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": { code: 0 },
-        "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
-        "openclaw mcp add clocktrace --command clocktrace --arg mcp": {
-          code: 0,
-        },
+        [addClaude]: { code: 0 },
+        [addCodex]: { code: 0 },
+        [addOpenclaw]: { code: 0 },
       }),
     );
     // When
@@ -281,16 +288,19 @@ describe("hosts", () => {
       await register("openclaw", executor.layer),
     ];
     const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then
+    // Then: each register removes first, then adds
     expect(recorded).toEqual([
-      "claude mcp add --scope user clocktrace -- clocktrace mcp",
-      "codex mcp add clocktrace -- clocktrace mcp",
-      "openclaw mcp add clocktrace --command clocktrace --arg mcp",
+      removeClaude,
+      addClaude,
+      removeCodex,
+      addCodex,
+      removeOpenclaw,
+      addOpenclaw,
     ]);
     expect(lines).toEqual([
-      "claude code: registered",
-      "codex: registered",
-      "openclaw: registered",
+      { outcome: "registered" },
+      { outcome: "registered" },
+      { outcome: "registered" },
     ]);
   });
 
@@ -307,37 +317,21 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe("hermes agent: registered");
+    expect(line).toEqual({ outcome: "registered" });
     expect(parse(readFileSync(path, "utf8"))).toEqual({
       model: "nous-1",
       // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
       mcp_servers: {
-        clocktrace: { command: "clocktrace", args: ["mcp"] },
+        clocktrace: { command: serverNode, args: [serverEntry, "mcp"] },
       },
     });
   });
 
-  it("an add that reports the server exists is already registered", async () => {
-    // Given: claude exits 1 printing "already exists"
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-          code: 1,
-          output: "error: already exists",
-        },
-      }),
-    );
-    // When
-    const line = await register("claude", executor.layer);
-    // Then
-    expect(line).toBe("claude code: already registered");
-  });
-
   it("a failed add shows the manual command", async () => {
-    // Given: codex exits 1 printing "boom"
+    // Given: codex exits 1 printing "boom", and no prior registration
     const executor = await Effect.runPromise(
       fakeExecutor({
-        "codex mcp add clocktrace -- clocktrace mcp": {
+        [addCodex]: {
           code: 1,
           output: "boom",
         },
@@ -345,19 +339,220 @@ describe("hosts", () => {
     );
     // When
     const line = await register("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: remove then add, nothing more to put back
+    expect(recorded).toEqual([removeCodex, addCodex]);
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: `codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
+    });
+  });
+
+  it("a failed add puts back the previous claude registration", async () => {
+    // Given: ~/.claude.json holds the legacy bare-word entry; the add fails
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          clocktrace: { type: "stdio", command: "clocktrace", args: ["mcp"] },
+        },
+      }),
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addClaude]: { code: 1, output: "boom" },
+        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
+          code: 0,
+        },
+      }),
+    );
+    // When
+    const line = await register("claude", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: remove, add, restore the old entry
+    expect(recorded).toEqual([
+      removeClaude,
+      addClaude,
+      "claude mcp add --scope user clocktrace -- clocktrace mcp",
+    ]);
+    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.claude });
+  });
+
+  it("a failed add puts back the previous codex registration", async () => {
+    // Given: config.toml holds a stale [mcp_servers.clocktrace] table
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.clocktrace]\ncommand = "/old/node"\nargs = ["/old/entry.js", "mcp"]\n',
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addCodex]: { code: 1, output: "boom" },
+        "codex mcp add clocktrace -- /old/node /old/entry.js mcp": {
+          code: 0,
+        },
+      }),
+    );
+    // When
+    const line = await register("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
     // Then
-    expect(line).toBe(
-      "codex: failed. run by hand: codex mcp add clocktrace -- clocktrace mcp",
+    expect(recorded).toEqual([
+      removeCodex,
+      addCodex,
+      "codex mcp add clocktrace -- /old/node /old/entry.js mcp",
+    ]);
+    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.codex });
+  });
+
+  it("a failed add puts back the previous openclaw registration", async () => {
+    // Given: openclaw.json holds the legacy bare-word entry; the add fails
+    mkdirSync(join(home, ".openclaw"), { recursive: true });
+    writeFileSync(
+      join(home, ".openclaw", "openclaw.json"),
+      JSON.stringify({
+        mcp: {
+          servers: { clocktrace: { command: "clocktrace", args: ["mcp"] } },
+        },
+      }),
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addOpenclaw]: { code: 1, output: "boom" },
+        "openclaw mcp add clocktrace --command clocktrace --arg mcp": {
+          code: 0,
+        },
+      }),
+    );
+    // When
+    const line = await register("openclaw", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then
+    expect(recorded).toEqual([
+      removeOpenclaw,
+      addOpenclaw,
+      "openclaw mcp add clocktrace --command clocktrace --arg mcp",
+    ]);
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: manualCommand.openclaw,
+    });
+  });
+
+  it("a failed add restores the prior env map too", async () => {
+    // Given: config.toml holds an entry with an [mcp_servers.clocktrace.env]
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.clocktrace]\ncommand = "clocktrace"\nargs = ["mcp"]\n\n[mcp_servers.clocktrace.env]\nCLOCKTRACE_DB = "/work/db.db"\n',
+    );
+    const addCodexWithEnv = `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`;
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addCodexWithEnv]: { code: 1, output: "boom" },
+        "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp":
+          { code: 0 },
+      }),
+    );
+    // When
+    const line = await register("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then
+    expect(recorded).toEqual([
+      removeCodex,
+      addCodexWithEnv,
+      "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp",
+    ]);
+    // And the by-hand command keeps the env too
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: `codex mcp add clocktrace --env 'CLOCKTRACE_DB=/work/db.db' -- '${serverNode}' '${serverEntry}' 'mcp'`,
+    });
+  });
+
+  it("re-registration keeps the prior env map", async () => {
+    // Given: config.toml holds a clocktrace entry with an env sub-table
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.clocktrace]\ncommand = "clocktrace"\nargs = ["mcp"]\n\n[mcp_servers.clocktrace.env]\nCLOCKTRACE_DB = "/work/db.db"\n',
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [`codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`]:
+          { code: 0 },
+      }),
+    );
+    // When
+    const line = await register("codex", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: the replacement carries the env the old entry had
+    expect(recorded).toEqual([
+      removeCodex,
+      `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`,
+    ]);
+    expect(line).toEqual({ outcome: "registered" });
+  });
+
+  it("a failed add does not restore a url-based registration", async () => {
+    // Given: ~/.claude.json holds an http entry argv cannot rebuild
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({
+        mcpServers: {
+          clocktrace: { type: "http", url: "https://example.com/mcp" },
+        },
+      }),
+    );
+    const executor = await Effect.runPromise(
+      fakeExecutor({
+        [addClaude]: { code: 1, output: "boom" },
+      }),
+    );
+    // When
+    const line = await register("claude", executor.layer);
+    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
+    // Then: remove then add, and no partial restore of a wrong entry
+    expect(recorded).toEqual([removeClaude, addClaude]);
+    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.claude });
+  });
+
+  it("manual commands quote the node and entry paths", () => {
+    expect(manualCommand.claude).toBe(
+      `claude mcp add --scope user clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
+    );
+    expect(manualCommand.codex).toBe(
+      `codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
+    );
+    expect(manualCommand.openclaw).toBe(
+      `openclaw mcp add clocktrace --command '${serverNode}' --arg '${serverEntry}' --arg 'mcp'`,
     );
   });
 
-  it("hermes already registered leaves the file unchanged", async () => {
-    // Given: config.yaml already holds mcp_servers.clocktrace plus other keys
+  it("a failed add prints the ✘ line with the absolute command", async () => {
+    // Given: the codex add exits 1 printing "boom"
+    // When
+    const { exit, output } = await runSetup(["codex"], {
+      interactive: false,
+      results: {
+        [addCodex]: { code: 1, output: "boom" },
+      },
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toContain(
+      `  ✘ Codex failed · run by hand: codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
+    );
+  });
+
+  it("hermes rewrites an existing key", async () => {
+    // Given: config.yaml holds a stale mcp_servers.clocktrace plus other keys
     mkdirSync(join(home, ".hermes"), { recursive: true });
     const path = join(home, ".hermes", "config.yaml");
-    const text =
-      'model: nous-1\nmcp_servers:\n  clocktrace:\n    command: clocktrace\n    args: ["mcp"]\n';
-    writeFileSync(path, text);
+    writeFileSync(
+      path,
+      'model: nous-1\nmcp_servers:\n  clocktrace:\n    command: clocktrace\n    args: ["mcp"]\n',
+    );
     // When
     const line = await Effect.runPromise(
       Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
@@ -366,8 +561,44 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe("hermes agent: already registered");
-    expect(readFileSync(path, "utf8")).toBe(text);
+    expect(line).toEqual({ outcome: "registered" });
+    expect(parse(readFileSync(path, "utf8"))).toEqual({
+      model: "nous-1",
+      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
+      mcp_servers: {
+        clocktrace: { command: serverNode, args: [serverEntry, "mcp"] },
+      },
+    });
+  });
+
+  it("hermes re-registration keeps the env map", async () => {
+    // Given: config.yaml holds a clocktrace entry with env
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(
+      path,
+      'mcp_servers:\n  clocktrace:\n    command: clocktrace\n    args: ["mcp"]\n    env:\n      CLOCKTRACE_DB: /work/db.db\n',
+    );
+    // When
+    const line = await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    // Then
+    expect(line).toEqual({ outcome: "registered" });
+    expect(parse(readFileSync(path, "utf8"))).toEqual({
+      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
+      mcp_servers: {
+        clocktrace: {
+          command: serverNode,
+          args: [serverEntry, "mcp"],
+          // biome-ignore lint/style/useNamingConvention: the env key is the name
+          env: { CLOCKTRACE_DB: "/work/db.db" },
+        },
+      },
+    });
   });
 
   it("an unreadable hermes config fails by hand instead of overwriting", async () => {
@@ -385,9 +616,10 @@ describe("hosts", () => {
     );
     chmodSync(path, 0o644);
     // Then
-    expect(line).toBe(
-      `hermes agent: failed. run by hand: ${manualCommand.hermes}`,
-    );
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: manualCommand.hermes,
+    });
     expect(readFileSync(path, "utf8")).toBe("model: nous-1\n");
   });
 
@@ -404,9 +636,10 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe(
-      `hermes agent: failed. run by hand: ${manualCommand.hermes}`,
-    );
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: manualCommand.hermes,
+    });
     expect(readFileSync(path, "utf8")).toBe("model: [\n");
   });
 
@@ -427,7 +660,7 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe("hermes agent: registered");
+    expect(line).toEqual({ outcome: "registered" });
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
     expect(readFileSync(target, "utf8")).toContain("clocktrace");
     expect(statSync(target).mode & 0o777).toBe(0o600);
@@ -449,10 +682,8 @@ describe("hosts", () => {
         "which claude": { code: 0 },
         "which codex": { code: 1 },
         "which openclaw": { code: 1 },
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-          code: 0,
-        },
-        "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
+        [addClaude]: { code: 0 },
+        [addCodex]: { code: 0 },
       },
     });
     // Then
@@ -465,9 +696,11 @@ describe("hosts", () => {
     expect(shown).toContain("  ☐ Hermes Agent");
     expect(shown).toContain("  ☐ OpenClaw");
     expect(shown).toContain("  ☒ Codex");
-    expect(recorded.slice(-2)).toEqual([
-      "claude mcp add --scope user clocktrace -- clocktrace mcp",
-      "codex mcp add clocktrace -- clocktrace mcp",
+    expect(recorded.slice(-4)).toEqual([
+      removeClaude,
+      addClaude,
+      removeCodex,
+      addCodex,
     ]);
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
@@ -503,9 +736,7 @@ describe("hosts", () => {
         "which claude": { code: 0 },
         "which codex": { code: 1 },
         "which openclaw": { code: 1 },
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-          code: 0,
-        },
+        [addClaude]: { code: 0 },
       },
     });
     // Then
@@ -522,19 +753,14 @@ describe("hosts", () => {
       {
         interactive: false,
         results: {
-          "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-            code: 0,
-          },
-          "codex mcp add clocktrace -- clocktrace mcp": { code: 0 },
+          [addClaude]: { code: 0 },
+          [addCodex]: { code: 0 },
         },
       },
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(recorded).toEqual([
-      "claude mcp add --scope user clocktrace -- clocktrace mcp",
-      "codex mcp add clocktrace -- clocktrace mcp",
-    ]);
+    expect(recorded).toEqual([removeClaude, addClaude, removeCodex, addCodex]);
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");

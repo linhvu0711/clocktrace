@@ -25,6 +25,7 @@ clocktrace status        # Collector state, permissions, last Activity, database
 clocktrace permissions   # walk the three permissions again
 clocktrace mcp           # serve MCP over stdio for a Host
 clocktrace setup --hosts <list>   # register the MCP server with the named Hosts (no checklist)
+                                  # re-run after you move the checkout or change your node — it rewrites every Registration
 clocktrace rules list [--json]                # one line per Rule: id, position, field compare value, effect target
 clocktrace rules add --field <f> --compare <c> --value <v> --effect <e> [--target <id>] [--json]   # append a Rule; a category or project effect needs --target
 clocktrace rules remove <id> [--json]         # remove a Rule

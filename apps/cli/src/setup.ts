@@ -64,17 +64,13 @@ const registerHosts = (
     const look = yield* Style;
     for (const host of hosts) {
       const result = yield* hostsService.register(host);
-      const row = result.includes("failed")
-        ? [
-            mark("bad", look),
-            ` ${hostTitle[host]} failed · run by hand: ${manualCommand[host]}`,
-          ]
-        : [
-            mark("ok", look),
-            result.endsWith("already registered")
-              ? ` ${hostTitle[host]} already registered`
-              : ` ${hostTitle[host]} registered`,
-          ];
+      const row =
+        result.outcome === "failed"
+          ? [
+              mark("bad", look),
+              ` ${hostTitle[host]} failed · run by hand: ${result.byHand}`,
+            ]
+          : [mark("ok", look), ` ${hostTitle[host]} registered`];
       yield* prompt.print(line(["  ", ...row], look));
     }
   });
