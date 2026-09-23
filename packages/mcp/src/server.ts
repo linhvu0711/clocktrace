@@ -1,5 +1,6 @@
 import {
   type App,
+  type CollectorPaths,
   type Helper,
   type HelperExitedError,
   type HelperNotFoundError,
@@ -75,6 +76,7 @@ export type Services =
   | Launchd
   | Helper
   | App
+  | CollectorPaths
   | DateTime.CurrentTimeZone;
 
 type ToolError =

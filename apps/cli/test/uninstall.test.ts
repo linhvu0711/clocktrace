@@ -10,6 +10,8 @@ import { join } from "node:path";
 
 import {
   App,
+  CollectorPaths,
+  collectorPaths,
   collectorPlist,
   defaultDbPath,
   fakeLaunchd,
@@ -125,7 +127,7 @@ describe("uninstall", () => {
     home = mkdtempSync(join(tmpdir(), "clocktrace-home-"));
     dbPath = join(dir, "clocktrace.db");
     logDir = join(dir, "logs");
-    appPath = join(home, "Applications", "Clocktrace.app");
+    appPath = collectorPaths(home).appPath;
     vi.stubEnv("HOME", home);
   });
 
@@ -202,9 +204,10 @@ describe("uninstall", () => {
           opts.hostLayer ?? Hosts.Test(),
           executor.layer,
           Style.Test,
+          CollectorPaths.Default(home),
         );
         const exit = yield* Effect.exit(
-          uninstall({ purge: opts.purge ?? false, logDir, appPath }).pipe(
+          uninstall({ purge: opts.purge ?? false, logDir }).pipe(
             Effect.provide(layers),
           ),
         );

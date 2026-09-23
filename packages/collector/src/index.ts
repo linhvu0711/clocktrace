@@ -10,6 +10,7 @@ export * from "./importer-rules.js";
 export * from "./installed.js";
 export * from "./launchd.js";
 export * from "./mac-identity.js";
+export * from "./paths.js";
 export * from "./plist.js";
 export * from "./register-device.js";
 export * from "./run.js";

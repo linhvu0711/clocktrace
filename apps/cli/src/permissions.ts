@@ -2,8 +2,8 @@ import {
   type App,
   AppMissingError,
   appBundleId,
-  appPath,
   browserName,
+  CollectorPaths,
   type GrantItem,
   type GrantItemState,
   type GrantRequest,
@@ -75,6 +75,7 @@ export const walkPermissions = (): Effect.Effect<
   | Stdin
   | Helper
   | App
+  | CollectorPaths
   | Store
   | Terminal.Terminal
   | FileSystem.FileSystem
@@ -86,6 +87,7 @@ export const walkPermissions = (): Effect.Effect<
   Effect.gen(function* () {
     const prompt = yield* Prompt;
     const helper = yield* Helper;
+    const { appPath } = yield* CollectorPaths;
     const store = yield* Store;
     const look = yield* Style;
     const picture = yield* grantPicture();
@@ -427,6 +429,7 @@ export const permissions = (): Effect.Effect<
   | Stdin
   | Helper
   | App
+  | CollectorPaths
   | Launchd
   | FileSystem.FileSystem
   | Terminal.Terminal

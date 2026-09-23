@@ -5,7 +5,8 @@ import { join } from "node:path";
 import {
   App,
   AppMissingError,
-  appPath,
+  CollectorPaths,
+  collectorPaths,
   fakeLaunchd,
   type GrantRequest,
   Helper,
@@ -126,6 +127,7 @@ describe("permissions", () => {
           helper,
           options.appLayer ?? App.Test,
           Style.Test,
+          CollectorPaths.Test,
           exec.layer,
         );
         const exit = yield* Effect.exit(
@@ -277,7 +279,11 @@ describe("permissions", () => {
       { appLayer: appMissing },
     );
     // Then
-    expect(exit).toEqual(Exit.fail(new AppMissingError({ path: appPath })));
+    expect(exit).toEqual(
+      Exit.fail(
+        new AppMissingError({ path: collectorPaths("/Users/me").appPath }),
+      ),
+    );
     if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
       expect((exit.cause.error as AppMissingError).message).toBe(
         "app: missing, run clocktrace setup",

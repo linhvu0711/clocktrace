@@ -4,8 +4,7 @@ import {
   App,
   type AppError,
   type AppMissingError,
-  appMainPath,
-  appPath,
+  CollectorPaths,
   collectorPlist,
   dbPathConfig,
   entryPath,
@@ -125,6 +124,7 @@ export const setup = (
   | Stdin
   | Helper
   | App
+  | CollectorPaths
   | Launchd
   | Hosts
   | FileSystem.FileSystem
@@ -145,6 +145,7 @@ export const setup = (
         const prompt = yield* Prompt;
         const app = yield* App;
         const look = yield* Style;
+        const { appPath, appMainPath } = yield* CollectorPaths;
         const home = homedir();
         yield* prompt.print(line([span("head", "Collector")], look));
         const collectorRows = columns(

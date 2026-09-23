@@ -5,8 +5,8 @@ import { join } from "node:path";
 import {
   App,
   AppError,
-  appMainPath,
-  appPath,
+  CollectorPaths,
+  collectorPaths,
   entryPath,
   fakeLaunchd,
   Helper,
@@ -187,6 +187,7 @@ describe("setup", () => {
           opts.hostLayer ?? Hosts.Test(),
           noCommandsLayer,
           Style.Test,
+          CollectorPaths.Default(home),
         );
         const exit = yield* Effect.exit(
           setup(opts.hosts, Schedule.recurs(3)).pipe(Effect.provide(layers)),
@@ -215,7 +216,7 @@ describe("setup", () => {
 
   const expectedSetup = () => [
     "Collector",
-    `  ✔ app           ${appPath}`,
+    "  ✔ app           ~/Applications/Clocktrace.app",
     `  ✔ launch agent  ${plistPath}`,
     "  starting collector…",
     "  ✔ running",
@@ -250,7 +251,9 @@ describe("setup", () => {
     expect(state.installed).toBe(true);
     expect(state.running).toBe(true);
     expect(state.installs).toBe(1);
-    expect(state.plist).toContain(`<string>${appMainPath}</string>`);
+    expect(state.plist).toContain(
+      `<string>${collectorPaths(home).appMainPath}</string>`,
+    );
     expect(state.plist).toContain("<string>spawn</string>");
     expect(state.plist).toContain(`<string>${process.execPath}</string>`);
     expect(state.plist).toContain(`<string>${entryPath}</string>`);
@@ -383,7 +386,7 @@ describe("setup", () => {
     );
     expect(output).toEqual([
       "Collector",
-      `  ✔ app           ${appPath}`,
+      "  ✔ app           ~/Applications/Clocktrace.app",
       `  ✘ collector did not start · see ${logPath}`,
     ]);
     expect(state.installs).toBe(1);
@@ -411,7 +414,7 @@ describe("setup", () => {
     );
     expect(output).toEqual([
       "Collector",
-      `  ✔ app           ${appPath}`,
+      "  ✔ app           ~/Applications/Clocktrace.app",
       `  ✔ launch agent  ${plistPath}`,
       "  starting collector…",
       `  ✘ collector did not start · see ${logPath}`,

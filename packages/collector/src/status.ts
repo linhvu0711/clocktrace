@@ -14,6 +14,7 @@ import type { Helper, HelperExitedError } from "./helper.js";
 import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
+import type { CollectorPaths } from "./paths.js";
 
 export const PermissionLine = Schema.Struct({
   name: Schema.String,
@@ -98,7 +99,7 @@ export const permissionLine = (item: GrantItem): PermissionLine => {
 export const readStatus = (): Effect.Effect<
   Status,
   HelperExitedError | ParseError | StoreError | LaunchdError,
-  Store | Launchd | Helper | App
+  Store | Launchd | Helper | App | CollectorPaths
 > =>
   Effect.gen(function* () {
     const picture = yield* grantPicture();

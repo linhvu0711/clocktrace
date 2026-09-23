@@ -1,7 +1,7 @@
 import {
   App,
   AppMissingError,
-  appMainPath,
+  CollectorPaths,
   Launchd,
 } from "@clocktrace/collector";
 import { Command } from "@effect/cli";
@@ -16,7 +16,7 @@ import { type NotSetUpError, requireSetUp } from "./set-up.js";
 export const start = (): Effect.Effect<
   void,
   NotSetUpError | ReportedError | AppMissingError,
-  Prompt | Launchd | App | FileSystem.FileSystem | Style
+  Prompt | Launchd | App | CollectorPaths | FileSystem.FileSystem | Style
 > =>
   requireSetUp.pipe(
     Effect.andThen(
@@ -26,6 +26,7 @@ export const start = (): Effect.Effect<
         const look = yield* Style;
         const app = yield* App;
         if (!(yield* app.isInstalled())) {
+          const { appMainPath } = yield* CollectorPaths;
           return yield* new AppMissingError({ path: appMainPath });
         }
         yield* reportLaunchd(launchd.bootstrap());

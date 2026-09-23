@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import {
   App,
   appBundleId,
-  appPath as defaultAppPath,
+  CollectorPaths,
   defaultDbPath,
   logDir as defaultLogDir,
   Launchd,
@@ -54,9 +54,8 @@ export const purgeTargets = (
 
 export const uninstall = (options: {
   readonly purge: boolean;
-  /** Test seams: the real paths are fixed at import from the home dir. */
+  /** Test seam: the real log folder is fixed at import from the home dir. */
   readonly logDir?: string;
-  readonly appPath?: string;
 }): Effect.Effect<
   void,
   ReportedError | StoppedError,
@@ -64,6 +63,7 @@ export const uninstall = (options: {
   | Stdin
   | Launchd
   | App
+  | CollectorPaths
   | Hosts
   | FileSystem.FileSystem
   | CommandExecutor.CommandExecutor
@@ -80,7 +80,7 @@ export const uninstall = (options: {
     const look = yield* Style;
     const home = homedir();
     const logDir = options.logDir ?? defaultLogDir;
-    const appPath = options.appPath ?? defaultAppPath;
+    const { appPath } = yield* CollectorPaths;
     const done = (text: string) =>
       prompt.print(line([mark("ok", look), ` ${text}`], look));
     const skipped = (text: string) =>

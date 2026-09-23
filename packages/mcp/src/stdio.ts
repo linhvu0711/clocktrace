@@ -1,4 +1,6 @@
-import { App, Helper, Launchd } from "@clocktrace/collector";
+import { homedir } from "node:os";
+
+import { App, CollectorPaths, Helper, Launchd } from "@clocktrace/collector";
 import { NodeContext } from "@effect/platform-node";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { DateTime, Effect, Layer } from "effect";
@@ -18,7 +20,7 @@ export const serveStdio = async (): Promise<void> => {
       Helper.Default,
       App.Default,
       DateTime.layerCurrentZoneLocal,
-    ),
+    ).pipe(Layer.provideMerge(CollectorPaths.Default(homedir()))),
   );
   server.server.onclose = () => {
     void dispose();

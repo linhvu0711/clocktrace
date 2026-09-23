@@ -5,7 +5,8 @@ import { join } from "node:path";
 import {
   App,
   AppMissingError,
-  appMainPath,
+  CollectorPaths,
+  collectorPaths,
   fakeLaunchd,
   Helper,
   Launchd,
@@ -60,6 +61,7 @@ describe("start and stop", () => {
       | Path.Path
       | import("@effect/platform").FileSystem.FileSystem
       | App
+      | CollectorPaths
       | Style
     >,
     makeLaunchd?: (state: Ref.Ref<LaunchdState>) => Layer.Layer<Launchd>,
@@ -79,6 +81,7 @@ describe("start and stop", () => {
           Helper.Test(),
           appLayer,
           Style.Test,
+          CollectorPaths.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
         return {
@@ -146,7 +149,13 @@ describe("start and stop", () => {
       noApp,
     );
     // Then
-    expect(exit).toEqual(Exit.fail(new AppMissingError({ path: appMainPath })));
+    expect(exit).toEqual(
+      Exit.fail(
+        new AppMissingError({
+          path: collectorPaths("/Users/me").appMainPath,
+        }),
+      ),
+    );
     expect(output).toEqual([]);
     expect(state.running).toBe(false);
   });

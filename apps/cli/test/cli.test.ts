@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import {
   App,
+  CollectorPaths,
   fakeLaunchd,
   Helper,
   type LaunchdState,
@@ -81,6 +82,7 @@ describe("cli", () => {
           App.Test,
           Hosts.Test(),
           Style.Test,
+          CollectorPaths.Test,
         );
         const exit = yield* Effect.exit(
           run([...argv]).pipe(Effect.provide(layers)),

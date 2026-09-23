@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   App,
+  CollectorPaths,
   fakeLaunchd,
   Helper,
   HelperExitedError,
@@ -53,7 +54,14 @@ const connect = async (
   ),
 ) => {
   const { server, dispose } = await makeServer(
-    Layer.mergeAll(store, zone, collector, config, AppStore.Test),
+    Layer.mergeAll(
+      store,
+      zone,
+      collector,
+      config,
+      AppStore.Test,
+      CollectorPaths.Test,
+    ),
   );
   const client = new Client({ name: "test-client", version: "0" });
   const [clientTransport, serverTransport] =
