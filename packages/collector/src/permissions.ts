@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { type DateTime, Schema } from "effect";
 
 export const GrantState = Schema.Literal(
   "granted",
@@ -58,25 +58,52 @@ export const PermissionItem = Schema.Struct({
   loss: Schema.String,
   state: GrantState,
   request: GrantRequest,
+  checkedAt: Schema.NullOr(Schema.DateTimeUtc),
 });
 
 export type PermissionItem = Schema.Schema.Type<typeof PermissionItem>;
 
 export const permissionItems = (
   p: Permissions,
+  saved: ReadonlyMap<
+    string,
+    { readonly state: "granted" | "denied"; readonly checkedAt: DateTime.Utc }
+  > = new Map(),
 ): ReadonlyArray<PermissionItem> => {
   const automation = Object.entries(p.automation)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .filter(([, state]) => state !== "notInstalled")
-    .map(([bundleId, state]): PermissionItem => {
+    .flatMap(([bundleId, state]): ReadonlyArray<PermissionItem> => {
       const b = browserName(bundleId);
-      return {
+      const item = (
+        s: GrantState,
+        checkedAt: DateTime.Utc | null,
+      ): PermissionItem => ({
         name: `automation ${b}`,
         gives: `URLs in ${b}`,
         loss: `URLs in ${b} are not tracked`,
-        state,
+        state: s,
         request: { kind: "automation", bundleId },
-      };
+        checkedAt,
+      });
+      switch (state) {
+        case "notInstalled":
+        case "notAsked":
+          return [];
+        case "notRunning": {
+          const grant = saved.get(bundleId);
+          return grant === undefined
+            ? []
+            : [item(grant.state, grant.checkedAt)];
+        }
+        case "noAnswer": {
+          const grant = saved.get(bundleId);
+          return grant === undefined
+            ? [item("noAnswer", null)]
+            : [item(grant.state, grant.checkedAt)];
+        }
+        default:
+          return [item(state, null)];
+      }
     });
   return [
     {
@@ -85,6 +112,7 @@ export const permissionItems = (
       loss: "window titles are not tracked",
       state: p.accessibility,
       request: { kind: "accessibility" },
+      checkedAt: null,
     },
     ...automation,
     {
@@ -93,6 +121,7 @@ export const permissionItems = (
       loss: "iPhone and iPad time is not imported",
       state: p.fullDiskAccess,
       request: { kind: "fullDiskAccess" },
+      checkedAt: null,
     },
   ];
 };

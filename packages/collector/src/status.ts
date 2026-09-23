@@ -7,6 +7,7 @@ import { Helper, type HelperExitedError } from "./helper.js";
 import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
+import { readSavedGrants } from "./saved-grant.js";
 import {
   browserName,
   noAnswerNote,
@@ -18,6 +19,7 @@ export const PermissionLine = Schema.Struct({
   name: Schema.String,
   state: Schema.Literal("granted", "denied", "not checked"),
   note: Schema.NullOr(Schema.String),
+  checkedAt: Schema.NullOr(Schema.DateTimeUtc),
 });
 
 export type PermissionLine = Schema.Schema.Type<typeof PermissionLine>;
@@ -63,7 +65,12 @@ export type Status = Schema.Schema.Type<typeof Status>;
 
 export const permissionLine = (item: PermissionItem): PermissionLine => {
   if (item.state === "granted") {
-    return { name: item.name, state: "granted", note: null };
+    return {
+      name: item.name,
+      state: "granted",
+      note: null,
+      checkedAt: item.checkedAt,
+    };
   }
   if (item.state === "notRunning") {
     const browser =
@@ -74,6 +81,7 @@ export const permissionLine = (item: PermissionItem): PermissionLine => {
       name: item.name,
       state: "not checked",
       note: `${browser} is closed`,
+      checkedAt: item.checkedAt,
     };
   }
   if (item.state === "noAnswer") {
@@ -85,14 +93,25 @@ export const permissionLine = (item: PermissionItem): PermissionLine => {
       name: item.name,
       state: "not checked",
       note: noAnswerNote(browser),
+      checkedAt: item.checkedAt,
     };
   }
-  return { name: item.name, state: "denied", note: item.loss };
+  return {
+    name: item.name,
+    state: "denied",
+    note: item.loss,
+    checkedAt: item.checkedAt,
+  };
 };
 
 export const notCheckedLines: ReadonlyArray<PermissionLine> = [
-  { name: "accessibility", state: "not checked", note: null },
-  { name: "full disk access", state: "not checked", note: null },
+  { name: "accessibility", state: "not checked", note: null, checkedAt: null },
+  {
+    name: "full disk access",
+    state: "not checked",
+    note: null,
+    checkedAt: null,
+  },
 ];
 
 export const readStatus = (): Effect.Effect<
@@ -107,13 +126,28 @@ export const readStatus = (): Effect.Effect<
     const grants = present
       ? yield* Effect.scoped(helper.permissions(appPath))
       : null;
-    const permissions =
+    const store = yield* Store;
+    const saved = yield* readSavedGrants();
+    const items =
       grants === null
         ? notCheckedLines
-        : permissionItems(grants).map(permissionLine);
+        : permissionItems(grants, saved).map(permissionLine);
+    const permissions =
+      grants !== null &&
+      !items.some((p) => p.name.startsWith("automation "))
+        ? [
+            ...items.slice(0, 1),
+            {
+              name: "automation",
+              state: "not checked" as const,
+              note: "no browser used yet",
+              checkedAt: null,
+            },
+            ...items.slice(1),
+          ]
+        : items;
     const launchd = yield* Launchd;
     const collector = yield* launchd.state();
-    const store = yield* Store;
     const last = yield* store.latestActivityEnd();
     const databasePath = yield* Effect.orDie(dbPathConfig);
     let iosImport: IosImport | null = null;
@@ -189,10 +223,16 @@ export const statusLines = (
         ? "collector: running"
         : "collector: stopped, run clocktrace start",
       ...(s.app === "missing" ? ["app: missing, run clocktrace setup"] : []),
-      ...s.permissions.map(
-        (p) => `${p.name}: ${p.state}${p.note === null ? "" : `, ${p.note}`}`,
-      ),
     ];
+    for (const p of s.permissions) {
+      lines.push(
+        `${p.name}: ${p.state}${p.note === null ? "" : `, ${p.note}`}${
+          p.checkedAt === null
+            ? ""
+            : `, last checked ${yield* stamp(p.checkedAt)}`
+        }`,
+      );
+    }
     if (s.iosImport !== null) {
       lines.push(
         s.iosImport.state === "ok"

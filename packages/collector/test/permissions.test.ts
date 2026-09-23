@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { DateTime, Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -44,9 +44,7 @@ describe("permissions", () => {
     // Then
     expect(items).toEqual([
       ["accessibility", "granted"],
-      ["automation Safari", "notRunning"],
       ["automation Brave", "granted"],
-      ["automation Chrome", "notAsked"],
       ["full disk access", "denied"],
     ]);
   });
@@ -67,6 +65,7 @@ describe("permissions", () => {
       loss: "URLs in org.example.Browser are not tracked",
       state: "granted",
       request: { kind: "automation", bundleId: "org.example.Browser" },
+      checkedAt: null,
     });
   });
 
@@ -99,6 +98,41 @@ describe("permissions", () => {
       "Accessibility",
       "AppleEvents",
       "SystemPolicyAllFiles",
+    ]);
+  });
+
+  it("a closed browser shows its Saved grant", async () => {
+    // Given: Safari closed, Chrome answered; a saved denied Grant for Safari
+    const p = Schema.decodeUnknownSync(Permissions)(line);
+    const checkedAt = DateTime.unsafeMake("2026-01-01T18:00:00Z");
+    const saved = new Map([
+      ["com.apple.Safari", { state: "denied" as const, checkedAt }],
+    ]);
+    // When
+    const items = permissionItems(p, saved).map((i) => [
+      i.name,
+      i.state,
+      i.checkedAt,
+    ]);
+    // Then
+    expect(items).toEqual([
+      ["accessibility", "granted", null],
+      ["automation Safari", "denied", checkedAt],
+      ["automation Brave", "granted", null],
+      ["full disk access", "denied", null],
+    ]);
+  });
+
+  it("a never-asked browser and a closed browser with no Saved grant are left out", () => {
+    // Given: Safari closed, Chrome never asked, no saved grants
+    const p = Schema.decodeUnknownSync(Permissions)(line);
+    // When
+    const items = permissionItems(p).map((i) => i.name);
+    // Then
+    expect(items).toEqual([
+      "accessibility",
+      "automation Brave",
+      "full disk access",
     ]);
   });
 });
