@@ -34,6 +34,7 @@ import {
   CollectorNotLoadedError,
   type InstallProgress,
   Lifecycle,
+  type Restored,
 } from "../src/lifecycle.js";
 import { CollectorPaths, collectorPaths } from "../src/paths.js";
 import {
@@ -177,6 +178,20 @@ const bootoutFails = (state: Ref.Ref<LaunchdState>) =>
     ),
   ).pipe(Layer.provide(fakeLaunchd(state)));
 
+// The old job's bootout is stopped (Ctrl-C).
+const bootoutStops = (state: Ref.Ref<LaunchdState>) =>
+  Layer.effect(
+    Launchd,
+    Effect.map(
+      Launchd,
+      (base) =>
+        new Launchd({
+          ...base,
+          bootout: () => Effect.interrupt,
+        }),
+    ),
+  ).pipe(Layer.provide(fakeLaunchd(state)));
+
 const run = <A, E>(
   initial: LaunchdState,
   use: (
@@ -198,11 +213,17 @@ const run = <A, E>(
       const commits = yield* Ref.make(0);
       const rollbacks = yield* Ref.make(0);
       const steps = yield* Ref.make<ReadonlyArray<string>>([]);
+      const restored = yield* Ref.make<Restored | null>(null);
       const progress: InstallProgress<never> = {
         done: (step) => Ref.update(steps, (s) => [...s, step]),
         starting: (wait) =>
           Ref.update(steps, (s) => [...s, "starting"]).pipe(
             Effect.andThen(wait),
+          ),
+        stopping: (undo) =>
+          Ref.update(steps, (s) => [...s, "stopping"]).pipe(
+            Effect.andThen(undo),
+            Effect.flatMap((r) => Ref.set(restored, r)),
           ),
       };
       const layer = Lifecycle.Default(Schedule.recurs(3)).pipe(
@@ -226,6 +247,7 @@ const run = <A, E>(
         appInstalls: yield* Ref.get(installs),
         appCommits: yield* Ref.get(commits),
         appRollbacks: yield* Ref.get(rollbacks),
+        restored: yield* Ref.get(restored),
       };
     }),
   );
@@ -323,6 +345,29 @@ describe("Lifecycle.install", () => {
     );
     expect(steps).toEqual([]);
     expect(state.installs).toBe(0);
+  });
+
+  it("a stop before the App swap undoes nothing", async () => {
+    // Given: a running agent; the App install is stopped (Ctrl-C)
+    const appStops = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(true),
+        install: () => Effect.interrupt,
+        commit: () => Effect.void,
+        rollback: () => Effect.void,
+        remove: () => Effect.succeed("absent" as const),
+      }),
+    );
+    // When
+    const { exit, steps, state, restored } = await run(withAgent, install, {
+      app: appStops,
+    });
+    // Then: nothing to undo, so no stopping step
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(steps).toEqual([]);
+    expect(restored).toBeNull();
+    expect(state).toEqual(withAgent);
   });
 });
 
@@ -539,6 +584,74 @@ describe("Lifecycle.install restores", () => {
         }),
       ),
     );
+  });
+});
+
+// Stops (Ctrl-C) during the wait for Loaded.
+const stopWhileStarting = (l: Lifecycle, p: InstallProgress<never>) =>
+  l.install(settings, { ...p, starting: () => Effect.interrupt });
+
+describe("Lifecycle.install stopped", () => {
+  it("a stop while waiting for Loaded puts the old App and plist back", async () => {
+    // Given: a running agent; the wait for Loaded is stopped
+    // When
+    const { exit, steps, state, restored, appRollbacks, appCommits } =
+      await run(withAgent, stopWhileStarting);
+    // Then: the undo ran inside stopping and put both back
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(steps).toEqual(["app", "agent", "stopping"]);
+    expect(restored).toEqual({ appRestored: true, agentRestored: true });
+    expect(appRollbacks).toBe(1);
+    expect(appCommits).toBe(0);
+    expect(state.plist).toEqual(installedPlist(samplePlist));
+    expect(state.installed).toBe(true);
+    expect(state.running).toBe(true);
+  });
+
+  it("a stop during the bootout puts the old App and plist back", async () => {
+    // Given: a running agent whose bootout is stopped
+    // When
+    const { exit, steps, state, restored, appRollbacks, appCommits } =
+      await run(withAgent, install, { launchdLayer: bootoutStops });
+    // Then
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(steps).toEqual(["app", "stopping"]);
+    expect(restored).toEqual({ appRestored: true, agentRestored: true });
+    expect(appRollbacks).toBe(1);
+    expect(appCommits).toBe(0);
+    expect(state.plist).toEqual(installedPlist(samplePlist));
+    expect(state.running).toBe(true);
+  });
+
+  it("a stop during a fresh install removes the new plist", async () => {
+    // Given: no agent before; the wait for Loaded is stopped
+    // When
+    const { exit, steps, state, restored, appRollbacks } = await run(
+      fresh,
+      stopWhileStarting,
+    );
+    // Then
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(steps).toEqual(["app", "agent", "stopping"]);
+    expect(restored).toEqual({ appRestored: true, agentRestored: true });
+    expect(appRollbacks).toBe(1);
+    expect(state.plist).toBeNull();
+    expect(state.installed).toBe(false);
+  });
+
+  it("a stop whose unload fails reports nothing put back", async () => {
+    // Given: a running agent, and an unload that fails, so the undo stops
+    // before the App rollback
+    // When
+    const { exit, restored, appRollbacks } = await run(
+      withAgent,
+      stopWhileStarting,
+      { launchdLayer: unloadFails },
+    );
+    // Then
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(restored).toEqual({ appRestored: false, agentRestored: false });
+    expect(appRollbacks).toBe(0);
   });
 });
 
@@ -842,6 +955,23 @@ describe("Lifecycle.install on disk", () => {
     );
     expect(liveApp()).toBe("old-bytes");
     expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(state.plist).toEqual(installedPlist(samplePlist));
+  });
+
+  it("a stop while waiting for Loaded puts the old App back on disk", async () => {
+    // Given: an old App and a running agent; the wait for Loaded is stopped
+    writeOldApp();
+    // When
+    const { exit, state } = await run(
+      withAgent,
+      (l, p) => installHere(l, { ...p, starting: () => Effect.interrupt }),
+      { app: diskApp(home) },
+    );
+    // Then: the old App and the old plist are back, and no .old is left
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(liveApp()).toBe("old-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
     expect(state.plist).toEqual(installedPlist(samplePlist));
   });
 

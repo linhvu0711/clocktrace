@@ -12,6 +12,7 @@ import {
   helperPathConfig,
   type LaunchdError,
   Lifecycle,
+  type Restored,
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
@@ -147,6 +148,20 @@ export const setup = (
           ],
           look,
         );
+        // What an undo, after a failure or a stop, could not put back.
+        const printNotRestored = (restored: Restored) =>
+          Effect.gen(function* () {
+            if (!restored.appRestored) {
+              yield* prompt.print(
+                "app: could not restore the previous install",
+              );
+            }
+            if (!restored.agentRestored) {
+              yield* prompt.print(
+                "launch agent: could not restore the previous install",
+              );
+            }
+          });
         yield* lifecycle
           .install(
             { helperPath, databasePath },
@@ -154,21 +169,16 @@ export const setup = (
               done: (step) =>
                 prompt.print(collectorRows[step === "app" ? 0 : 1] ?? ""),
               starting: (wait) => prompt.wait("  starting collector…", wait),
+              stopping: (undo) =>
+                prompt
+                  .print("stopping, putting back the previous install…")
+                  .pipe(Effect.andThen(undo), Effect.flatMap(printNotRestored)),
             },
           )
           .pipe(
             Effect.catchTag("CollectorNotLoadedError", (e) =>
               Effect.gen(function* () {
-                if (!e.appRestored) {
-                  yield* prompt.print(
-                    "app: could not restore the previous install",
-                  );
-                }
-                if (!e.agentRestored) {
-                  yield* prompt.print(
-                    "launch agent: could not restore the previous install",
-                  );
-                }
+                yield* printNotRestored(e);
                 // A failed bootout started nothing new, so it is not a start
                 // failure; its line names no Collector log, which a bootout
                 // does not write.
