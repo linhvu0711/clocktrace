@@ -64,7 +64,7 @@ final class LineTests: XCTestCase {
     )
   }
 
-  func testWatchLinesMatchTheSharedFile() {
+  func testWatchLinesMatchTheSharedFile() throws {
     // Given: one line per watch case, and the shared file the TS tests decode
     let lines = [
       Line(
@@ -117,9 +117,10 @@ final class LineTests: XCTestCase {
         missing: ["automation:com.brave.Browser"]
       ),
     ]
-    let expectedUrl = Bundle.module.url(
-      forResource: "watch.expected", withExtension: "jsonl", subdirectory: "Fixtures")!
-    let expected = try! String(contentsOf: expectedUrl, encoding: .utf8)
+    let expectedUrl = try XCTUnwrap(
+      Bundle.module.url(
+        forResource: "watch.expected", withExtension: "jsonl", subdirectory: "Fixtures"))
+    let expected = try String(contentsOf: expectedUrl, encoding: .utf8)
     // When
     let actual = lines.map { $0.json() }.joined(separator: "\n") + "\n"
     // Then
