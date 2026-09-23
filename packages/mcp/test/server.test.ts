@@ -23,7 +23,7 @@ import { NodeContext } from "@effect/platform-node";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { ConfigProvider, DateTime, Effect, Layer, Ref, Stream } from "effect";
+import { ConfigProvider, DateTime, Effect, Layer, Ref } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { InstalledStore } from "../src/installed-store.js";
@@ -46,7 +46,7 @@ const connect = async (
   store: Layer.Layer<Store, StoreLayerError>,
   collector: Layer.Layer<Launchd | Helper | App> = Layer.mergeAll(
     Launchd.Test,
-    Helper.Test,
+    Helper.Test(),
     App.Test,
   ),
 ) => {
@@ -164,17 +164,7 @@ const seedTwoDevices = (store: StoreShape) =>
   });
 
 const stubHelper = (p: Permissions) =>
-  Layer.succeed(
-    Helper,
-    new Helper({
-      check: () => Effect.void,
-      lines: () => Stream.empty,
-      permissions: () => Effect.succeed(p),
-      request: () => Effect.succeed("asked"),
-      biomeDevices: () => Effect.succeed([]),
-      biomeRecords: () => Effect.succeed([]),
-    }),
-  );
+  Helper.Test({ permissions: () => Effect.succeed(p) });
 
 const stoppedLaunchd = Layer.unwrapEffect(
   Effect.map(
@@ -1242,18 +1232,9 @@ describe("server", () => {
 
   it("status returns isError with the Helper failure text", async () => {
     // Given: the Test Launchd (running) and a Helper that exits with an error
-    const failingHelper = Layer.succeed(
-      Helper,
-      new Helper({
-        check: () => Effect.void,
-        lines: () => Stream.empty,
-        permissions: () =>
-          Effect.fail(new HelperExitedError({ cause: "boom" })),
-        request: () => Effect.succeed("asked"),
-        biomeDevices: () => Effect.succeed([]),
-        biomeRecords: () => Effect.succeed([]),
-      }),
-    );
+    const failingHelper = Helper.Test({
+      permissions: () => Effect.fail(new HelperExitedError({ cause: "boom" })),
+    });
     const { client, close } = await connect(
       EmptyStore,
       Layer.mergeAll(Launchd.Test, failingHelper, App.Test),
@@ -1304,7 +1285,7 @@ describe("server", () => {
     );
     const { client, close } = await connect(
       EmptyStore,
-      Layer.mergeAll(failingLaunchd, Helper.Test, App.Test),
+      Layer.mergeAll(failingLaunchd, Helper.Test(), App.Test),
     );
     // When
     const result = await callTool(client, { name: "status", arguments: {} });
@@ -1428,7 +1409,7 @@ describe("server", () => {
     );
     const { client, close } = await connect(
       EmptyStore,
-      Layer.mergeAll(Launchd.Test, Helper.Test, appMissing),
+      Layer.mergeAll(Launchd.Test, Helper.Test(), appMissing),
     );
     // When
     const result = await callTool(client, { name: "status", arguments: {} });

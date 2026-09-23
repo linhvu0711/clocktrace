@@ -10,12 +10,12 @@ import {
 } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { decodeBiomeLine, decodeDevicePeerLine } from "./biome-line.js";
+import type { BiomeLine } from "./biome-line.js";
 import { minActivityMillis } from "./collector.js";
 import {
-  type BiomeExitError,
   Helper,
   type HelperExitedError,
+  type HelperFailedError,
 } from "./helper.js";
 import {
   importEvery,
@@ -102,7 +102,7 @@ export const importOnce = (
 ): Effect.Effect<
   void,
   | HelperExitedError
-  | BiomeExitError
+  | HelperFailedError
   | ParseError
   | StoreError
   | MacIdentityError,
@@ -130,26 +130,24 @@ export const importOnce = (
       return;
     }
 
-    const deviceLines = yield* Effect.either(helper.biomeDevices(helperPath));
-    if (Either.isLeft(deviceLines)) {
-      const e = deviceLines.left;
-      if (e._tag === "BiomeExitError") {
-        if (e.code === 3) {
-          yield* Effect.logInfo("full disk access missing, iOS import skipped");
-          return;
-        }
-        if (e.code === 5) {
-          yield* store.setSetting(
-            importStatusKey,
-            encodeResult({
-              state: "broken",
-              at: now,
-              reason: e.stderr.trim(),
-              devices: yield* lastKnownSyncs(store),
-            }),
-          );
-          return;
-        }
+    const deviceRows = yield* Effect.either(helper.biomeDevices(helperPath));
+    if (Either.isLeft(deviceRows)) {
+      const e = deviceRows.left;
+      if (e._tag === "NoFullDiskAccessError") {
+        yield* Effect.logInfo("full disk access missing, iOS import skipped");
+        return;
+      }
+      if (e._tag === "DeviceListUnreadableError") {
+        yield* store.setSetting(
+          importStatusKey,
+          encodeResult({
+            state: "broken",
+            at: now,
+            reason: e.reason,
+            devices: yield* lastKnownSyncs(store),
+          }),
+        );
+        return;
       }
       return yield* e;
     }
@@ -162,8 +160,7 @@ export const importOnce = (
       externalId: string;
       lastSync: DateTime.Utc | null;
     }> = [];
-    for (const text of deviceLines.right) {
-      const row = yield* decodeDevicePeerLine(text);
+    for (const row of deviceRows.right) {
       const kind =
         row.platform === null ? undefined : platformKinds[row.platform];
       if (kind === undefined) {
@@ -207,33 +204,37 @@ export const importOnce = (
     }
     const since = new Map([...progress].map(([id, p]) => [id, p.ts] as const));
 
-    let recordTexts: ReadonlyArray<string>;
+    let records: ReadonlyArray<BiomeLine>;
     let reason: string | null = null;
     const recordLines = yield* Effect.either(
       helper.biomeRecords(helperPath, since),
     );
     if (Either.isLeft(recordLines)) {
       const e = recordLines.left;
-      if (e._tag === "BiomeExitError" && e.code === 4) {
+      if (e._tag === "NoFullDiskAccessError") {
+        yield* Effect.logInfo("full disk access missing, iOS import skipped");
+        return;
+      }
+      if (e._tag === "NoBiomeFolderError") {
         yield* store.setSetting(
           importStatusKey,
           encodeResult({
             state: "broken",
             at: now,
-            reason: e.stderr.trim(),
+            reason: e.reason,
             devices: syncs,
           }),
         );
         return;
       }
-      if (e._tag === "BiomeExitError" && e.code === 6) {
-        recordTexts = e.lines ?? [];
-        reason = e.stderr.trim() || e.message;
+      if (e._tag === "FoldersUnreadableError") {
+        records = e.records;
+        reason = e.reason;
       } else {
         return yield* e;
       }
     } else {
-      recordTexts = recordLines.right;
+      records = recordLines.right;
     }
 
     const open = new Map<string, Open>();
@@ -265,8 +266,7 @@ export const importOnce = (
       }
     };
 
-    for (const text of recordTexts) {
-      const line = yield* decodeBiomeLine(text);
+    for (const line of records) {
       if ("error" in line) {
         if (reason === null) {
           reason = `parse error in ${line.segment} at ${line.offset}`;

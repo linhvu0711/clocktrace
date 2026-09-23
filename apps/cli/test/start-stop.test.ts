@@ -76,7 +76,7 @@ describe("start and stop", () => {
           terminal.layer,
           Prompt.Default,
           (makeLaunchd ?? fakeLaunchd)(state),
-          Helper.Test,
+          Helper.Test(),
           appLayer,
           Style.Test,
         );

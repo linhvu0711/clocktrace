@@ -9,13 +9,24 @@ import {
   Option,
   Ref,
   Schema,
-  Stream,
   TestClock,
   TestContext,
 } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { BiomeExitError, Helper } from "../src/helper.js";
+import {
+  BiomeLine,
+  type BiomeRecordLine,
+  type DevicePeerLine,
+} from "../src/biome-line.js";
+import {
+  DeviceListUnreadableError,
+  FoldersUnreadableError,
+  Helper,
+  HelperFailedError,
+  NoBiomeFolderError,
+  NoFullDiskAccessError,
+} from "../src/helper.js";
 import {
   ImportResult,
   importOnce,
@@ -24,7 +35,6 @@ import {
   importTick,
 } from "../src/importer.js";
 import { MacIdentity } from "../src/mac-identity.js";
-import type { Permissions } from "../src/permissions.js";
 
 const P2 = "00000000-0000-4000-8000-000000000002";
 const P3 = "00000000-0000-4000-8000-000000000003";
@@ -33,21 +43,48 @@ const T = "000000000000007";
 
 const NOW = Date.UTC(2026, 8, 19, 17, 30);
 
-const D_MAC =
-  '{"deviceIdentifier":"00000000-0000-4000-8000-000000000001","lastSyncDate":null,"me":true,"model":"26A428","name":"","platform":3}';
-const D_PHONE = `{"deviceIdentifier":"${P2}","lastSyncDate":1789837200,"me":false,"model":"24A437","name":"","platform":2}`;
-const D_PAD = `{"deviceIdentifier":"${P3}","lastSyncDate":1789664400,"me":false,"model":"24A437","name":"Linh's iPad","platform":1}`;
-const D_PHONE_NAMED = `{"deviceIdentifier":"${P2}","lastSyncDate":1789837200,"me":false,"model":"24A437","name":"Linh's iPhone","platform":2}`;
-const D_UNK =
-  '{"deviceIdentifier":"00000000-0000-4000-8000-000000000004","lastSyncDate":null,"me":false,"model":null,"name":"","platform":null}';
+const D_MAC: DevicePeerLine = {
+  deviceIdentifier: "00000000-0000-4000-8000-000000000001",
+  lastSyncDate: null,
+  me: true,
+  model: "26A428",
+  name: "",
+  platform: 3,
+};
+const D_PHONE: DevicePeerLine = {
+  deviceIdentifier: P2,
+  lastSyncDate: 1789837200,
+  me: false,
+  model: "24A437",
+  name: "",
+  platform: 2,
+};
+const D_PAD: DevicePeerLine = {
+  deviceIdentifier: P3,
+  lastSyncDate: 1789664400,
+  me: false,
+  model: "24A437",
+  name: "Linh's iPad",
+  platform: 1,
+};
+const D_PHONE_NAMED: DevicePeerLine = { ...D_PHONE, name: "Linh's iPhone" };
+const D_UNK: DevicePeerLine = {
+  deviceIdentifier: "00000000-0000-4000-8000-000000000004",
+  lastSyncDate: null,
+  me: false,
+  model: null,
+  name: "",
+  platform: null,
+};
 
-const record = (o: Record<string, unknown>): string =>
-  JSON.stringify({
-    appVersion: null,
-    build: null,
-    reason: null,
-    ...o,
-  });
+const record = (
+  o: Omit<typeof BiomeRecordLine.Type, "appVersion" | "build" | "reason">,
+): BiomeLine => ({
+  appVersion: null,
+  build: null,
+  reason: null,
+  ...o,
+});
 
 const R1 = record({
   bundleId: "com.apple.springboard.home",
@@ -153,32 +190,37 @@ const R13 = record({
   segment: S,
   ts: 1789834560,
 });
-const E1 = `{"error":"parse","offset":148,"segment":"${S}"}`;
+const E1: BiomeLine = { error: "parse", offset: 148, segment: S };
 
 const ALL = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12];
 
-const allGranted: Permissions = {
-  accessibility: "granted",
-  automation: {},
-  fullDiskAccess: "granted",
-};
+type DevicesError =
+  | NoFullDiskAccessError
+  | DeviceListUnreadableError
+  | HelperFailedError;
+
+type RecordsError =
+  | NoFullDiskAccessError
+  | NoBiomeFolderError
+  | FoldersUnreadableError
+  | HelperFailedError;
 
 interface Ctx {
   calls: Ref.Ref<number>;
   sinces: Ref.Ref<ReadonlyArray<ReadonlyMap<string, number>>>;
-  devicesRef: Ref.Ref<ReadonlyArray<string>>;
-  recordsRef: Ref.Ref<ReadonlyArray<string>>;
+  devicesRef: Ref.Ref<ReadonlyArray<DevicePeerLine>>;
+  recordsRef: Ref.Ref<ReadonlyArray<BiomeLine>>;
 }
 
 const run = <A, E>(
   spec: {
     devices:
-      | ReadonlyArray<string>
-      | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+      | ReadonlyArray<DevicePeerLine>
+      | Effect.Effect<ReadonlyArray<DevicePeerLine>, DevicesError>
       | "ref";
     records:
-      | ReadonlyArray<string>
-      | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+      | ReadonlyArray<BiomeLine>
+      | Effect.Effect<ReadonlyArray<BiomeLine>, RecordsError>
       | "ref";
     store?: Layer.Layer<Store, never, Store>;
   },
@@ -192,35 +234,32 @@ const run = <A, E>(
       const sinces = yield* Ref.make<
         ReadonlyArray<ReadonlyMap<string, number>>
       >([]);
-      const devicesRef = yield* Ref.make<ReadonlyArray<string>>([]);
-      const recordsRef = yield* Ref.make<ReadonlyArray<string>>([]);
-      const deviceEff: Effect.Effect<readonly string[], BiomeExitError> =
-        spec.devices === "ref"
-          ? Ref.get(devicesRef)
-          : Effect.isEffect(spec.devices)
-            ? spec.devices
-            : Effect.succeed(spec.devices);
-      const recordEff: Effect.Effect<readonly string[], BiomeExitError> =
-        spec.records === "ref"
-          ? Ref.get(recordsRef)
-          : Effect.isEffect(spec.records)
-            ? spec.records
-            : Effect.succeed(spec.records);
-      const stubHelper = Layer.succeed(
-        Helper,
-        new Helper({
-          check: () => Effect.void,
-          lines: () => Stream.empty,
-          permissions: () => Effect.succeed(allGranted),
-          request: () => Effect.succeed("asked"),
-          biomeDevices: () =>
-            Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(deviceEff)),
-          biomeRecords: (_path, since) =>
-            Ref.update(sinces, (ss) => [...ss, since]).pipe(
-              Effect.andThen(recordEff),
-            ),
-        }),
-      );
+      const devicesRef = yield* Ref.make<ReadonlyArray<DevicePeerLine>>([]);
+      const recordsRef = yield* Ref.make<ReadonlyArray<BiomeLine>>([]);
+      const deviceEff: Effect.Effect<
+        ReadonlyArray<DevicePeerLine>,
+        DevicesError
+      > = spec.devices === "ref"
+        ? Ref.get(devicesRef)
+        : Effect.isEffect(spec.devices)
+          ? spec.devices
+          : Effect.succeed(spec.devices);
+      const recordEff: Effect.Effect<
+        ReadonlyArray<BiomeLine>,
+        RecordsError
+      > = spec.records === "ref"
+        ? Ref.get(recordsRef)
+        : Effect.isEffect(spec.records)
+          ? spec.records
+          : Effect.succeed(spec.records);
+      const stubHelper = Helper.Test({
+        biomeDevices: () =>
+          Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(deviceEff)),
+        biomeRecords: (_path, since) =>
+          Ref.update(sinces, (ss) => [...ss, since]).pipe(
+            Effect.andThen(recordEff),
+          ),
+      });
       const stubMac = Layer.succeed(
         MacIdentity,
         new MacIdentity({
@@ -532,13 +571,11 @@ describe("importer", () => {
   });
 
   it("without Full Disk Access nothing is written", async () => {
-    // Given: biome devices exits 3, the helper's Full Disk Access code
+    // Given: biome devices reports no Full Disk Access
     // When
     const result = await run(
       {
-        devices: Effect.fail(
-          new BiomeExitError({ code: 3, stderr: "full disk access needed\n" }),
-        ),
+        devices: Effect.fail(new NoFullDiskAccessError()),
         records: [],
       },
       "27.0",
@@ -558,16 +595,13 @@ describe("importer", () => {
   });
 
   it("a missing remote folder records broken with the helper's reason", async () => {
-    // Given: biome records exits 4 after the devices import
+    // Given: biome records finds no remote folder after the devices import
     // When
     const result = await run(
       {
         devices: [D_PHONE, D_PAD],
         records: Effect.fail(
-          new BiomeExitError({
-            code: 4,
-            stderr: "no App.InFocus remote folder\n",
-          }),
+          new NoBiomeFolderError({ reason: "no App.InFocus remote folder" }),
         ),
       },
       "27.0",
@@ -693,7 +727,7 @@ describe("importer", () => {
     const result = await run(
       {
         devices: [D_MAC, D_PHONE, D_PAD],
-        records: ALL.filter((r) => r.includes(P2)),
+        records: ALL.filter((r) => "device" in r && r.device === P2),
       },
       "27.0",
       (ctx) =>
@@ -746,16 +780,15 @@ describe("importer", () => {
   });
 
   it("a partial device failure keeps the emitted records and records broken", async () => {
-    // Given: biome records emits Safari's records then exits 6 on the iPad folder
+    // Given: biome records emits Safari's records, then cannot list the iPad folder
     // When
     const result = await run(
       {
         devices: [D_PHONE, D_PAD],
         records: Effect.fail(
-          new BiomeExitError({
-            code: 6,
-            stderr: "cannot list iPad folder\n",
-            lines: [R3, R4],
+          new FoldersUnreadableError({
+            records: [R3, R4],
+            reason: "cannot list iPad folder",
           }),
         ),
       },
@@ -794,9 +827,9 @@ describe("importer", () => {
   });
 
   it("a device read failure keeps the previous sync data", async () => {
-    // Given: one good import, then biome devices exits 5
+    // Given: one good import, then biome devices cannot read the device list
     const devicesRef = Ref.unsafeMake<
-      Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+      Effect.Effect<ReadonlyArray<DevicePeerLine>, DevicesError>
     >(Effect.succeed([D_PHONE, D_PAD]));
     // When
     const status = await run(
@@ -811,9 +844,8 @@ describe("importer", () => {
           yield* Ref.set(
             devicesRef,
             Effect.fail(
-              new BiomeExitError({
-                code: 5,
-                stderr: "cannot read DevicePeer: locked\n",
+              new DeviceListUnreadableError({
+                reason: "cannot read DevicePeer: locked",
               }),
             ),
           );
@@ -835,9 +867,9 @@ describe("importer", () => {
   });
 
   it("an unexpected failure records broken and keeps the prior sync data", async () => {
-    // Given: one good import, then biome devices exits with an unhandled code
+    // Given: one good import, then biome devices exits with an unknown code
     const devicesRef = Ref.unsafeMake<
-      Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+      Effect.Effect<ReadonlyArray<DevicePeerLine>, DevicesError>
     >(Effect.succeed([D_PHONE, D_PAD]));
     // When
     const status = await run(
@@ -852,7 +884,7 @@ describe("importer", () => {
           yield* Ref.set(
             devicesRef,
             Effect.fail(
-              new BiomeExitError({ code: 9, stderr: "unknown failure\n" }),
+              new HelperFailedError({ code: 9, stderr: "unknown failure\n" }),
             ),
           );
           yield* importTick("/stub");
@@ -864,7 +896,7 @@ describe("importer", () => {
     expect(JSON.parse(Option.getOrElse(status, () => ""))).toEqual({
       state: "broken",
       at: "2026-09-19T17:30:00.000Z",
-      reason: "helper biome exited 9: unknown failure",
+      reason: "helper failed with exit code 9: unknown failure",
       devices: [
         { externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" },
         { externalId: P3, lastSync: "2026-09-17T17:00:00.000Z" },
@@ -879,7 +911,8 @@ describe("importer", () => {
       "utf8",
     )
       .trim()
-      .split("\n");
+      .split("\n")
+      .map((text) => Schema.decodeUnknownSync(BiomeLine)(text));
     // When
     const activities = await run(
       { devices: [D_MAC, D_PHONE, D_PAD], records: lines },

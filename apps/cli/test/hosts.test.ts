@@ -61,17 +61,7 @@ const allGranted: Permissions = {
 };
 
 const helperStub = (p: Permissions) =>
-  Layer.succeed(
-    Helper,
-    new Helper({
-      check: () => Effect.void,
-      lines: () => Stream.empty,
-      permissions: () => Effect.succeed(p),
-      request: () => Effect.succeed("asked"),
-      biomeDevices: () => Effect.succeed([]),
-      biomeRecords: () => Effect.succeed([]),
-    }),
-  );
+  Helper.Test({ permissions: () => Effect.succeed(p) });
 
 type ExecResult = { readonly code: number; readonly output?: string };
 

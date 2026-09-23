@@ -2,13 +2,25 @@ import { writeFileSync } from "node:fs";
 
 import { CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect, Either, Exit, Layer, Ref, type Scope, Stream } from "effect";
+import {
+  Chunk,
+  DateTime,
+  Effect,
+  Exit,
+  Inspectable,
+  Layer,
+  Logger,
+  Ref,
+  type Scope,
+  Sink,
+  Stream,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
-  biomeResult,
   Helper,
   HelperExitedError,
+  HelperFailedError,
   openArgs,
   sinceArgs,
 } from "../src/helper.js";
@@ -24,28 +36,6 @@ describe("HelperExitedError", () => {
     // Then
     expect(message).toBe("helper exited: permissions request exited 3");
     expect(message.length).toBeGreaterThan(0);
-  });
-
-  it("biomeResult returns the lines on exit 0", () => {
-    // Given: a biome command that printed two lines and a blank
-    // When
-    const result = biomeResult(0, ["a", "b", ""], "");
-    // Then
-    expect(Either.getOrThrow(result)).toEqual(["a", "b"]);
-  });
-
-  it("biomeResult names the exit code and stderr", () => {
-    // Given: a biome command that exited 4 with a reason on stderr
-    // When
-    const result = biomeResult(4, [], "no App.InFocus remote folder\n");
-    // Then
-    expect(Either.isLeft(result)).toBe(true);
-    if (Either.isLeft(result)) {
-      expect(result.left._tag).toBe("BiomeExitError");
-      expect(result.left.message).toBe(
-        "helper biome exited 4: no App.InFocus remote folder",
-      );
-    }
   });
 
   it("sinceArgs writes one --since per Device", () => {
@@ -147,6 +137,263 @@ const runHelper = <A>(
       return { exit, commands };
     }),
   );
+
+// Answers every started command as one finished process: the given stdout,
+// stderr, and exit code. `runBiome` and `Command.streamLines` both start one.
+const processExecutor = (
+  stdoutText: string,
+  code: number = 0,
+  stderrText: string = "",
+): CommandExecutor.CommandExecutor =>
+  CommandExecutor.makeExecutor(() =>
+    Effect.succeed({
+      ...Inspectable.BaseProto,
+      [CommandExecutor.ProcessTypeId]: CommandExecutor.ProcessTypeId,
+      pid: CommandExecutor.ProcessId(1),
+      exitCode: Effect.succeed(CommandExecutor.ExitCode(code)),
+      isRunning: Effect.succeed(false),
+      kill: () => Effect.void,
+      stdout: Stream.make(new TextEncoder().encode(stdoutText)),
+      stderr: Stream.make(new TextEncoder().encode(stderrText)),
+      stdin: Sink.drain,
+    }),
+  );
+
+const runHelperProcess = <A>(
+  use: (helper: Helper) => Effect.Effect<A, unknown, Scope.Scope>,
+  stdoutText: string,
+  code: number = 0,
+  stderrText: string = "",
+) => {
+  const logs: Array<string> = [];
+  const testLogger = Logger.replace(
+    Logger.defaultLogger,
+    Logger.make(({ message }) => {
+      logs.push(String(message));
+    }),
+  );
+  const layer = Helper.DefaultWithoutDependencies.pipe(
+    Layer.provide(
+      Layer.merge(
+        NodeFileSystem.layer,
+        Layer.succeed(
+          CommandExecutor.CommandExecutor,
+          processExecutor(stdoutText, code, stderrText),
+        ),
+      ),
+    ),
+  );
+  return Effect.runPromise(
+    Effect.exit(
+      Effect.gen(function* () {
+        const helper = yield* Helper;
+        return yield* Effect.scoped(use(helper));
+      }).pipe(Effect.provide(Layer.merge(layer, testLogger))),
+    ),
+  ).then((exit) => ({ exit, logs }));
+};
+
+describe("Helper watch", () => {
+  it("a bad watch line is logged and skipped", async () => {
+    // Given: two Helper lines with a line that is not JSON between them
+    const stdout = [
+      '{"ts":"2026-01-01T00:00:00Z","app":"Safari","bundleId":"com.apple.Safari","title":null,"url":null,"idleSeconds":0,"missing":[]}',
+      "not json",
+      '{"ts":"2026-01-01T00:00:10Z","app":"Safari","bundleId":"com.apple.Safari","title":null,"url":null,"idleSeconds":0,"missing":[]}',
+    ].join("\n");
+    // When
+    const { exit, logs } = await runHelperProcess(
+      (helper) =>
+        helper.lines("/h").pipe(
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.map((chunk) =>
+            Chunk.toReadonlyArray(chunk).map((line) => ({
+              ts: DateTime.formatIso(line.ts),
+              app: line.app,
+              grant: line.grant,
+            })),
+          ),
+        ),
+      stdout,
+    );
+    // Then
+    expect({ readings: Exit.isSuccess(exit) && exit.value, logs }).toEqual({
+      readings: [
+        { ts: "2026-01-01T00:00:00.000Z", app: "Safari", grant: null },
+        { ts: "2026-01-01T00:00:10.000Z", app: "Safari", grant: null },
+      ],
+      logs: ["helper line rejected"],
+    });
+  });
+});
+
+// The failure a Helper call ended with, or null when it succeeded.
+const failure = (exit: Exit.Exit<unknown, unknown>): unknown =>
+  Exit.isFailure(exit) && exit.cause._tag === "Fail" ? exit.cause.error : null;
+
+describe("Helper biome devices", () => {
+  it("biome devices exit 0 gives decoded devices", async () => {
+    // Given: biome devices printed the iPad's DevicePeer row and exited 0
+    const stdout =
+      '{"deviceIdentifier":"00000000-0000-4000-8000-000000000003","lastSyncDate":1789664400,"me":false,"model":"24A437","name":"Linh\'s iPad","platform":1}\n';
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      stdout,
+    );
+    // Then
+    expect(Exit.isSuccess(exit) && exit.value).toEqual([
+      {
+        deviceIdentifier: "00000000-0000-4000-8000-000000000003",
+        me: false,
+        name: "Linh's iPad",
+        model: "24A437",
+        platform: 1,
+        lastSyncDate: 1789664400,
+      },
+    ]);
+  });
+
+  it("biome devices exit 3 is no Full Disk Access", async () => {
+    // Given: biome devices exited 3 without Full Disk Access
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      "",
+      3,
+      "full disk access needed\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({ _tag: "NoFullDiskAccessError" });
+  });
+
+  it("biome devices exit 5 is an unreadable device list", async () => {
+    // Given: biome devices exited 5 on a locked DevicePeer table
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      "",
+      5,
+      "cannot read DevicePeer: locked\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({
+      _tag: "DeviceListUnreadableError",
+      reason: "cannot read DevicePeer: locked",
+    });
+  });
+
+  it("biome devices exit 2 is Helper failed with the code and stderr", async () => {
+    // Given: biome devices exited 2 with the usage text
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      "",
+      2,
+      "usage: clocktrace-helper\n",
+    );
+    // Then
+    const error = failure(exit);
+    expect({
+      tag: error instanceof Error && "_tag" in error && error._tag,
+      code: error instanceof HelperFailedError && error.code,
+      message: error instanceof Error && error.message,
+    }).toEqual({
+      tag: "HelperFailedError",
+      code: 2,
+      message: "helper failed with exit code 2: usage: clocktrace-helper",
+    });
+  });
+});
+
+const R3_LINE =
+  '{"bundleId":"com.apple.mobilesafari","device":"00000000-0000-4000-8000-000000000002","focus":"start","offset":184,"segment":"000000000000001","ts":1789833660,"appVersion":null,"build":null,"reason":null}';
+const R3 = {
+  device: "00000000-0000-4000-8000-000000000002",
+  ts: 1789833660,
+  focus: "start",
+  bundleId: "com.apple.mobilesafari",
+  reason: null,
+  appVersion: null,
+  build: null,
+  segment: "000000000000001",
+  offset: 184,
+};
+
+describe("Helper biome records", () => {
+  it("biome records exit 0 gives decoded records and parse lines", async () => {
+    // Given: biome records printed one record and one parse error line
+    const stdout = `${R3_LINE}\n{"error":"parse","offset":148,"segment":"000000000000001"}\n`;
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      stdout,
+    );
+    // Then
+    expect(Exit.isSuccess(exit) && exit.value).toEqual([
+      R3,
+      { error: "parse", segment: "000000000000001", offset: 148 },
+    ]);
+  });
+
+  it("biome records exit 3 is no Full Disk Access", async () => {
+    // Given: biome records exited 3 without Full Disk Access
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      "",
+      3,
+      "full disk access needed\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({ _tag: "NoFullDiskAccessError" });
+  });
+
+  it("biome records exit 4 is no Biome folder", async () => {
+    // Given: biome records exited 4 without the remote folder
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      "",
+      4,
+      "no App.InFocus remote folder\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({
+      _tag: "NoBiomeFolderError",
+      reason: "no App.InFocus remote folder",
+    });
+  });
+
+  it("biome records exit 6 keeps the records and names the reason", async () => {
+    // Given: biome records printed R3, then exited 6 on the iPad folder
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      `${R3_LINE}\n`,
+      6,
+      "cannot list iPad folder\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({
+      _tag: "FoldersUnreadableError",
+      reason: "cannot list iPad folder",
+      records: [R3],
+    });
+  });
+
+  it("biome records rejects a line that is not a record", async () => {
+    // Given: biome records printed a line whose shape matches no Biome line
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      '{"app":"Safari"}\n',
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({ _tag: "ParseError" });
+  });
+});
 
 describe("openArgs", () => {
   it("openArgs builds the open command for a permissions read", () => {
@@ -283,5 +530,63 @@ describe("Helper via open", () => {
     } else {
       expect.unreachable("expected HelperExitedError");
     }
+  });
+});
+
+describe("Helper.Test", () => {
+  const readAll = Effect.gen(function* () {
+    const helper = yield* Helper;
+    return {
+      permissions: yield* Effect.scoped(
+        helper.permissions("/x/Clocktrace.app"),
+      ),
+      request: yield* Effect.scoped(
+        helper.request("/x/Clocktrace.app", { kind: "fullDiskAccess" }),
+      ),
+      devices: yield* helper.biomeDevices("/h"),
+      records: yield* helper.biomeRecords("/h", new Map()),
+      lines: Chunk.toReadonlyArray(
+        yield* Stream.runCollect(helper.lines("/h")),
+      ),
+    };
+  });
+
+  it("Helper.Test gives the defaults", async () => {
+    // Given: the Test Helper with no methods changed
+    // When
+    const result = await Effect.runPromise(
+      readAll.pipe(Effect.provide(Helper.Test())),
+    );
+    // Then
+    expect(result).toEqual({
+      permissions: {
+        accessibility: "granted",
+        automation: {},
+        fullDiskAccess: "granted",
+      },
+      request: "asked",
+      devices: [],
+      records: [],
+      lines: [],
+    });
+  });
+
+  it("Helper.Test keeps the defaults a test leaves out", async () => {
+    // Given: the Test Helper with only request changed
+    const layer = Helper.Test({ request: () => Effect.succeed("notRunning") });
+    // When
+    const result = await Effect.runPromise(readAll.pipe(Effect.provide(layer)));
+    // Then
+    expect({
+      request: result.request,
+      permissions: result.permissions,
+    }).toEqual({
+      request: "notRunning",
+      permissions: {
+        accessibility: "granted",
+        automation: {},
+        fullDiskAccess: "granted",
+      },
+    });
   });
 });
