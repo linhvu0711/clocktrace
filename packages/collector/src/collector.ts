@@ -150,7 +150,7 @@ export const collect = <E, R>(
           }
           return;
         }
-        if (line.bundleId === null || line.app === null) {
+        if (line.app === null || line.app.trim() === "") {
           yield* Ref.set(state, {
             open: null,
             lastTs: line.ts,
@@ -161,10 +161,13 @@ export const collect = <E, R>(
           }
           return;
         }
+        // An app with a name but no bundle id, such as a Wine game, gets a
+        // Stand-in id (ADR 0012).
+        const bundleId = line.bundleId ?? `noid:${line.app}`;
         if (s.open === null) {
           yield* Ref.set(state, {
             open: {
-              bundleId: line.bundleId,
+              bundleId,
               appName: line.app,
               title: line.title,
               url: line.url,
@@ -178,14 +181,14 @@ export const collect = <E, R>(
           return;
         }
         if (
-          s.open.bundleId !== line.bundleId ||
+          s.open.bundleId !== bundleId ||
           s.open.appName !== line.app ||
           s.open.title !== line.title ||
           s.open.url !== line.url
         ) {
           yield* Ref.set(state, {
             open: {
-              bundleId: line.bundleId,
+              bundleId,
               appName: line.app,
               title: line.title,
               url: line.url,

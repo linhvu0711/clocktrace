@@ -266,6 +266,85 @@ describe("collector", () => {
     ]);
   });
 
+  it("a line with an app name but no bundle id writes a Stand-in id", async () => {
+    // Given: a Wine game with no bundle id, then Safari
+    const lines = [
+      line({ ts: "2026-01-01T00:00:00.000Z", app: "QSanguosha.exe" }),
+      line({
+        ts: "2026-01-01T00:00:05.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        const activities = yield* store.readActivities({
+          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
+          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
+        });
+        return activities.map((a) => ({
+          bundleId: a.bundleId,
+          appName: a.appName,
+        }));
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(rows[0]).toEqual({
+      bundleId: "noid:QSanguosha.exe",
+      appName: "QSanguosha.exe",
+    });
+  });
+
+  it("a blank app name with no bundle id opens no Activity", async () => {
+    // Given: focus goes to an app with a blank name, then an empty one
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({ ts: "2026-01-01T00:00:05.000Z", app: "  " }),
+      line({ ts: "2026-01-01T00:00:10.000Z", app: "" }),
+      line({
+        ts: "2026-01-01T00:00:20.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:00:25.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:00:05.000Z",
+      },
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:20.000Z",
+        endedAt: "2026-01-01T00:00:25.000Z",
+      },
+    ]);
+  });
+
   it("idle ends the open Activity at now minus idleSeconds and the return starts a fresh one at the return time", async () => {
     // Given: five idle minutes pass inside a Safari stretch
     const lines = [

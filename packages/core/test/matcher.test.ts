@@ -182,6 +182,28 @@ describe("matcher", () => {
     });
   });
 
+  it("an app rule on the name matches an Activity with a Stand-in id", () => {
+    // Given: a Wine game with a Stand-in id and a rule on its name
+    const game: NewActivity = {
+      ...chrome,
+      bundleId: "noid:QSanguosha.exe",
+      appName: "QSanguosha.exe",
+      title: null,
+      url: null,
+    };
+    const rules = [
+      rule(0, "app", "is", "QSanguosha.exe", "category", "cat-games"),
+    ];
+    // When
+    const resolution = resolve(game, rules, device);
+    // Then
+    expect(resolution).toEqual({
+      categoryId: "cat-games",
+      projectId: null,
+      private: false,
+    });
+  });
+
   it("domain is the host of url", () => {
     // Given: an activity on www.youtube.com
     const activity = { ...chrome, url: "https://www.youtube.com/watch?v=1" };
