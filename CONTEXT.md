@@ -15,7 +15,7 @@ _Avoid_: Event, session, entry, log
 _Avoid_: Bundle, wrapper, launcher
 
 **Grant**:
-macOS's yes or no for one permission of the App: Accessibility, Full Disk Access, or Automation for one browser. macOS asks for an Automation Grant once; after a no, only the user's switch in System Settings changes it.
+macOS's yes or no for one permission of the App: Accessibility, Full Disk Access, or Automation for one browser. macOS asks for an Automation Grant once; after a no, the user's switch in System Settings changes it, or a `tccutil reset` that clears the Automation Grants of every browser at once (ADR 0009 keeps it as the last fallback).
 _Avoid_: Permission state, access, consent
 
 **Saved grant**:
