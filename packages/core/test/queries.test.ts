@@ -220,6 +220,50 @@ describe("summary", () => {
     });
   });
 
+  it("summary by app shows a Stand-in id app as one app by its name", async () => {
+    // Given: two Activities of a Wine game with a Stand-in id
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "noid:QSanguosha.exe",
+          appName: "QSanguosha.exe",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T10:00:00.000Z"),
+          endedAt: t("2026-09-18T10:30:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "noid:QSanguosha.exe",
+          appName: "QSanguosha.exe",
+          title: null,
+          url: null,
+          startedAt: t("2026-09-18T10:30:00.000Z"),
+          endedAt: t("2026-09-18T10:45:00.000Z"),
+        });
+        // When
+        return yield* summary({
+          range: { from: "2026-09-18", to: "2026-09-18" },
+          groupBy: "app",
+        });
+      }),
+    );
+    // Then
+    expect(result).toEqual({
+      rows: [
+        { key: "noid:QSanguosha.exe", name: "QSanguosha.exe", seconds: 2700 },
+      ],
+      total: 2700,
+    });
+  });
+
   it("summary by app shows the resolved name keyed by bundle id", async () => {
     // Given: seedIphone
     const result = await run(
