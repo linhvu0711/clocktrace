@@ -272,9 +272,10 @@ export class App extends Effect.Service<App>()("App", {
             appPath,
           );
           if (registered !== 0) {
-            // The swap already landed; put the previous bundle back so
-            // install never returns with an unresolved rollback.
-            yield* Effect.ignore(putBack);
+            // The swap already landed; undo it, so a replaced app comes
+            // back and a fresh one goes, and install never returns with an
+            // unresolved rollback.
+            yield* Effect.ignore(undo(result));
             return yield* new AppError({
               step: "lsregister",
               detail: `exit ${registered}`,

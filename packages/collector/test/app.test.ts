@@ -339,6 +339,27 @@ describe("App.install", () => {
     expect(existsSync(`${appPath}.reverting`)).toBe(false);
   });
 
+  it("a failed registration on a first install leaves no app", async () => {
+    // Given: no app yet; lsregister exits 1, every other command 0
+    // When
+    const { result } = await runApp(
+      ADHOC,
+      (app) => app.install(helperPath),
+      (command) =>
+        command._tag === "StandardCommand" &&
+        command.command.includes("lsregister")
+          ? 1
+          : 0,
+    );
+    // Then: install fails and no bundle or sibling is left
+    expect(result).toEqual(
+      Exit.fail(new AppError({ step: "lsregister", detail: "exit 1" })),
+    );
+    expect(existsSync(appPath)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+  });
+
   it("install copies a built app next to the Helper whole and signs nothing", async () => {
     // Given: a built Clocktrace.app sitting next to the helper
     const built = join(buildDir, "Clocktrace.app");
