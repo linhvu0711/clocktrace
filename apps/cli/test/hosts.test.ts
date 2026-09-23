@@ -643,6 +643,47 @@ describe("hosts", () => {
     expect(readFileSync(path, "utf8")).toBe("model: [\n");
   });
 
+  it("hermes setup keeps every byte outside the Registration", async () => {
+    // Given: ~/.hermes/config.yaml with its own spacing and flow style
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "model: nous-1   # note\nother: {command: x}\n");
+    // When
+    const line = await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    // Then
+    expect(line).toEqual({ outcome: "registered" });
+    expect(readFileSync(path, "utf8")).toBe(
+      `model: nous-1   # note\nother: {command: x}\nmcp_servers:\n  clocktrace:\n    command: ${serverNode}\n    args:\n      - ${serverEntry}\n      - mcp\n`,
+    );
+  });
+
+  it("a one-line hermes mcp_servers list fails by hand and leaves the file", async () => {
+    // Given: mcp_servers is a one-line list that already holds a server
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "mcp_servers: {foo: {command: foo}}\n");
+    // When
+    const line = await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    // Then
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: manualCommand.hermes,
+    });
+    expect(readFileSync(path, "utf8")).toBe(
+      "mcp_servers: {foo: {command: foo}}\n",
+    );
+  });
+
   it("a symlinked hermes config writes the target and keeps its mode", async () => {
     // Given: ~/.hermes/config.yaml is a symlink to a 0600 dotfiles file
     mkdirSync(join(home, ".hermes"), { recursive: true });
