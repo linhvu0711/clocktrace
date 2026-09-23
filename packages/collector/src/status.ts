@@ -3,17 +3,18 @@ import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 import { App, appPath } from "./app.js";
 import { dbPathConfig } from "./config.js";
-import { Helper, type HelperExitedError } from "./helper.js";
-import { ImportResult, importStatusKey } from "./importer.js";
-import { syncStaleAfterMillis } from "./importer-rules.js";
-import { Launchd, type LaunchdError } from "./launchd.js";
 import {
   browserName,
   noAnswerNote,
   type PermissionItem,
   permissionItems,
-} from "./permissions.js";
-import { readSavedGrants, saveLiveGrants } from "./saved-grant.js";
+  readSavedGrants,
+  saveLiveGrants,
+} from "./grant.js";
+import { Helper, type HelperExitedError } from "./helper.js";
+import { ImportResult, importStatusKey } from "./importer.js";
+import { syncStaleAfterMillis } from "./importer-rules.js";
+import { Launchd, type LaunchdError } from "./launchd.js";
 
 export const PermissionLine = Schema.Struct({
   name: Schema.String,

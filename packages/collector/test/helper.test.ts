@@ -11,6 +11,7 @@ import {
   Layer,
   Logger,
   Ref,
+  Schema,
   type Scope,
   Sink,
   Stream,
@@ -18,10 +19,13 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
+  decodePermissions,
   Helper,
   HelperExitedError,
   HelperFailedError,
   openArgs,
+  Permissions,
+  requestArgs,
   sinceArgs,
 } from "../src/helper.js";
 
@@ -606,6 +610,50 @@ describe("Helper via open", () => {
     } else {
       expect.unreachable("expected HelperExitedError");
     }
+  });
+});
+
+describe("Helper permissions readings", () => {
+  const line =
+    '{"accessibility":"granted","automation":{"com.apple.Safari":"notRunning","com.brave.Browser":"granted","com.google.Chrome":"notAsked","com.microsoft.edgemac":"notInstalled","com.operasoftware.Opera":"notInstalled","com.vivaldi.Vivaldi":"notInstalled","org.chromium.Chromium":"notInstalled"},"fullDiskAccess":"denied"}';
+
+  it("decodes the helper's permissions line", () => {
+    // Given: the sample line at packages/helper/README.md:61
+    // When
+    const p = Schema.decodeUnknownSync(Permissions)(line);
+    // Then
+    expect(p.accessibility).toBe("granted");
+    expect(p.automation["com.apple.Safari"]).toBe("notRunning");
+    expect(p.automation["com.microsoft.edgemac"]).toBe("notInstalled");
+    expect(p.fullDiskAccess).toBe("denied");
+  });
+
+  it("decodes a browser that did not answer", () => {
+    // Given: the fixture line with Chrome noAnswer in place of notAsked
+    const noAnswer = line.replace(
+      '"com.google.Chrome":"notAsked"',
+      '"com.google.Chrome":"noAnswer"',
+    );
+    // When
+    const p = Effect.runSync(decodePermissions(noAnswer));
+    // Then
+    expect(p.automation["com.google.Chrome"]).toBe("noAnswer");
+  });
+
+  it("requestArgs match the helper's words", () => {
+    // Given: the three request kinds, automation with com.apple.Safari
+    // When
+    const args = [
+      requestArgs({ kind: "accessibility" }),
+      requestArgs({ kind: "automation", bundleId: "com.apple.Safari" }),
+      requestArgs({ kind: "fullDiskAccess" }),
+    ];
+    // Then
+    expect(args).toEqual([
+      ["accessibility"],
+      ["automation", "com.apple.Safari"],
+      ["fulldiskaccess"],
+    ]);
   });
 });
 

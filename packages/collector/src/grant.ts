@@ -1,27 +1,7 @@
-import { type DateTime, Schema } from "effect";
+import { Store, type StoreError } from "@clocktrace/core";
+import { type DateTime, Effect, Option, Schema } from "effect";
 
-export const GrantState = Schema.Literal(
-  "granted",
-  "denied",
-  "notAsked",
-  "notRunning",
-  "noAnswer",
-  "notInstalled",
-);
-
-export type GrantState = Schema.Schema.Type<typeof GrantState>;
-
-export const Permissions = Schema.parseJson(
-  Schema.Struct({
-    accessibility: GrantState,
-    automation: Schema.Record({ key: Schema.String, value: GrantState }),
-    fullDiskAccess: GrantState,
-  }),
-);
-
-export type Permissions = Schema.Schema.Type<typeof Permissions>;
-
-export const decodePermissions = Schema.decodeUnknown(Permissions);
+import { GrantRequest, GrantState, type Permissions } from "./helper.js";
 
 const browserNames: Record<string, string> = {
   "com.apple.Safari": "Safari",
@@ -40,17 +20,6 @@ export const browserName = (bundleId: string): string =>
 
 export const noAnswerNote = (browser: string): string =>
   `${browser} did not answer · quit ${browser}, open it again, then run clocktrace permissions`;
-
-export const GrantRequest = Schema.Union(
-  Schema.Struct({ kind: Schema.Literal("accessibility") }),
-  Schema.Struct({
-    kind: Schema.Literal("automation"),
-    bundleId: Schema.String,
-  }),
-  Schema.Struct({ kind: Schema.Literal("fullDiskAccess") }),
-);
-
-export type GrantRequest = Schema.Schema.Type<typeof GrantRequest>;
 
 export const PermissionItem = Schema.Struct({
   name: Schema.String,
@@ -126,17 +95,6 @@ export const permissionItems = (
   ];
 };
 
-export const requestArgs = (r: GrantRequest): ReadonlyArray<string> => {
-  switch (r.kind) {
-    case "accessibility":
-      return ["accessibility"];
-    case "automation":
-      return ["automation", r.bundleId];
-    case "fullDiskAccess":
-      return ["fulldiskaccess"];
-  }
-};
-
 export const tccService = (
   r: GrantRequest,
 ): "Accessibility" | "AppleEvents" | "SystemPolicyAllFiles" => {
@@ -150,12 +108,86 @@ export const tccService = (
   }
 };
 
-export const RequestOutcome = Schema.Literal("asked", "notRunning");
-
-export type RequestOutcome = Schema.Schema.Type<typeof RequestOutcome>;
-
-export const RequestOutcomeLine = Schema.parseJson(
-  Schema.Struct({ outcome: Schema.Literal("asked", "notRunning") }),
+export const SavedGrant = Schema.parseJson(
+  Schema.Struct({
+    state: Schema.Literal("granted", "denied"),
+    checkedAt: Schema.DateTimeUtc,
+  }),
 );
 
-export const decodeRequestOutcome = Schema.decodeUnknown(RequestOutcomeLine);
+export type SavedGrant = Schema.Schema.Type<typeof SavedGrant>;
+
+const encodeSavedGrant = Schema.encodeSync(SavedGrant);
+const decodeSavedGrant = Schema.decodeUnknown(SavedGrant);
+
+export const savedGrantKey = (bundleId: string): string => `grant.${bundleId}`;
+
+export const saveGrant = (
+  bundleId: string,
+  state: "granted" | "denied",
+  at: DateTime.Utc,
+): Effect.Effect<void, StoreError, Store> =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    yield* store.setSetting(
+      savedGrantKey(bundleId),
+      encodeSavedGrant({ state, checkedAt: at }),
+    );
+  });
+
+export const deleteSavedGrant = (
+  bundleId: string,
+): Effect.Effect<void, StoreError, Store> =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    yield* store.deleteSetting(savedGrantKey(bundleId));
+  });
+
+export const readSavedGrants = (): Effect.Effect<
+  ReadonlyMap<string, SavedGrant>,
+  StoreError,
+  Store
+> =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    const grants = new Map<string, SavedGrant>();
+    for (const bundleId of knownBrowsers) {
+      const raw = yield* store.getSetting(savedGrantKey(bundleId));
+      const decoded = yield* Effect.option(
+        decodeSavedGrant(Option.getOrElse(raw, () => "")),
+      );
+      if (Option.isSome(decoded)) {
+        grants.set(bundleId, decoded.value);
+      }
+    }
+    return grants;
+  });
+
+export const saveLiveGrants = (
+  p: Permissions,
+  at: DateTime.Utc,
+): Effect.Effect<void, never, Store> =>
+  Effect.gen(function* () {
+    for (const [bundleId, state] of Object.entries(p.automation)) {
+      // macOS has no Grant for this browser any more (a reset, a new app
+      // identity), so the Saved grant is no longer true.
+      if (state === "notAsked") {
+        yield* deleteSavedGrant(bundleId).pipe(
+          Effect.catchTag("StoreError", () =>
+            Effect.logWarning("saved grant not deleted").pipe(
+              Effect.annotateLogs({ bundleId }),
+            ),
+          ),
+        );
+      }
+      if (state === "granted" || state === "denied") {
+        yield* saveGrant(bundleId, state, at).pipe(
+          Effect.catchTag("StoreError", () =>
+            Effect.logWarning("saved grant not written").pipe(
+              Effect.annotateLogs({ bundleId }),
+            ),
+          ),
+        );
+      }
+    }
+  });

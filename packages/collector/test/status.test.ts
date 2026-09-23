@@ -12,13 +12,13 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { App } from "../src/app.js";
+import type { Permissions } from "../src/helper.js";
 import { Helper } from "../src/helper.js";
 import {
   fakeLaunchd,
   type Launchd,
   type LaunchdState,
 } from "../src/launchd.js";
-import type { Permissions } from "../src/permissions.js";
 import { readStatus, statusLines } from "../src/status.js";
 
 const dbPath = "/Users/me/Library/Application Support/clocktrace/clocktrace.db";

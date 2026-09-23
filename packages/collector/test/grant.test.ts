@@ -1,41 +1,19 @@
-import { DateTime, Effect, Schema } from "effect";
+import { Store, StoreError } from "@clocktrace/core";
+import { DateTime, Effect, Layer, Logger, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
-  decodePermissions,
-  Permissions,
   permissionItems,
-  requestArgs,
+  readSavedGrants,
+  saveLiveGrants,
   tccService,
-} from "../src/permissions.js";
+} from "../src/grant.js";
+import { Permissions } from "../src/helper.js";
 
 const line =
   '{"accessibility":"granted","automation":{"com.apple.Safari":"notRunning","com.brave.Browser":"granted","com.google.Chrome":"notAsked","com.microsoft.edgemac":"notInstalled","com.operasoftware.Opera":"notInstalled","com.vivaldi.Vivaldi":"notInstalled","org.chromium.Chromium":"notInstalled"},"fullDiskAccess":"denied"}';
 
-describe("permissions", () => {
-  it("decodes the helper's permissions line", () => {
-    // Given: the sample line at packages/helper/README.md:61
-    // When
-    const p = Schema.decodeUnknownSync(Permissions)(line);
-    // Then
-    expect(p.accessibility).toBe("granted");
-    expect(p.automation["com.apple.Safari"]).toBe("notRunning");
-    expect(p.automation["com.microsoft.edgemac"]).toBe("notInstalled");
-    expect(p.fullDiskAccess).toBe("denied");
-  });
-
-  it("decodes a browser that did not answer", () => {
-    // Given: the fixture line with Chrome noAnswer in place of notAsked
-    const noAnswer = line.replace(
-      '"com.google.Chrome":"notAsked"',
-      '"com.google.Chrome":"noAnswer"',
-    );
-    // When
-    const p = Effect.runSync(decodePermissions(noAnswer));
-    // Then
-    expect(p.automation["com.google.Chrome"]).toBe("noAnswer");
-  });
-
+describe("grant", () => {
   it("items list installed browsers by bundle id with display names", () => {
     // Given: the same decoded value
     const p = Schema.decodeUnknownSync(Permissions)(line);
@@ -67,22 +45,6 @@ describe("permissions", () => {
       request: { kind: "automation", bundleId: "org.example.Browser" },
       checkedAt: null,
     });
-  });
-
-  it("requestArgs match the helper's words", () => {
-    // Given: the three request kinds, automation with com.apple.Safari
-    // When
-    const args = [
-      requestArgs({ kind: "accessibility" }),
-      requestArgs({ kind: "automation", bundleId: "com.apple.Safari" }),
-      requestArgs({ kind: "fullDiskAccess" }),
-    ];
-    // Then
-    expect(args).toEqual([
-      ["accessibility"],
-      ["automation", "com.apple.Safari"],
-      ["fulldiskaccess"],
-    ]);
   });
 
   it("tccService names tccutil's services", () => {
@@ -134,5 +96,90 @@ describe("permissions", () => {
       "automation Brave",
       "full disk access",
     ]);
+  });
+
+  it("readSavedGrants returns a saved grant", async () => {
+    // Given: a Saved grant for Safari in the settings table
+    const grants = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.setSetting(
+          "grant.com.apple.Safari",
+          '{"state":"granted","checkedAt":"2026-09-23T20:20:00.000Z"}',
+        );
+        // When
+        return yield* readSavedGrants();
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    const safari = grants.get("com.apple.Safari");
+    expect(grants.size).toBe(1);
+    expect(safari?.state).toBe("granted");
+    expect(safari && DateTime.formatIso(safari.checkedAt)).toBe(
+      "2026-09-23T20:20:00.000Z",
+    );
+  });
+
+  it("a saved grant that does not decode counts as none", async () => {
+    // Given: a Saved grant value that is not JSON
+    const grants = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.setSetting("grant.com.apple.Safari", "not json");
+        // When
+        return yield* readSavedGrants();
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(grants.size).toBe(0);
+  });
+
+  it("a failed Saved grant delete logs and the walk goes on", async () => {
+    // Given: a Store whose deleteSetting fails; Chrome reads notAsked and
+    // Safari reads granted
+    const failingDelete = Layer.effect(
+      Store,
+      Effect.map(
+        Store,
+        (s) =>
+          new Store({
+            ...s,
+            deleteSetting: () =>
+              Effect.fail(new StoreError({ cause: "disk full" })),
+          }),
+      ),
+    );
+    const logs: Array<string> = [];
+    const testLogger = Logger.replace(
+      Logger.defaultLogger,
+      Logger.make(({ message }) => {
+        logs.push(String(message));
+      }),
+    );
+    // When
+    const safari = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* saveLiveGrants(
+          {
+            accessibility: "granted",
+            automation: {
+              "com.google.Chrome": "notAsked",
+              "com.apple.Safari": "granted",
+            },
+            fullDiskAccess: "granted",
+          },
+          DateTime.unsafeMake("2026-09-23T20:20:00Z"),
+        );
+        const store = yield* Store;
+        return yield* store.getSetting("grant.com.apple.Safari");
+      }).pipe(
+        Effect.provide(
+          Layer.merge(Layer.provide(failingDelete, Store.Test), testLogger),
+        ),
+      ),
+    );
+    // Then
+    expect(logs).toEqual(["saved grant not deleted"]);
+    expect(Option.isSome(safari)).toBe(true);
   });
 });
