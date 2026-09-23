@@ -454,6 +454,21 @@ describe("Helper shared sample files", () => {
       true,
     ]);
   });
+
+  it("biome devices decodes every line of devices.expected.jsonl", async () => {
+    // Given: biome devices printed the shared device sample and exited 0
+    const stdout = sharedSample("devices.expected.jsonl");
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      stdout,
+    );
+    // Then
+    expect({
+      success: Exit.isSuccess(exit),
+      count: Exit.isSuccess(exit) ? exit.value.length : 0,
+    }).toEqual({ success: true, count: 3 });
+  });
 });
 
 describe("openArgs", () => {
