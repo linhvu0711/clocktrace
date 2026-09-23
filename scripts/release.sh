@@ -67,12 +67,23 @@ for package in "${packages[@]}"; do
   version_files+=("$package/package.json")
 done
 
-# The bump stays only in the release commit; any other exit puts it back.
+# The bump stays only in a pushed release commit. Any exit before the push
+# takes back the local commit and tag and puts the version files back, so the
+# same version can run again.
 committed=0
+tagged=0
+pushed=0
 restore() {
-  if [[ "$committed" == "0" ]]; then
-    git checkout -- "${version_files[@]}"
+  if [[ "$pushed" == "1" ]]; then
+    return
   fi
+  if [[ "$tagged" == "1" ]]; then
+    git tag -d "v$version" >/dev/null
+  fi
+  if [[ "$committed" == "1" ]]; then
+    git reset --quiet --soft HEAD~1
+  fi
+  git checkout HEAD -- "${version_files[@]}"
 }
 trap restore EXIT
 
@@ -132,7 +143,14 @@ if [[ "$sign" == "1" ]]; then
   git commit --quiet -m "chore: release v$version" -- "${version_files[@]}"
   committed=1
   git tag "v$version"
-  git push origin main "v$version"
-  gh release create "v$version" "$tarball" --title "v$version" \
-    --notes "sha256: $hash" --verify-tag
+  tagged=1
+  # Both refs land, or neither does.
+  git push --atomic origin main "v$version"
+  pushed=1
+  if ! gh release create "v$version" "$tarball" --title "v$version" \
+    --notes "sha256: $hash" --verify-tag; then
+    echo "release: v$version is pushed, but the GitHub release failed. Publish it with:"
+    echo "  gh release create v$version $tarball --title v$version --notes \"sha256: $hash\" --verify-tag"
+    exit 1
+  fi
 fi
