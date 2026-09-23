@@ -373,6 +373,60 @@ describe("permissions", () => {
     ]);
   });
 
+  it("a browser reset re-asks the browsers it cleared when its own ask fails", async () => {
+    // Given: Brave granted, Chromium denied; the reset clears both, then the
+    // Chromium ask dies in the helper
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.brave.Browser": "granted",
+        "org.chromium.Chromium": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [
+        p,
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "notAsked",
+            "org.chromium.Chromium": "notAsked",
+          },
+        },
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "notAsked",
+          },
+        },
+      ],
+      ["y", { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+        requestError: (grant) =>
+          grant.kind === "automation" &&
+          grant.bundleId === "org.chromium.Chromium"
+            ? new HelperExitedError({ cause: "open exited 1" })
+            : null,
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "com.brave.Browser" },
+    ]);
+    expect(output.slice(-2)).toEqual([
+      "  ✘ Automation · Chromium  helper exited: open exited 1",
+      "  ✔ Automation · Brave     granted",
+    ]);
+  });
+
   it("a failed tccutil prints its error and the walk goes on", async () => {
     // Given: Chromium and full disk access denied; tccutil exits 64 with its
     // real stderr text; full disk access grants on re-read

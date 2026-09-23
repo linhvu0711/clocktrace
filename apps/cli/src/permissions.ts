@@ -329,7 +329,7 @@ export const walkPermissions = (
         }
         return true;
       });
-    const recheck = (perm: Perm, afterReset: boolean) =>
+    const recheck = (perm: Perm) =>
       Effect.gen(function* () {
         const { item } = perm;
         const after = yield* Effect.scoped(helper.permissions(appPath));
@@ -339,14 +339,6 @@ export const walkPermissions = (
             : item.request.kind === "fullDiskAccess"
               ? after.fullDiskAccess
               : after.accessibility;
-        // An AppleEvents reset clears every browser's grant, not only this one.
-        if (afterReset && item.request.kind === "automation") {
-          for (const p of perms) {
-            if (p !== perm && p.item.request.kind === "automation") {
-              p.state = after.automation[p.item.request.bundleId] ?? p.state;
-            }
-          }
-        }
       });
     const printResult = (perm: Perm) => {
       const { item } = perm;
@@ -376,8 +368,17 @@ export const walkPermissions = (
           ) {
             return;
           }
-          if (yield* requestGrant(perm, true)) {
-            yield* recheck(perm, true);
+          const asked = yield* requestGrant(perm, true);
+          // An AppleEvents reset clears every browser's grant, not only this
+          // one, so read them all again, even when this ask failed.
+          const after = yield* Effect.scoped(helper.permissions(appPath));
+          for (const other of perms) {
+            if (other.item.request.kind === "automation") {
+              other.state =
+                after.automation[other.item.request.bundleId] ?? other.state;
+            }
+          }
+          if (asked) {
             yield* printResult(perm);
           }
           return;
@@ -397,7 +398,7 @@ export const walkPermissions = (
         if (!(yield* requestGrant(perm, false))) {
           return;
         }
-        yield* recheck(perm, false);
+        yield* recheck(perm);
         // Turned on yet still denied: the stored grant is stale.
         if (item.request.kind !== "automation" && perm.state === "denied") {
           if (
@@ -411,7 +412,7 @@ export const walkPermissions = (
           if (!(yield* requestGrant(perm, true))) {
             return;
           }
-          yield* recheck(perm, true);
+          yield* recheck(perm);
         }
         yield* printResult(perm);
       });
