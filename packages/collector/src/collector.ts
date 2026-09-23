@@ -12,7 +12,6 @@ import type { HelperLine } from "./helper-line.js";
 import { deleteSavedGrant, saveGrant } from "./saved-grant.js";
 
 export const idleAfterSeconds = 300;
-export const minActivityMillis = 1000;
 
 interface State {
   readonly lastTs: DateTime.Utc | null;
