@@ -206,6 +206,7 @@ describe("start and stop", () => {
           isInstalled: () => Effect.succeed(true),
           readPlist: () => Effect.succeed(null),
           install: () => Effect.void,
+          restore: () => Effect.void,
           bootstrap: () => Effect.void,
           uninstall: () => Effect.void,
           state: () => Effect.succeed("running"),

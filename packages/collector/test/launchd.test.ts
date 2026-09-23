@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -30,7 +31,11 @@ import {
   stateFromPrint,
 } from "../src/launchd.js";
 import { CollectorPaths, collectorPaths } from "../src/paths.js";
-import { type CollectorPlist, CollectorPlistFromJson } from "../src/plist.js";
+import {
+  type CollectorPlist,
+  CollectorSettingsFromJson,
+  installedPlist,
+} from "../src/plist.js";
 
 const samplePlist: CollectorPlist = {
   app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
@@ -132,13 +137,18 @@ describe("fakeLaunchd failBootstrap", () => {
   it("fakeLaunchd can fail the bootstrap", async () => {
     // Given: a plist present but the Collector not loaded
     const { exit, state } = await withLaunchd(
-      { installed: true, running: false, plist: samplePlist, installs: 1 },
+      {
+        installed: true,
+        running: false,
+        plist: installedPlist(samplePlist),
+        installs: 1,
+      },
       (launchd) => launchd.bootstrap(),
     );
     // Then: bootstrap fails and the plist is left untouched
     expect(exit).toEqual(Exit.fail(bootstrapError));
     expect(state.running).toBe(false);
-    expect(state.plist).toEqual(samplePlist);
+    expect(state.plist).toEqual(installedPlist(samplePlist));
   });
 
   it("a failed fake install leaves no plist", async () => {
@@ -249,25 +259,42 @@ describe("install cleanup (real service)", () => {
     }
   });
 
-  it("readPlist decodes what plutil prints", async () => {
+  it("readPlist gives the text and the settings plutil prints", async () => {
     // Given: a plist file, and plutil printing its JSON
     mkdirSync(dirname(plistPath), { recursive: true });
     writeFileSync(plistPath, "<plist/>");
-    const json = Schema.encodeSync(CollectorPlistFromJson)(samplePlist);
+    const settings = { databasePath: "/old/clocktrace.db", helperPath: "/h" };
+    const json = Schema.encodeSync(CollectorSettingsFromJson)(settings);
     // When
     const exit = await runReadPlist(json);
     // Then
-    expect(exit).toEqual(Exit.succeed(samplePlist));
+    expect(exit).toEqual(Exit.succeed({ text: "<plist/>", settings }));
   });
 
-  it("readPlist is null for a layout it cannot read", async () => {
+  it("readPlist keeps the text of a plist without our settings", async () => {
     // Given: a plist file whose JSON has none of our keys
     mkdirSync(dirname(plistPath), { recursive: true });
     writeFileSync(plistPath, "<plist/>");
     // When
     const exit = await runReadPlist("{}");
     // Then
-    expect(exit).toEqual(Exit.succeed(null));
+    expect(exit).toEqual(Exit.succeed({ text: "<plist/>", settings: null }));
+  });
+
+  it("restore writes the old plist back as it was", async () => {
+    // Given: the text of a plist install would never write
+    const text = "<plist><!-- an older layout --></plist>\n";
+    // When
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.flatMap(Launchd, (l) =>
+          l.restore({ text, settings: null }),
+        ).pipe(Effect.provide(withExit(0))),
+      ),
+    );
+    // Then: the file holds that text, byte for byte
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(readFileSync(plistPath, "utf8")).toBe(text);
   });
 
   it("a failed real install removes the plist it wrote", async () => {

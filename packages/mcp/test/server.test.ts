@@ -1406,6 +1406,7 @@ describe("server", () => {
         isInstalled: () => Effect.succeed(true),
         readPlist: () => Effect.succeed(null),
         install: () => Effect.void,
+        restore: () => Effect.void,
         bootstrap: () => Effect.void,
         bootout: () => Effect.void,
         uninstall: () => Effect.void,

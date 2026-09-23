@@ -14,6 +14,7 @@ import {
   type CollectorPlist,
   collectorPaths,
   fakeLaunchd,
+  installedPlist,
   Launchd,
   LaunchdError,
   type LaunchdState,
@@ -60,7 +61,7 @@ const samplePlist: CollectorPlist = {
 const installedAgent: LaunchdState = {
   installed: true,
   running: true,
-  plist: samplePlist,
+  plist: installedPlist(samplePlist),
   installs: 1,
 };
 
@@ -148,14 +149,15 @@ describe("uninstall", () => {
   });
 
   // The plist setup would write for a database at `databasePath`.
-  const plistFor = (databasePath: string): CollectorPlist => ({
-    app: join(appPath, "Contents", "MacOS", "Clocktrace"),
-    node: "/usr/local/bin/node",
-    entry: "/repo/main.js",
-    databasePath,
-    helperPath: "/stub",
-    logPath: collectorPaths(home).logPath,
-  });
+  const plistFor = (databasePath: string) =>
+    installedPlist({
+      app: join(appPath, "Contents", "MacOS", "Clocktrace"),
+      node: "/usr/local/bin/node",
+      entry: "/repo/main.js",
+      databasePath,
+      helperPath: "/stub",
+      logPath: collectorPaths(home).logPath,
+    });
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });

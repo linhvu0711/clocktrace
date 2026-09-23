@@ -7,16 +7,18 @@ import { Data, Effect, Layer, Option, Ref, Schedule, Schema } from "effect";
 
 import { CollectorPaths } from "./paths.js";
 import {
-  CollectorPlist,
-  CollectorPlistFromJson,
+  type CollectorPlist,
+  CollectorSettingsFromJson,
   collectorLabel,
   collectorPlist,
+  InstalledPlist,
+  installedPlist,
 } from "./plist.js";
 
 export const LaunchdState = Schema.Struct({
   installed: Schema.Boolean,
   running: Schema.Boolean,
-  plist: Schema.NullOr(CollectorPlist),
+  plist: Schema.NullOr(InstalledPlist),
   installs: Schema.Number,
 });
 
@@ -35,20 +37,22 @@ export const fakeLaunchd = (
       new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
     );
   let samples = 0;
+  const load = (plist: InstalledPlist) =>
+    options?.failBootstrap
+      ? failed()
+      : Ref.update(state, (s) => ({
+          installed: true,
+          running: !options?.bootstrapStuck,
+          plist,
+          installs: s.installs + 1,
+        }));
   return Layer.succeed(
     Launchd,
     new Launchd({
       isInstalled: () => Ref.get(state).pipe(Effect.map((s) => s.installed)),
       readPlist: () => Ref.get(state).pipe(Effect.map((s) => s.plist)),
-      install: (plist) =>
-        options?.failBootstrap
-          ? failed()
-          : Ref.update(state, (s) => ({
-              installed: true,
-              running: !options?.bootstrapStuck,
-              plist,
-              installs: s.installs + 1,
-            })),
+      install: (plist) => load(installedPlist(plist)),
+      restore: load,
       bootstrap: () =>
         options?.failBootstrap
           ? failed()
@@ -181,12 +185,72 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
               ),
         ),
       );
+    // Writes the plist text, then loads the job from it.
+    const load = (text: string) =>
+      fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
+        Effect.andThen(fs.makeDirectory(logDir, { recursive: true })),
+        Effect.andThen(fs.writeFileString(plistPath, text)),
+        Effect.mapError(
+          (e) =>
+            new LaunchdError({
+              step: `write ${plistPath}`,
+              detail: e.message,
+            }),
+        ),
+        // Bootstrap while a previous bootout is still tearing down is
+        // accepted but queued behind it, which defers registration ~45 s;
+        // wait until launchd reports the job gone so the add lands clean.
+        Effect.andThen(
+          Effect.ignore(
+            exit(
+              "launchctl print",
+              "print",
+              `${domain}/${collectorLabel}`,
+            ).pipe(
+              Effect.flatMap((code) =>
+                code !== 0
+                  ? Effect.void
+                  : Effect.fail(
+                      new LaunchdError({
+                        step: "launchctl print",
+                        detail: "job still registered",
+                        log: logPath,
+                      }),
+                    ),
+              ),
+              Effect.retry(
+                Schedule.spaced("100 millis").pipe(Schedule.upTo("10 seconds")),
+              ),
+            ),
+          ),
+        ),
+        Effect.andThen(
+          bootstrap().pipe(
+            Effect.tapError(() =>
+              fs.remove(plistPath, { force: true }).pipe(Effect.ignore),
+            ),
+          ),
+        ),
+        // A KeepAlive job re-added after bootout waits ~45 s for launchd's
+        // spawn schedule; kickstart spawns it at once, but only once the
+        // job is registered, so retry it for a bounded window. Best-effort:
+        // a kick that never lands leaves the caller's state poll to catch it.
+        Effect.andThen(
+          Effect.ignore(
+            kickstart().pipe(
+              Effect.retry(
+                Schedule.spaced("500 millis").pipe(Schedule.upTo("15 seconds")),
+              ),
+            ),
+          ),
+        ),
+      );
     return {
       isInstalled: () => fs.exists(plistPath).pipe(Effect.orDie),
       // The file is read first so a read error keeps its own step; plutil
-      // then parses the text. A plist in a layout we did not write reads
-      // as null, like no plist.
-      readPlist: (): Effect.Effect<CollectorPlist | null, LaunchdError> =>
+      // then parses the text. The text is kept so restore can put the
+      // plist back as it was; a plist without our settings has none.
+      readPlist: (): Effect.Effect<InstalledPlist | null, LaunchdError> =>
         fs.readFileString(plistPath).pipe(
           Effect.catchIf(
             (e) => e._tag === "SystemError" && e.reason === "NotFound",
@@ -216,11 +280,14 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                         detail: String(cause),
                       }),
                   ),
-                  Effect.map((json) =>
-                    Option.getOrNull(
-                      Schema.decodeUnknownOption(CollectorPlistFromJson)(json),
+                  Effect.map((json) => ({
+                    text,
+                    settings: Option.getOrNull(
+                      Schema.decodeUnknownOption(CollectorSettingsFromJson)(
+                        json,
+                      ),
                     ),
-                  ),
+                  })),
                 ),
           ),
         ),
@@ -244,69 +311,9 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
             ),
           ),
         ),
-      install: (plist: CollectorPlist) =>
-        fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
-          Effect.andThen(fs.makeDirectory(logDir, { recursive: true })),
-          Effect.andThen(fs.writeFileString(plistPath, collectorPlist(plist))),
-          Effect.mapError(
-            (e) =>
-              new LaunchdError({
-                step: `write ${plistPath}`,
-                detail: e.message,
-              }),
-          ),
-          // Bootstrap while a previous bootout is still tearing down is
-          // accepted but queued behind it, which defers registration ~45 s;
-          // wait until launchd reports the job gone so the add lands clean.
-          Effect.andThen(
-            Effect.ignore(
-              exit(
-                "launchctl print",
-                "print",
-                `${domain}/${collectorLabel}`,
-              ).pipe(
-                Effect.flatMap((code) =>
-                  code !== 0
-                    ? Effect.void
-                    : Effect.fail(
-                        new LaunchdError({
-                          step: "launchctl print",
-                          detail: "job still registered",
-                          log: logPath,
-                        }),
-                      ),
-                ),
-                Effect.retry(
-                  Schedule.spaced("100 millis").pipe(
-                    Schedule.upTo("10 seconds"),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Effect.andThen(
-            bootstrap().pipe(
-              Effect.tapError(() =>
-                fs.remove(plistPath, { force: true }).pipe(Effect.ignore),
-              ),
-            ),
-          ),
-          // A KeepAlive job re-added after bootout waits ~45 s for launchd's
-          // spawn schedule; kickstart spawns it at once, but only once the
-          // job is registered, so retry it for a bounded window. Best-effort:
-          // a kick that never lands leaves the caller's state poll to catch it.
-          Effect.andThen(
-            Effect.ignore(
-              kickstart().pipe(
-                Effect.retry(
-                  Schedule.spaced("500 millis").pipe(
-                    Schedule.upTo("15 seconds"),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+      install: (plist: CollectorPlist) => load(collectorPlist(plist)),
+      // Puts a plist readPlist gave back as it was, in any layout.
+      restore: (plist: InstalledPlist) => load(plist.text),
     };
   }),
   dependencies: [NodeContext.layer],

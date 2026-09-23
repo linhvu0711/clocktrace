@@ -1,16 +1,9 @@
-import { Config, Data, Effect, Layer, Option, Schedule, Schema } from "effect";
+import { Config, Data, Effect, Layer, Option, Schedule } from "effect";
 
 import { App } from "./app.js";
 import { entryPath, Launchd, LaunchdError } from "./launchd.js";
 import { CollectorPaths } from "./paths.js";
-
-// The settings the Collector runs with, written into its plist.
-export const CollectorSettings = Schema.Struct({
-  databasePath: Schema.String,
-  helperPath: Schema.String,
-});
-
-export type CollectorSettings = Schema.Schema.Type<typeof CollectorSettings>;
+import type { CollectorSettings } from "./plist.js";
 
 // launchctl bootstrap returns before a RunAtLoad agent has reached running,
 // so poll the state for a bounded window instead of trusting one sample.
@@ -68,16 +61,9 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
         CollectorSettings | null,
         LaunchdError
       > =>
-        launchd.readPlist().pipe(
-          Effect.map((plist) =>
-            plist === null
-              ? null
-              : {
-                  databasePath: plist.databasePath,
-                  helperPath: plist.helperPath,
-                },
-          ),
-        );
+        launchd
+          .readPlist()
+          .pipe(Effect.map((plist) => plist?.settings ?? null));
       return {
         // Swaps in the App, replaces the agent, and waits until the
         // Collector is Loaded. On a failure it puts the old App and plist
@@ -106,7 +92,7 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
                 Effect.catchAll(() => Effect.succeed(false)),
               );
               if (previous !== null) {
-                yield* Effect.ignore(launchd.install(previous));
+                yield* Effect.ignore(launchd.restore(previous));
               }
               return appRestored;
             }).pipe(Effect.catchAll(() => Effect.succeed(false)));

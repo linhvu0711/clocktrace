@@ -22,18 +22,18 @@ export type CollectorPlist = Schema.Schema.Type<typeof CollectorPlist>;
 const plistKey = <S extends Schema.Schema.Any>(key: string, schema: S) =>
   Schema.propertySignature(schema).pipe(Schema.fromKey(key));
 
-// The JSON `plutil -convert json` prints for a plist collectorPlist wrote.
-// A plist in another layout does not decode.
-const PlutilJson = Schema.Struct({
-  programArguments: plistKey(
-    "ProgramArguments",
-    Schema.Tuple(
-      Schema.String,
-      Schema.Literal("spawn"),
-      Schema.String,
-      Schema.String,
-    ),
-  ),
+// The settings the Collector runs with, written into its plist.
+export const CollectorSettings = Schema.Struct({
+  databasePath: Schema.String,
+  helperPath: Schema.String,
+});
+
+export type CollectorSettings = Schema.Schema.Type<typeof CollectorSettings>;
+
+// The settings in the JSON `plutil -convert json` prints for a Collector
+// plist. Every layout setup has written holds them under the same keys, so
+// a plist from before the `spawn` verb still gives them.
+const PlutilSettings = Schema.Struct({
   environment: plistKey(
     "EnvironmentVariables",
     Schema.Struct({
@@ -41,32 +41,26 @@ const PlutilJson = Schema.Struct({
       helperPath: plistKey("CLOCKTRACE_HELPER", Schema.String),
     }),
   ),
-  logPath: plistKey("StandardOutPath", Schema.String),
 });
 
-export const CollectorPlistFromJson = Schema.transform(
-  Schema.parseJson(PlutilJson),
-  CollectorPlist,
+export const CollectorSettingsFromJson = Schema.transform(
+  Schema.parseJson(PlutilSettings),
+  CollectorSettings,
   {
     strict: true,
-    decode: ({ programArguments, environment, logPath }) => ({
-      app: programArguments[0],
-      node: programArguments[2],
-      entry: programArguments[3],
-      databasePath: environment.databasePath,
-      helperPath: environment.helperPath,
-      logPath,
-    }),
-    encode: (plist) => ({
-      programArguments: [plist.app, "spawn", plist.node, plist.entry] as const,
-      environment: {
-        databasePath: plist.databasePath,
-        helperPath: plist.helperPath,
-      },
-      logPath: plist.logPath,
-    }),
+    decode: ({ environment }) => environment,
+    encode: (settings) => ({ environment: settings }),
   },
 );
+
+// A plist as it sits on disk: its text, to put back as it was, and the
+// settings it holds, or null when it holds none of ours.
+export const InstalledPlist = Schema.Struct({
+  text: Schema.String,
+  settings: Schema.NullOr(CollectorSettings),
+});
+
+export type InstalledPlist = Schema.Schema.Type<typeof InstalledPlist>;
 
 export const collectorPlist = (
   input: CollectorPlist,
@@ -103,3 +97,9 @@ export const collectorPlist = (
 </dict>
 </plist>
 `;
+
+// The plist install writes for these values, as readPlist gives it back.
+export const installedPlist = (plist: CollectorPlist): InstalledPlist => ({
+  text: collectorPlist(plist),
+  settings: { databasePath: plist.databasePath, helperPath: plist.helperPath },
+});

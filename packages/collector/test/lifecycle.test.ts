@@ -26,8 +26,10 @@ import {
 import { CollectorPaths } from "../src/paths.js";
 import {
   type CollectorPlist,
-  CollectorPlistFromJson,
+  CollectorSettingsFromJson,
   collectorPlist,
+  type InstalledPlist,
+  installedPlist,
 } from "../src/plist.js";
 
 // The previous agent's plist, in every case that has one.
@@ -161,14 +163,14 @@ describe("Lifecycle.install", () => {
       installed: true,
       running: true,
       installs: 1,
-      plist: {
+      plist: installedPlist({
         app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
         node: process.execPath,
         entry: entryPath,
         databasePath: "/data/clocktrace.db",
         helperPath: "/stub",
         logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
-      },
+      }),
     });
     expect(appCommits).toBe(1);
   });
@@ -176,7 +178,12 @@ describe("Lifecycle.install", () => {
   it("install again rewrites the agent and loads it", async () => {
     // Given: a running agent from an earlier install
     const { exit, state, appCommits } = await run(
-      { installed: true, running: true, plist: samplePlist, installs: 1 },
+      {
+        installed: true,
+        running: true,
+        plist: installedPlist(samplePlist),
+        installs: 1,
+      },
       install,
     );
     // Then
@@ -188,7 +195,12 @@ describe("Lifecycle.install", () => {
   it("install over a stopped agent loads it again", async () => {
     // Given: the plist present, the Collector not loaded
     const { exit, state } = await run(
-      { installed: true, running: false, plist: samplePlist, installs: 1 },
+      {
+        installed: true,
+        running: false,
+        plist: installedPlist(samplePlist),
+        installs: 1,
+      },
       install,
     );
     // Then
@@ -236,7 +248,7 @@ describe("Lifecycle.install restores", () => {
   const withAgent: LaunchdState = {
     installed: true,
     running: true,
-    plist: samplePlist,
+    plist: installedPlist(samplePlist),
     installs: 1,
   };
 
@@ -261,7 +273,7 @@ describe("Lifecycle.install restores", () => {
       ),
     );
     expect(steps).toEqual(["app"]);
-    expect(state.plist).toEqual(samplePlist);
+    expect(state.plist).toEqual(installedPlist(samplePlist));
     expect(state.installed).toBe(true);
     expect(appRollbacks).toBe(1);
     expect(appCommits).toBe(0);
@@ -311,7 +323,7 @@ describe("Lifecycle.install restores", () => {
       ),
     );
     expect(steps).toEqual(["app", "agent", "starting"]);
-    expect(state.plist).toEqual(samplePlist);
+    expect(state.plist).toEqual(installedPlist(samplePlist));
     expect(state.installed).toBe(true);
     expect(state.installs).toBe(3);
     expect(appRollbacks).toBe(1);
@@ -362,6 +374,27 @@ describe("Lifecycle.install restores", () => {
       ),
     );
   });
+  it("a failed bootstrap puts a plist from before the spawn verb back as it was", async () => {
+    // Given: a running agent whose plist has the old layout, which install
+    // never writes; the new agent's bootstrap fails
+    const legacy: InstalledPlist = {
+      text: "<plist><!-- node main.js, no spawn verb --></plist>",
+      settings: {
+        databasePath: "/Volumes/Work/clocktrace.db",
+        helperPath: "/old-helper",
+      },
+    };
+    // When
+    const { state } = await run(
+      { installed: true, running: true, plist: legacy, installs: 1 },
+      install,
+      { launchdLayer: failFirstInstall },
+    );
+    // Then: the old plist is back, text and all
+    expect(state.plist).toEqual(legacy);
+    expect(state.installed).toBe(true);
+  });
+
   it("an unload that fails leaves the App not put back", async () => {
     // Given: a stuck bootstrap over an agent, and an unload that fails, so
     // the restore stops before the App rollback
@@ -408,7 +441,10 @@ describe("Lifecycle settings", () => {
   const withPlistDb: LaunchdState = {
     installed: true,
     running: true,
-    plist: { ...samplePlist, databasePath: "/plist/clocktrace.db" },
+    plist: installedPlist({
+      ...samplePlist,
+      databasePath: "/plist/clocktrace.db",
+    }),
     installs: 1,
   };
 
@@ -547,28 +583,47 @@ describe("the Collector plist", () => {
   // wrote, slashes escaped as plutil escapes them.
   const plutilJson = String.raw`{"Label":"com.clocktrace.collector","ProgramArguments":["\/Users\/me\/Applications\/Clocktrace.app\/Contents\/MacOS\/Clocktrace","spawn","\/usr\/local\/bin\/node","\/repo\/packages\/collector\/dist\/main.js"],"RunAtLoad":true,"KeepAlive":true,"EnvironmentVariables":{"CLOCKTRACE_DB":"\/Users\/me\/Work & <Play>\/clocktrace.db","CLOCKTRACE_HELPER":"\/repo\/packages\/helper\/.build\/release\/clocktrace-helper"},"StandardOutPath":"\/Users\/me\/Library\/Logs\/clocktrace\/collector.log","StandardErrorPath":"\/Users\/me\/Library\/Logs\/clocktrace\/collector.log","ProcessType":"Background"}`;
 
-  it("the plist reads back from plutil's JSON", () => {
+  it("the settings read back from plutil's JSON", () => {
     // Given: plutil's JSON for a plist with a database path holding & and <
     const text = plutilJson;
     // When
-    const plist = Schema.decodeUnknownSync(CollectorPlistFromJson)(text);
+    const settings = Schema.decodeUnknownSync(CollectorSettingsFromJson)(text);
     // Then
-    expect(plist).toEqual({
-      app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
-      node: "/usr/local/bin/node",
-      entry: "/repo/packages/collector/dist/main.js",
+    expect(settings).toEqual({
       databasePath: "/Users/me/Work & <Play>/clocktrace.db",
       helperPath: "/repo/packages/helper/.build/release/clocktrace-helper",
-      logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
     });
   });
 
-  it("a plist without the spawn verb reads as none", () => {
-    // Given: the layout before the App owned the grants (ADR 0007)
-    const text = plutilJson.replace('"spawn",', "");
+  it("a plist from before the spawn verb still gives its settings", () => {
+    // Given: the layout before the App owned the grants (ADR 0007), where
+    // launchd ran node on the entry directly
+    const text = plutilJson.replace(
+      String.raw`"\/Users\/me\/Applications\/Clocktrace.app\/Contents\/MacOS\/Clocktrace","spawn",`,
+      "",
+    );
     // When
-    const plist = Schema.decodeUnknownOption(CollectorPlistFromJson)(text);
+    const settings = Schema.decodeUnknownOption(CollectorSettingsFromJson)(
+      text,
+    );
     // Then
-    expect(plist).toEqual(Option.none());
+    expect(text).not.toContain("spawn");
+    expect(settings).toEqual(
+      Option.some({
+        databasePath: "/Users/me/Work & <Play>/clocktrace.db",
+        helperPath: "/repo/packages/helper/.build/release/clocktrace-helper",
+      }),
+    );
+  });
+
+  it("a plist without our keys has no settings", () => {
+    // Given: a plist some other tool wrote
+    const text = String.raw`{"Label":"com.example.other","ProgramArguments":["\/usr\/bin\/true"]}`;
+    // When
+    const settings = Schema.decodeUnknownOption(CollectorSettingsFromJson)(
+      text,
+    );
+    // Then
+    expect(settings).toEqual(Option.none());
   });
 });
