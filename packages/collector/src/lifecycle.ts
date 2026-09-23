@@ -75,10 +75,11 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
           progress: InstallProgress<R>,
         ) =>
           Effect.gen(function* () {
-            const appInstall = yield* app.install(settings.helperPath);
-            yield* progress.done("app");
+            // Both only read, so a failure here leaves nothing to undo.
             const installed = yield* launchd.isInstalled();
             const previous = installed ? yield* launchd.readPlist() : null;
+            const appInstall = yield* app.install(settings.helperPath);
+            yield* progress.done("app");
             if (installed) {
               yield* launchd.bootout();
             }

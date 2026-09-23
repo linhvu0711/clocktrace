@@ -93,15 +93,22 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
   streamLines: () => Stream.empty,
 } satisfies CommandExecutor.CommandExecutor);
 
-// How the fake Lifecycle ends: loaded, or not loaded at the agent step or
-// while it waits for the start.
+// How the fake Lifecycle ends: loaded, failed reading the old plist
+// before the App step, or not loaded at the agent step or while it waits
+// for the start.
 type Outcome =
   | "loaded"
+  | { readonly failAt: "read" }
   | {
       readonly failAt: "agent" | "start";
       readonly appRestored: boolean;
       readonly agentRestored: boolean;
     };
+
+const readError = new LaunchdError({
+  step: "read /Users/me/Library/LaunchAgents/com.clocktrace.collector.plist",
+  detail: "EACCES: permission denied",
+});
 
 // Reports progress as the real install does and keeps the settings of
 // every call.
@@ -115,6 +122,9 @@ const fakeLifecycle = (
       install: <R>(settings: CollectorSettings, progress: InstallProgress<R>) =>
         Effect.gen(function* () {
           yield* Ref.update(installs, (all) => [...all, settings]);
+          if (outcome !== "loaded" && outcome.failAt === "read") {
+            return yield* readError;
+          }
           yield* progress.done("app");
           if (outcome !== "loaded" && outcome.failAt === "agent") {
             return yield* new CollectorNotLoadedError({
@@ -348,6 +358,17 @@ describe("setup", () => {
       "  ✔ app           ~/Applications/Clocktrace.app",
       "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
     ]);
+  });
+
+  it("a plist that cannot be read fails before the app row", async () => {
+    // Given: the old plist cannot be read
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      failAt: "read",
+    });
+    // Then: the read error goes out whole and no row is printed
+    expect(exit).toEqual(Exit.fail(readError));
+    expect(output).toEqual(["Collector"]);
   });
 
   it("a start that never comes prints starting and the log path", async () => {

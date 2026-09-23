@@ -138,6 +138,25 @@ const unloadFails = (state: Ref.Ref<LaunchdState>) =>
     ),
   ).pipe(Layer.provide(fakeLaunchd(state, { bootstrapStuck: true })));
 
+// The installed plist cannot be read.
+const readError = new LaunchdError({
+  step: "read /Users/me/Library/LaunchAgents/com.clocktrace.collector.plist",
+  detail: "EACCES: permission denied",
+});
+
+const readPlistFails = (state: Ref.Ref<LaunchdState>) =>
+  Layer.effect(
+    Launchd,
+    Effect.map(
+      Launchd,
+      (base) =>
+        new Launchd({
+          ...base,
+          readPlist: () => Effect.fail(readError),
+        }),
+    ),
+  ).pipe(Layer.provide(fakeLaunchd(state)));
+
 const run = <A, E>(
   initial: LaunchdState,
   use: (
@@ -804,5 +823,22 @@ describe("Lifecycle.install on disk", () => {
     expect(liveApp()).toBe("old-bytes");
     expect(existsSync(`${appPath}.old`)).toBe(false);
     expect(state.plist).toEqual(installedPlist(samplePlist));
+  });
+
+  it("a plist that cannot be read changes nothing on disk", async () => {
+    // Given: an old App and a running agent whose plist cannot be read
+    writeOldApp();
+    // When
+    const { exit, steps, state } = await run(withAgent, installHere, {
+      launchdLayer: readPlistFails,
+      app: diskApp(home),
+    });
+    // Then: the read error, and the old App and agent as they were
+    expect(exit).toEqual(Exit.fail(readError));
+    expect(steps).toEqual([]);
+    expect(liveApp()).toBe("old-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(state).toEqual(withAgent);
   });
 });
