@@ -1,4 +1,13 @@
-import { Effect, Exit, Layer, Option, Ref, Schedule, Schema } from "effect";
+import {
+  ConfigProvider,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Ref,
+  Schedule,
+  Schema,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import { App, AppError } from "../src/app.js";
@@ -350,6 +359,75 @@ describe("Lifecycle.install restores", () => {
           }),
           appRestored: false,
         }),
+      ),
+    );
+  });
+});
+
+describe("Lifecycle settings", () => {
+  const withPlistDb: LaunchdState = {
+    installed: true,
+    running: true,
+    plist: { ...samplePlist, databasePath: "/plist/clocktrace.db" },
+    installs: 1,
+  };
+
+  const databasePath =
+    (env: ReadonlyArray<[string, string]>) => (l: Lifecycle) =>
+      l
+        .databasePath()
+        .pipe(Effect.withConfigProvider(ConfigProvider.fromMap(new Map(env))));
+
+  it("the settings read back after an install", async () => {
+    // Given: an install with the database and Helper below
+    // When
+    const { exit } = await run(fresh, (l, p) =>
+      l.install(settings, p).pipe(Effect.andThen(l.settings())),
+    );
+    // Then
+    expect(exit).toEqual(
+      Exit.succeed({
+        databasePath: "/data/clocktrace.db",
+        helperPath: "/stub",
+      }),
+    );
+  });
+
+  it("no plist has no settings", async () => {
+    // Given: no agent
+    // When
+    const { exit } = await run(fresh, (l) => l.settings());
+    // Then
+    expect(exit).toEqual(Exit.succeed(null));
+  });
+
+  it("CLOCKTRACE_DB wins over the plist", async () => {
+    // Given: the plist names one database and the env another
+    // When
+    const { exit } = await run(
+      withPlistDb,
+      databasePath([["CLOCKTRACE_DB", "/env/clocktrace.db"]]),
+    );
+    // Then
+    expect(exit).toEqual(Exit.succeed("/env/clocktrace.db"));
+  });
+
+  it("the plist's database comes next", async () => {
+    // Given: the plist names a database; no env
+    // When
+    const { exit } = await run(withPlistDb, databasePath([]));
+    // Then
+    expect(exit).toEqual(Exit.succeed("/plist/clocktrace.db"));
+  });
+
+  it("the default database comes last", async () => {
+    // Given: no plist, no env
+    // When
+    const { exit } = await run(fresh, databasePath([]));
+    // Then
+    expect(exit).toEqual(
+      Exit.succeed(
+        "/Users/me/Library/Application Support/clocktrace/clocktrace.db",
       ),
     );
   });

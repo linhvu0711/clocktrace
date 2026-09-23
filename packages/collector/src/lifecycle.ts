@@ -1,4 +1,4 @@
-import { Data, Effect, Layer, Schedule, Schema } from "effect";
+import { Config, Data, Effect, Layer, Option, Schedule, Schema } from "effect";
 
 import { App } from "./app.js";
 import { entryPath, Launchd, LaunchdError } from "./launchd.js";
@@ -50,7 +50,7 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
     Effect.gen(function* () {
       const app = yield* App;
       const launchd = yield* Launchd;
-      const { appMainPath, logPath } = yield* CollectorPaths;
+      const { appMainPath, logPath, defaultDbPath } = yield* CollectorPaths;
       const loaded = launchd.state().pipe(
         Effect.flatMap((collector) =>
           collector === "running"
@@ -63,6 +63,21 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
         ),
         Effect.retry({ schedule: retry }),
       );
+      // The settings the installed plist holds, or null with no plist.
+      const settings = (): Effect.Effect<
+        CollectorSettings | null,
+        LaunchdError
+      > =>
+        launchd.readPlist().pipe(
+          Effect.map((plist) =>
+            plist === null
+              ? null
+              : {
+                  databasePath: plist.databasePath,
+                  helperPath: plist.helperPath,
+                },
+          ),
+        );
       return {
         // Swaps in the App, replaces the agent, and waits until the
         // Collector is Loaded. On a failure it puts the old App and plist
@@ -119,6 +134,20 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
             yield* Effect.ignore(app.commit());
             return "loaded" as const;
           }),
+        settings,
+        // The database the installed Collector writes: CLOCKTRACE_DB set
+        // for this run wins, then the plist, then the default.
+        databasePath: () =>
+          Effect.gen(function* () {
+            const env = yield* Effect.orDie(
+              Config.option(Config.string("CLOCKTRACE_DB")),
+            );
+            if (Option.isSome(env)) {
+              return env.value;
+            }
+            const installed = yield* settings();
+            return installed?.databasePath ?? defaultDbPath;
+          }),
       };
     }),
 }) {
@@ -137,6 +166,11 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
             Effect.andThen(progress.starting(Effect.void)),
             Effect.as("loaded" as const),
           ),
+      settings: () => Effect.succeed(null),
+      databasePath: () =>
+        Effect.succeed(
+          "/Users/me/Library/Application Support/clocktrace/clocktrace.db",
+        ),
     }),
   );
 }
