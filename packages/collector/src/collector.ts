@@ -1,23 +1,20 @@
-import { readPrivate, Store, type StoreError } from "@clocktrace/core";
-import { DateTime, Effect, Ref, Stream } from "effect";
+import {
+  type NewActivity,
+  readPrivate,
+  Store,
+  type StoreError,
+} from "@clocktrace/core";
+import { DateTime, Effect, Option, Ref, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import { makeActivityWriter } from "./activity-writer.js";
 import type { HelperLine } from "./helper-line.js";
 import { deleteSavedGrant, saveGrant } from "./saved-grant.js";
 
 export const idleAfterSeconds = 300;
 export const minActivityMillis = 1000;
 
-interface Open {
-  readonly bundleId: string;
-  readonly appName: string;
-  readonly title: string | null;
-  readonly url: string | null;
-  readonly startedAt: DateTime.Utc;
-}
-
 interface State {
-  readonly open: Open | null;
   readonly lastTs: DateTime.Utc | null;
   readonly idleClosed: boolean;
 }
@@ -29,23 +26,22 @@ export const collect = <E, R>(
   Effect.gen(function* () {
     const store = yield* Store;
     const state = yield* Ref.make<State>({
-      open: null,
       lastTs: null,
       idleClosed: false,
     });
+    // The Rules are read at each write, so a new Private rule applies to the
+    // next Activity.
+    const writer = yield* makeActivityWriter(
+      readPrivate.pipe(Effect.provideService(Store, store)),
+    );
 
-    const close = (
-      open: Open,
-      endedAt: DateTime.Utc,
+    const write = (
+      closed: Option.Option<NewActivity>,
     ): Effect.Effect<void, ParseError | StoreError> =>
-      DateTime.distance(open.startedAt, endedAt) < minActivityMillis
-        ? Effect.void
-        : Effect.gen(function* () {
-            const blank = yield* readPrivate.pipe(
-              Effect.provideService(Store, store),
-            );
-            yield* store.insertActivity(blank({ deviceId, ...open, endedAt }));
-          });
+      Option.match(closed, {
+        onNone: () => Effect.void,
+        onSome: (activity) => Effect.asVoid(store.insertActivity(activity)),
+      });
 
     const remembered = yield* Ref.make<
       ReadonlyMap<
@@ -133,78 +129,66 @@ export const collect = <E, R>(
     ): Effect.Effect<void, ParseError | StoreError> =>
       Effect.gen(function* () {
         const s = yield* Ref.get(state);
+        const open = yield* writer.open;
         yield* Ref.set(state, { ...s, lastTs: line.ts });
         if (line.idleSeconds >= idleAfterSeconds) {
-          if (s.open !== null) {
-            yield* Ref.set(state, {
-              open: null,
-              lastTs: line.ts,
-              idleClosed: true,
-            });
-            yield* close(
-              s.open,
-              DateTime.subtract(line.ts, { seconds: line.idleSeconds }),
+          if (Option.isSome(open)) {
+            yield* Ref.set(state, { lastTs: line.ts, idleClosed: true });
+            yield* write(
+              yield* writer.stop(
+                DateTime.subtract(line.ts, { seconds: line.idleSeconds }),
+              ),
             );
           }
           return;
         }
         if (line.app === null || line.app.trim() === "") {
-          yield* Ref.set(state, {
-            open: null,
-            lastTs: line.ts,
-            idleClosed: false,
-          });
-          if (s.open !== null) {
-            yield* close(s.open, line.ts);
-          }
+          yield* Ref.set(state, { lastTs: line.ts, idleClosed: false });
+          yield* write(yield* writer.stop(line.ts));
           return;
         }
         // An app with a name but no bundle id, such as a Wine game, gets a
         // Stand-in id (ADR 0012).
         const bundleId = line.bundleId ?? `noid:${line.app}`;
-        if (s.open === null) {
-          yield* Ref.set(state, {
-            open: {
-              bundleId,
-              appName: line.app,
-              title: line.title,
-              url: line.url,
-              startedAt: s.idleClosed
-                ? DateTime.subtract(line.ts, { seconds: line.idleSeconds })
-                : line.ts,
-            },
-            lastTs: line.ts,
-            idleClosed: false,
+        if (Option.isNone(open)) {
+          yield* Ref.set(state, { lastTs: line.ts, idleClosed: false });
+          yield* writer.start({
+            deviceId,
+            bundleId,
+            appName: line.app,
+            title: line.title,
+            url: line.url,
+            startedAt: s.idleClosed
+              ? DateTime.subtract(line.ts, { seconds: line.idleSeconds })
+              : line.ts,
           });
           return;
         }
         if (
-          s.open.bundleId !== bundleId ||
-          s.open.appName !== line.app ||
-          s.open.title !== line.title ||
-          s.open.url !== line.url
+          open.value.bundleId !== bundleId ||
+          open.value.appName !== line.app ||
+          open.value.title !== line.title ||
+          open.value.url !== line.url
         ) {
-          yield* Ref.set(state, {
-            open: {
+          yield* Ref.set(state, { lastTs: line.ts, idleClosed: false });
+          yield* write(
+            yield* writer.start({
+              deviceId,
               bundleId,
               appName: line.app,
               title: line.title,
               url: line.url,
               startedAt: line.ts,
-            },
-            lastTs: line.ts,
-            idleClosed: false,
-          });
-          yield* close(s.open, line.ts);
+            }),
+          );
         }
       });
 
     const flush: Effect.Effect<void, ParseError | StoreError> = Effect.gen(
       function* () {
         const s = yield* Ref.get(state);
-        if (s.open !== null && s.lastTs !== null) {
-          yield* Ref.set(state, { ...s, open: null });
-          yield* close(s.open, s.lastTs);
+        if (s.lastTs !== null) {
+          yield* write(yield* writer.stop(s.lastTs));
         }
       },
     );
