@@ -1,4 +1,5 @@
 import { App, Helper, Launchd } from "@clocktrace/collector";
+import { NodeContext } from "@effect/platform-node";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { DateTime, Effect, Layer } from "effect";
 
@@ -10,7 +11,9 @@ export const serveStdio = async (): Promise<void> => {
   const path = await Effect.runPromise(DbPath);
   const { server, dispose } = await makeServer(
     Layer.mergeAll(
-      InstalledStore(path),
+      InstalledStore(path).pipe(
+        Layer.provide(Layer.mergeAll(Launchd.Default, NodeContext.layer)),
+      ),
       Launchd.Default,
       Helper.Default,
       App.Default,
