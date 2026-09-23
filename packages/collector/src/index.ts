@@ -15,4 +15,5 @@ export * from "./paths.js";
 export * from "./plist.js";
 export * from "./register-device.js";
 export * from "./run.js";
+export * from "./run-command.js";
 export * from "./status.js";

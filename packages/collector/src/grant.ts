@@ -1,8 +1,9 @@
 import { Store, type StoreError } from "@clocktrace/core";
-import { DateTime, Effect, Option, Schema } from "effect";
+import type { CommandExecutor } from "@effect/platform";
+import { Data, DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { App } from "./app.js";
+import { App, appBundleId } from "./app.js";
 import {
   type GrantRequest,
   GrantState,
@@ -11,6 +12,7 @@ import {
   type Permissions,
 } from "./helper.js";
 import { CollectorPaths } from "./paths.js";
+import { runCommand } from "./run-command.js";
 
 const browserNames: Record<string, string> = {
   "com.apple.Safari": "Safari",
@@ -202,6 +204,14 @@ export const tccService = (
   }
 };
 
+// macOS asks once per grant. After a denial, or once an ad-hoc re-sign
+// orphans the stored grant (ADR 0007), only a reset makes it ask again.
+export const resetArgs = (request: GrantRequest): ReadonlyArray<string> => [
+  "reset",
+  tccService(request),
+  appBundleId,
+];
+
 export const SavedGrant = Schema.parseJson(
   Schema.Struct({
     state: Schema.Literal("granted", "denied"),
@@ -354,6 +364,58 @@ export const checkAgain = (
       ...picture,
       items: picture.items.map((i) =>
         sameGrant(i, request) ? { ...i, state, checkedAt: null } : i,
+      ),
+    };
+  });
+
+export class GrantResetError extends Data.TaggedError("GrantResetError")<{
+  readonly detail: string;
+}> {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+// Resets one Grant of the App so macOS asks again. Automation is one TCC
+// service for every browser (ADR 0009), so its reset clears every
+// browser: each Saved grant goes and each browser reads notAsked.
+export const resetGrant = (
+  picture: GrantPicture,
+  request: GrantRequest,
+): Effect.Effect<
+  GrantPicture,
+  GrantResetError | StoreError,
+  CommandExecutor.CommandExecutor | Store
+> =>
+  Effect.gen(function* () {
+    const { code, output } = yield* runCommand("tccutil", resetArgs(request));
+    if (code !== 0) {
+      return yield* new GrantResetError({
+        detail:
+          output
+            .split("\n")
+            .map((l) => l.trim())
+            .find((l) => l !== "") ?? `tccutil reset exited ${code}`,
+      });
+    }
+    const cleared = { state: "notAsked", checkedAt: null } as const;
+    if (request.kind !== "automation") {
+      return {
+        ...picture,
+        items: picture.items.map((i) =>
+          sameGrant(i, request) ? { ...i, ...cleared } : i,
+        ),
+      };
+    }
+    for (const bundleId of knownBrowsers) {
+      yield* deleteSavedGrant(bundleId);
+    }
+    return {
+      ...picture,
+      items: picture.items.map((i) =>
+        i.kind === "automation" && i.bundleId !== null
+          ? { ...i, ...cleared }
+          : i,
       ),
     };
   });

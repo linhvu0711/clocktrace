@@ -4,6 +4,7 @@ import {
   Layer,
   Logger,
   Option,
+  Ref,
   Schema,
   TestClock,
   TestContext,
@@ -17,11 +18,13 @@ import {
   GrantPicture,
   grantCount,
   grantPicture,
+  resetGrant,
   stateOf,
   tccService,
 } from "../src/grant.js";
 import { Helper, HelperExitedError, type Permissions } from "../src/helper.js";
 import { CollectorPaths } from "../src/paths.js";
+import { fakeExecutor } from "./mock-executor.js";
 
 const NOW = Date.UTC(2026, 8, 19, 17, 30);
 
@@ -558,5 +561,154 @@ describe("grant", () => {
     );
     // Then
     expect(state).toBe("granted");
+  });
+
+  it("a reset clears every browser and its Saved grant", async () => {
+    // Given: Safari granted, Chrome denied, a Saved grant for a closed
+    // Brave; tccutil succeeds
+    const exec = await Effect.runPromise(
+      fakeExecutor({
+        "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+      }),
+    );
+    // When
+    const result = await runAt(
+      Effect.gen(function* () {
+        yield* seeded([
+          [
+            "grant.com.brave.Browser",
+            '{"state":"granted","checkedAt":"2026-09-18T18:00:00.000Z"}',
+          ],
+        ]);
+        const after = yield* resetGrant(yield* grantPicture(), {
+          kind: "automation",
+          bundleId: "com.google.Chrome",
+        });
+        const store = yield* Store;
+        return {
+          states: after.items.map((i) => [i.name, i.state]),
+          saved: [
+            yield* store.getSetting("grant.com.apple.Safari"),
+            yield* store.getSetting("grant.com.google.Chrome"),
+            yield* store.getSetting("grant.com.brave.Browser"),
+          ],
+        };
+      }).pipe(Effect.provide(exec.layer)),
+      stubHelper({
+        ...allGranted,
+        automation: {
+          "com.apple.Safari": "granted",
+          "com.google.Chrome": "denied",
+        },
+      }),
+    );
+    const commands = await Effect.runPromise(Ref.get(exec.recorded));
+    // Then
+    expect({ ...result, commands }).toEqual({
+      states: [
+        ["accessibility", "granted"],
+        ["automation Safari", "notAsked"],
+        ["automation Chrome", "notAsked"],
+        ["full disk access", "granted"],
+      ],
+      saved: [Option.none(), Option.none(), Option.none()],
+      commands: ["tccutil reset AppleEvents com.clocktrace.app"],
+    });
+  });
+
+  it("a failed reset gives tccutil's first line and keeps every Saved grant", async () => {
+    // Given: Chrome denied; tccutil exits 1 and says why
+    const exec = await Effect.runPromise(
+      fakeExecutor({
+        "tccutil reset AppleEvents com.clocktrace.app": {
+          code: 1,
+          output: "\ntccutil: Failed to reset AppleEvents\n",
+        },
+      }),
+    );
+    // When
+    const result = await runAt(
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          resetGrant(yield* grantPicture(), {
+            kind: "automation",
+            bundleId: "com.google.Chrome",
+          }),
+        );
+        const store = yield* Store;
+        return {
+          message: error.message,
+          saved: yield* store.getSetting("grant.com.google.Chrome"),
+        };
+      }).pipe(Effect.provide(exec.layer)),
+      stubHelper({
+        ...allGranted,
+        automation: { "com.google.Chrome": "denied" },
+      }),
+    );
+    // Then
+    expect(result).toEqual({
+      message: "tccutil: Failed to reset AppleEvents",
+      saved: Option.some(
+        '{"state":"denied","checkedAt":"2026-09-19T17:30:00.000Z"}',
+      ),
+    });
+  });
+
+  it("a failed reset with no output names the exit code", async () => {
+    // Given: tccutil exits 1 with no output
+    const exec = await Effect.runPromise(fakeExecutor({}));
+    // When
+    const message = await runAt(
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          resetGrant(yield* grantPicture(), { kind: "fullDiskAccess" }),
+        );
+        return error.message;
+      }).pipe(Effect.provide(exec.layer)),
+      stubHelper(allGranted),
+    );
+    // Then
+    expect(message).toBe("tccutil reset exited 1");
+  });
+
+  it("an Accessibility reset clears only Accessibility", async () => {
+    // Given: Accessibility denied, Safari granted; tccutil succeeds
+    const exec = await Effect.runPromise(
+      fakeExecutor({
+        "tccutil reset Accessibility com.clocktrace.app": { code: 0 },
+      }),
+    );
+    // When
+    const result = await runAt(
+      Effect.gen(function* () {
+        const after = yield* resetGrant(yield* grantPicture(), {
+          kind: "accessibility",
+        });
+        const store = yield* Store;
+        return {
+          states: after.items.map((i) => [i.name, i.state]),
+          saved: yield* store.getSetting("grant.com.apple.Safari"),
+        };
+      }).pipe(Effect.provide(exec.layer)),
+      stubHelper({
+        ...allGranted,
+        accessibility: "denied",
+        automation: { "com.apple.Safari": "granted" },
+      }),
+    );
+    const commands = await Effect.runPromise(Ref.get(exec.recorded));
+    // Then
+    expect({ ...result, commands }).toEqual({
+      states: [
+        ["accessibility", "notAsked"],
+        ["automation Safari", "granted"],
+        ["full disk access", "granted"],
+      ],
+      saved: Option.some(
+        '{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}',
+      ),
+      commands: ["tccutil reset Accessibility com.clocktrace.app"],
+    });
   });
 });

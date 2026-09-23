@@ -1,7 +1,6 @@
 import {
   type App,
   AppMissingError,
-  appBundleId,
   browserName,
   CollectorPaths,
   type GrantItem,
@@ -14,9 +13,10 @@ import {
   type HelperExitedError,
   type Launchd,
   noAnswerNote,
+  resetArgs,
+  runCommand,
   savedGrantKey,
   saveLiveGrants,
-  tccService,
 } from "@clocktrace/collector";
 import {
   type DatabaseNewerError,
@@ -43,16 +43,7 @@ import {
   span,
 } from "./format.js";
 import { Prompt, type Stdin, type StoppedError } from "./prompt.js";
-import { runCommand } from "./run-command.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
-
-// macOS asks once per grant. After a denial, or once an ad-hoc re-sign
-// orphans the stored grant (ADR 0007), only a reset makes it ask again.
-const resetArgs = (request: GrantRequest): ReadonlyArray<string> => [
-  "reset",
-  tccService(request),
-  appBundleId,
-];
 
 const resetLater = (request: GrantRequest): string =>
   `later: tccutil ${resetArgs(request).join(" ")}, then run clocktrace permissions`;
