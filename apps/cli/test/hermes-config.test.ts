@@ -1,7 +1,11 @@
 import { Either, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { type HermesServer, setRegistration } from "../src/hermes-config.js";
+import {
+  type HermesServer,
+  removeRegistration,
+  setRegistration,
+} from "../src/hermes-config.js";
 
 const server: HermesServer = {
   command: "/opt/node",
@@ -161,5 +165,92 @@ describe("setRegistration", () => {
     const result = setRegistration(text, server);
     // Then
     expect(Either.isLeft(result)).toBe(true);
+  });
+});
+
+describe("removeRegistration", () => {
+  it("removes only the Registration lines", () => {
+    // Given: comments above and below the Registration, and a trailing comment inside it
+    const text =
+      "model: nous-1   # note\nmcp_servers:\n    foo:\n        command: foo\n    # about clocktrace\n    clocktrace:\n        command: x   # mine\n        args: [mcp]\n    # about bar\n    bar: {command: b}\nz: 2\n";
+    // When
+    const result = removeRegistration(text);
+    // Then
+    expect(result).toEqual(
+      Either.right(
+        Option.some(
+          "model: nous-1   # note\nmcp_servers:\n    foo:\n        command: foo\n    # about clocktrace\n    # about bar\n    bar: {command: b}\nz: 2\n",
+        ),
+      ),
+    );
+  });
+
+  it("removing the last server removes mcp_servers", () => {
+    // Given
+    const text = "a: 1\nmcp_servers:\n  clocktrace:\n    command: x\nz: 2\n";
+    // When
+    const result = removeRegistration(text);
+    // Then
+    expect(result).toEqual(Either.right(Option.some("a: 1\nz: 2\n")));
+  });
+
+  it("a Registration at the end of a text with no final newline", () => {
+    // Given
+    const text = "a: 1\nmcp_servers:\n  clocktrace:\n    command: x";
+    // When
+    const result = removeRegistration(text);
+    // Then
+    expect(result).toEqual(Either.right(Option.some("a: 1")));
+  });
+
+  it("removes a one-line Registration as one piece", () => {
+    // Given
+    const text =
+      "mcp_servers:\n  clocktrace: {command: x}\n  foo: {command: foo}\n";
+    // When
+    const result = removeRegistration(text);
+    // Then
+    expect(result).toEqual(
+      Either.right(Option.some("mcp_servers:\n  foo: {command: foo}\n")),
+    );
+  });
+
+  it.each([
+    "model: nous-1\n",
+    "",
+    "mcp_servers: {}\n",
+    "mcp_servers:\n  foo: {command: foo}\n",
+  ])("no Registration is not registered: %j", (text) => {
+    // Given: text without a Registration
+    // When
+    const result = removeRegistration(text);
+    // Then
+    expect(result).toEqual(Either.right(Option.none()));
+  });
+
+  it.each([
+    "model: [\n",
+    "a: 1\n---\nb: 2\n",
+    "mcp_servers: {clocktrace: {command: x}}\n",
+    "mcp_servers: text\n",
+  ])("remove stops on bad input: %j", (text) => {
+    // Given: text the edit must not touch
+    // When
+    const result = removeRegistration(text);
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+  });
+
+  it.each([
+    "model: nous-1\nmcp_servers:\n    foo:\n        command: foo\n",
+    "model: nous-1   # note\n\n\nz: 0x1F\n",
+    "model: nous-1",
+  ])("set then remove gives back the original text: %j", (text) => {
+    // Given: text, with the Registration set
+    const withRegistration = Either.getOrThrow(setRegistration(text, server));
+    // When
+    const result = removeRegistration(withRegistration);
+    // Then
+    expect(result).toEqual(Either.right(Option.some(text)));
   });
 });

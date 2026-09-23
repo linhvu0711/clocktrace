@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 
-import { Data, Either } from "effect";
+import { Data, Either, Option } from "effect";
 import {
   type Document,
   isMap,
@@ -89,6 +89,17 @@ const spliceLines = (
   }
   const ending = to === text.length && !text.endsWith("\n") ? "" : eol;
   return text.slice(0, from) + body + ending + text.slice(to);
+};
+
+// Cuts the whole lines from `from` to `to`. A cut that reaches the end of
+// a text without a final line end takes the line end before it too, which
+// undoes what `spliceLines` added.
+const cutLines = (text: string, from: number, to: number): string => {
+  if (to === text.length && !text.endsWith("\n") && from > 0) {
+    const eolLength = text.slice(0, from).endsWith("\r\n") ? 2 : 1;
+    return text.slice(0, from - eolLength);
+  }
+  return text.slice(0, from) + text.slice(to);
 };
 
 const findPair = (
@@ -282,5 +293,53 @@ export const setRegistration = (
   const entry = registrationEntry(server, old);
   return placeRegistration(text, doc, entry).pipe(
     Either.flatMap((after) => checkEdit(doc, after, entry)),
+  );
+};
+
+// `None` when the file holds no Registration.
+export const removeRegistration = (
+  text: string,
+): Either.Either<Option.Option<string>, HermesConfigEditError> => {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) {
+    return refuse(doc.errors[0]?.message ?? "the file does not parse");
+  }
+  const root = doc.contents;
+  if (root === null) {
+    return Either.right(Option.none());
+  }
+  if (!isMap(root)) {
+    return refuse("the top level is not a map");
+  }
+  const serversPair = findPair(root, serversKey);
+  const servers = serversPair?.value;
+  if (
+    serversPair === undefined ||
+    (isScalar(servers) && servers.value === null)
+  ) {
+    return Either.right(Option.none());
+  }
+  if (!isMap(servers)) {
+    return refuse("mcp_servers is not a map");
+  }
+  const old = findPair(servers, registrationKey);
+  if (old === undefined) {
+    return Either.right(Option.none());
+  }
+  if (servers.flow) {
+    return refuse("mcp_servers is a one-line map");
+  }
+  // The last server takes the `mcp_servers:` line with it, unless a
+  // comment sits between the two.
+  const between = text.slice(
+    lineAfter(text, nodeEnd(serversPair.key)),
+    lineStart(text, nodeStart(old.key)),
+  );
+  const pair =
+    servers.items.length === 1 && between.trim() === "" ? serversPair : old;
+  const from = lineStart(text, nodeStart(pair.key));
+  const to = lineAfter(text, Math.max(nodeEnd(pair.key), nodeEnd(pair.value)));
+  return checkEdit(doc, cutLines(text, from, to), undefined).pipe(
+    Either.map(Option.some),
   );
 };
