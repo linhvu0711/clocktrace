@@ -11,7 +11,7 @@ type check and failed only when the server checked its own reply. Each tool now
 takes its input and output shapes from one core schema. `JSONSchema.make`
 writes the schema as JSON Schema, and `z.fromJSONSchema` turns that into the
 zod shape the MCP SDK takes. Core checks the input and words its errors, so the
-CLI Twin and the Host get the same text. Not built yet.
+CLI Twin and the Host get the same text. Planned in #185, not built.
 
 The JSON Schema must use the 2019-09 target
 (`JSONSchema.make(schema, { target: "jsonSchema2019-09" })`). Effect's default

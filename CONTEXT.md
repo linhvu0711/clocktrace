@@ -31,7 +31,7 @@ The id an Activity gets when macOS gives its app a name but no bundle id, such a
 _Avoid_: Fake id, fallback id, pseudo bundle id
 
 **Installed**:
-The Collector's plist file exists in `~/Library/LaunchAgents`. Distinct from Loaded: a stopped Collector is still installed. `setup` treats installed-but-stopped as set up, and so does the check before every CLI command and MCP tool, which asks for the plist and the database. The MCP side of that check is planned, not built.
+The Collector's plist file exists in `~/Library/LaunchAgents`. Distinct from Loaded: a stopped Collector is still installed. `setup` treats installed-but-stopped as set up, and so does the check before every CLI command and MCP tool, which asks for the plist and the database. The MCP side of that check is planned in #180, not built.
 _Avoid_: Set up, present, configured
 
 **Loaded**:
