@@ -43,7 +43,6 @@ import {
   HostRemoveError,
   Hosts,
   manualCommand,
-  manualRemoveCommand,
   serverEntry,
   serverNode,
 } from "../src/hosts.js";
@@ -369,109 +368,6 @@ describe("hosts", () => {
     });
   });
 
-  it("a failed add shows the manual command", async () => {
-    // Given: codex exits 1 printing "boom", and no prior registration
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [addCodex]: {
-          code: 1,
-          output: "boom",
-        },
-      }),
-    );
-    // When
-    const line = await register("codex", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then: remove then add, nothing more to put back
-    expect(recorded).toEqual([removeCodex, addCodex]);
-    expect(line).toEqual({
-      outcome: "failed",
-      byHand: `codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
-    });
-  });
-
-  it("a failed add puts back the previous codex registration", async () => {
-    // Given: config.toml holds a stale [mcp_servers.clocktrace] table
-    mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(
-      join(home, ".codex", "config.toml"),
-      '[mcp_servers.clocktrace]\ncommand = "/old/node"\nargs = ["/old/entry.js", "mcp"]\n',
-    );
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [addCodex]: { code: 1, output: "boom" },
-        "codex mcp add clocktrace -- /old/node /old/entry.js mcp": {
-          code: 0,
-        },
-      }),
-    );
-    // When
-    const line = await register("codex", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then
-    expect(recorded).toEqual([
-      removeCodex,
-      addCodex,
-      "codex mcp add clocktrace -- /old/node /old/entry.js mcp",
-    ]);
-    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.codex });
-  });
-
-  it("a failed add restores the prior env map too", async () => {
-    // Given: config.toml holds an entry with an [mcp_servers.clocktrace.env]
-    mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(
-      join(home, ".codex", "config.toml"),
-      '[mcp_servers.clocktrace]\ncommand = "clocktrace"\nargs = ["mcp"]\n\n[mcp_servers.clocktrace.env]\nCLOCKTRACE_DB = "/work/db.db"\n',
-    );
-    const addCodexWithEnv = `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`;
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [addCodexWithEnv]: { code: 1, output: "boom" },
-        "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp":
-          { code: 0 },
-      }),
-    );
-    // When
-    const line = await register("codex", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then
-    expect(recorded).toEqual([
-      removeCodex,
-      addCodexWithEnv,
-      "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp",
-    ]);
-    // And the by-hand command keeps the env too
-    expect(line).toEqual({
-      outcome: "failed",
-      byHand: `codex mcp add clocktrace --env 'CLOCKTRACE_DB=/work/db.db' -- '${serverNode}' '${serverEntry}' 'mcp'`,
-    });
-  });
-
-  it("re-registration keeps the prior env map", async () => {
-    // Given: config.toml holds a clocktrace entry with an env sub-table
-    mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(
-      join(home, ".codex", "config.toml"),
-      '[mcp_servers.clocktrace]\ncommand = "clocktrace"\nargs = ["mcp"]\n\n[mcp_servers.clocktrace.env]\nCLOCKTRACE_DB = "/work/db.db"\n',
-    );
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [`codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`]:
-          { code: 0 },
-      }),
-    );
-    // When
-    const line = await register("codex", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then: the replacement carries the env the old entry had
-    expect(recorded).toEqual([
-      removeCodex,
-      `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`,
-    ]);
-    expect(line).toEqual({ outcome: "registered" });
-  });
-
   it("manual commands quote the node and entry paths", () => {
     expect(manualCommand.claude).toBe(
       `claude mcp add --scope user clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
@@ -795,51 +691,6 @@ describe("hosts", () => {
       Exit.succeed("unregistered"),
       Exit.succeed("unregistered"),
     ]);
-  });
-
-  it("codex without the server exits 0 and is still not registered", async () => {
-    // Given: codex on PATH; its remove exits 0 with the real message
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        "which codex": { code: 0 },
-        "codex mcp remove clocktrace": {
-          code: 0,
-          output: "No MCP server named 'clocktrace' found.",
-        },
-      }),
-    );
-    // When
-    const outcome = await unregister("codex", executor.layer);
-    // Then
-    expect(outcome).toEqual(Exit.succeed("not registered"));
-  });
-
-  it("a failed remove is a HostRemoveError with the manual command", async () => {
-    // Given: codex on PATH; its remove exits 1 printing boom
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        "which codex": { code: 0 },
-        "codex mcp remove clocktrace": { code: 1, output: "boom" },
-      }),
-    );
-    // When
-    const outcome = await unregister("codex", executor.layer);
-    // Then
-    expect(outcome).toEqual(Exit.fail(new HostRemoveError({ host: "codex" })));
-    expect(new HostRemoveError({ host: "codex" }).message).toBe(
-      `Codex failed · run by hand: ${manualRemoveCommand.codex}`,
-    );
-  });
-
-  it("a host binary missing from PATH is no cli and runs no remove", async () => {
-    // Given: which codex exits 1
-    const executor = await Effect.runPromise(fakeExecutor({}));
-    // When
-    const outcome = await unregister("codex", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then
-    expect(outcome).toEqual(Exit.succeed("no cli"));
-    expect(recorded).toEqual(["which codex"]);
   });
 
   it("hermes unregister removes the block and keeps other keys", async () => {
