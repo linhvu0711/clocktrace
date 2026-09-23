@@ -493,7 +493,7 @@ describe("permissions", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "Permissions   1 of 2 granted",
+      "Permissions   1 of 3 granted",
       "  ✔ Accessibility     window titles",
       "  ✘ Full Disk Access  denied · turn it on in System Settings › Privacy › Full Disk Access",
       "  ○ Automation  no browser used yet",
@@ -592,6 +592,26 @@ describe("permissions", () => {
     expect(output).toEqual([]);
   });
 
+  it("no browser used yet counts in the total like status", async () => {
+    // Given: accessibility and full disk access granted, no browser used yet
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {},
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output } = await run([p], [], true);
+    // Then: the placeholder Automation row counts in the denominator, like
+    // status — 2 granted out of 3, not out of 2
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Permissions   2 of 3 granted",
+      "  ✔ Accessibility     window titles",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation  no browser used yet",
+    ]);
+  });
+
   it("full disk access opens System Settings and re-checks on y", async () => {
     // Given
     const p = {
@@ -609,7 +629,7 @@ describe("permissions", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
     expect(output).toEqual([
-      "Permissions   1 of 2 granted",
+      "Permissions   1 of 3 granted",
       "  ✔ Accessibility     window titles",
       "  ○ Automation  no browser used yet",
       "  → System Settings opened, turn it on for Clocktrace",
@@ -633,7 +653,7 @@ describe("permissions", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "Permissions   1 of 2 granted",
+      "Permissions   1 of 3 granted",
       "  ✔ Full Disk Access  iPhone and iPad import",
       "  ○ Automation  no browser used yet",
       "  → macOS dialog opened, turn it on for Clocktrace",
@@ -697,7 +717,7 @@ describe("permissions", () => {
     ]);
     expect(shown).toContain("Still denied — reset the grant for Clocktrace?");
     expect(output).toEqual([
-      "Permissions   1 of 2 granted",
+      "Permissions   1 of 3 granted",
       "  ✔ Full Disk Access  iPhone and iPad import",
       "  ○ Automation  no browser used yet",
       "  → macOS dialog opened, turn it on for Clocktrace",
@@ -741,7 +761,7 @@ describe("permissions", () => {
       { kind: "fullDiskAccess" },
     ]);
     expect(output).toEqual([
-      "Permissions   1 of 2 granted",
+      "Permissions   1 of 3 granted",
       "  ✔ Accessibility     window titles",
       "  ○ Automation  no browser used yet",
       "  → System Settings opened, turn it on for Clocktrace",

@@ -157,12 +157,16 @@ export const walkPermissions = (): Effect.Effect<
         )[perms.indexOf(perm)] ?? "",
       );
     const granted = perms.filter((p) => p.state === "granted");
+    const hasAutomation = items.some((i) => i.request.kind === "automation");
     yield* prompt.print(
       line(
         [
           span("head", "Permissions"),
           "   ",
-          span("dim", `${granted.length} of ${perms.length} granted`),
+          span(
+            "dim",
+            `${granted.length} of ${perms.length + (hasAutomation ? 0 : 1)} granted`,
+          ),
         ],
         look,
       ),
@@ -176,7 +180,7 @@ export const walkPermissions = (): Effect.Effect<
       ),
     ];
     yield* Effect.forEach(listed, printRow);
-    if (!items.some((i) => i.request.kind === "automation")) {
+    if (!hasAutomation) {
       yield* prompt.print(
         line(
           [
