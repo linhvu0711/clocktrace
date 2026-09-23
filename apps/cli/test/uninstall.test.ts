@@ -17,9 +17,18 @@ import {
   Launchd,
   LaunchdError,
   type LaunchdState,
+  Lifecycle,
 } from "@clocktrace/collector";
 import { NodeContext } from "@effect/platform-node";
-import { ConfigProvider, Console, Effect, Exit, Layer, Ref } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  Effect,
+  Exit,
+  Layer,
+  Ref,
+  Schedule,
+} from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Style } from "../src/format.js";
@@ -205,12 +214,18 @@ describe("uninstall", () => {
           terminal.layer,
           Prompt.Default,
           Stdin.Test,
-          (opts.launchd ?? fakeLaunchd)(state),
-          fakeApp(appPresent, executor.recorded),
+          Lifecycle.Default(Schedule.stop).pipe(
+            Layer.provideMerge(
+              Layer.mergeAll(
+                (opts.launchd ?? fakeLaunchd)(state),
+                fakeApp(appPresent, executor.recorded),
+                CollectorPaths.Default(home),
+              ),
+            ),
+          ),
           opts.hostLayer ?? Hosts.Test(),
           executor.layer,
           Style.Test,
-          CollectorPaths.Default(home),
         );
         const exit = yield* Effect.exit(
           uninstall({ purge: opts.purge ?? false }).pipe(

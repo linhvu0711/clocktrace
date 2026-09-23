@@ -6,6 +6,7 @@ import {
   appBundleId,
   CollectorPaths,
   Launchd,
+  Lifecycle,
 } from "@clocktrace/collector";
 import { Command, Options } from "@effect/cli";
 import {
@@ -15,7 +16,7 @@ import {
   Command as PlatformCommand,
   type Terminal,
 } from "@effect/platform";
-import { Config, Data, Effect, Either, Option } from "effect";
+import { Data, Effect, Either } from "effect";
 
 import { line, mark, Style, shellQuote, shortPath, span } from "./format.js";
 import {
@@ -57,6 +58,7 @@ export const uninstall = (options: {
   | Prompt
   | Stdin
   | Launchd
+  | Lifecycle
   | App
   | CollectorPaths
   | Hosts
@@ -68,6 +70,7 @@ export const uninstall = (options: {
 > =>
   Effect.gen(function* () {
     const launchd = yield* Launchd;
+    const lifecycle = yield* Lifecycle;
     const app = yield* App;
     const hosts = yield* Hosts;
     const prompt = yield* Prompt;
@@ -93,17 +96,10 @@ export const uninstall = (options: {
         );
 
     // setup bakes CLOCKTRACE_DB into the agent's plist, so a custom
-    // database is found there even when the env var is not set now; an
-    // env var set for this run still wins. Read it before the plist goes.
+    // database is found there even when the env var is not set now. Read
+    // it before the plist goes.
     const hadAgent = yield* launchd.isInstalled();
-    const plist = hadAgent ? yield* reportLaunchd(launchd.readPlist()) : null;
-    const envDb = yield* Effect.orDie(
-      Config.option(Config.string("CLOCKTRACE_DB")),
-    );
-    const dbPath = Option.getOrElse(
-      envDb,
-      () => plist?.databasePath ?? defaultDbPath,
-    );
+    const dbPath = yield* reportLaunchd(lifecycle.databasePath());
     yield* reportLaunchd(launchd.uninstall());
     yield* done(
       hadAgent ? "launch agent removed" : "launch agent already removed",
