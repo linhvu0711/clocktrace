@@ -17,7 +17,16 @@ import {
   Error as PlatformError,
 } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect, Exit, Layer, Ref, Sink, Stream } from "effect";
+import {
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Ref,
+  Sink,
+  Stream,
+} from "effect";
 import { NodeInspectSymbol } from "effect/Inspectable";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -72,11 +81,13 @@ const commandRow = (command: Command.Command): ReadonlyArray<string> =>
 
 // A CommandExecutor that records every command and answers a chosen
 // exit code for `exitCode` calls, and a fake process whose stderr is the
-// given codesign -dv text for `start` calls.
+// given codesign -dv text for `start` calls, after `onStart` runs, so a
+// case can hang the build there.
 const recordingExecutor = (
   recorded: Ref.Ref<ReadonlyArray<ReadonlyArray<string>>>,
   stderrText: string,
   exitCodeFor: (command: Command.Command) => number = () => 0,
+  onStart: Effect.Effect<void> = Effect.void,
 ): CommandExecutor.CommandExecutor => ({
   [CommandExecutor.TypeId]: CommandExecutor.TypeId,
   exitCode: (command) =>
@@ -85,6 +96,7 @@ const recordingExecutor = (
     ),
   start: (command) =>
     Ref.update(recorded, (r) => [...r, commandRow(command)]).pipe(
+      Effect.andThen(onStart),
       Effect.as(fakeProcess(stderrText)),
     ),
   string: () => Effect.succeed(""),
@@ -141,6 +153,7 @@ const runApp = async <A>(
   use: (app: App) => Effect.Effect<A, unknown, never>,
   exitCodeFor?: (command: Command.Command) => number,
   fails: Fails = {},
+  onStart?: Effect.Effect<void>,
 ) => {
   const recorded = await Effect.runPromise(
     Ref.make<ReadonlyArray<ReadonlyArray<string>>>([]),
@@ -152,7 +165,7 @@ const runApp = async <A>(
         CollectorPaths.Default(home),
         Layer.succeed(
           CommandExecutor.CommandExecutor,
-          recordingExecutor(recorded, stderrText, exitCodeFor),
+          recordingExecutor(recorded, stderrText, exitCodeFor, onStart),
         ),
       ),
     ),
@@ -620,6 +633,40 @@ describe("App.install", () => {
     expect(
       readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
     ).toBe("helper-bytes");
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+  });
+
+  it("a stop during the build leaves the old app untouched", async () => {
+    // Given: a first install done with the Helper helper-bytes, and a
+    // second build that hangs at codesign -dv
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    writeFileSync(helperPath, "helper-bytes-2");
+    const reached = Effect.runSync(Deferred.make<void>());
+    // When: the install runs uninterruptible, as Lifecycle runs it, and is
+    // stopped (Ctrl-C) during the build
+    const { result } = await runApp(
+      ADHOC,
+      (app) =>
+        Effect.gen(function* () {
+          const fiber = yield* Effect.fork(
+            Effect.uninterruptible(app.install(helperPath)),
+          );
+          yield* Deferred.await(reached);
+          return yield* Fiber.interrupt(fiber);
+        }),
+      undefined,
+      {},
+      Deferred.succeed(reached, undefined).pipe(Effect.andThen(Effect.never)),
+    );
+    // Then: install stopped, the previous app is live, and no .old or
+    // .new is left
+    expect(Exit.isSuccess(result) && Exit.isInterrupted(result.value)).toBe(
+      true,
+    );
+    expect(
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
+    ).toBe("helper-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
     expect(existsSync(`${appPath}.new`)).toBe(false);
   });
 

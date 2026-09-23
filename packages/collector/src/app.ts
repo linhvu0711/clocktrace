@@ -187,62 +187,68 @@ export class App extends Effect.Service<App>()("App", {
           // Build the whole bundle at a sibling first; an ad-hoc signature
           // embeds no path, so the staged bundle stays valid when it is
           // renamed over the live one, and a failure before the rename
-          // leaves the old app untouched.
+          // leaves the old app untouched. Lifecycle runs install
+          // uninterruptible, so a stop cannot land between the swap and its
+          // caller; the build stays stoppable, since a stop there leaves the
+          // old app untouched too.
           const stagingMain = join(staging, "Contents", "MacOS", "Clocktrace");
           const built = join(dirname(helperPath), "Clocktrace.app");
-          const build = Effect.gen(function* () {
-            yield* fs
-              .remove(staging, { recursive: true, force: true })
-              .pipe(Effect.mapError(fsError(`write ${staging}`)));
-            const builtExists = yield* fs
-              .exists(built)
-              .pipe(Effect.mapError(fsError(`copy ${built}`)));
-            if (builtExists) {
+          const build = Effect.interruptible(
+            Effect.gen(function* () {
               yield* fs
-                .copy(built, staging)
-                .pipe(Effect.mapError(fsError(`copy ${staging}`)));
-              return;
-            }
-            yield* fs
-              .makeDirectory(join(staging, "Contents", "MacOS"), {
-                recursive: true,
-              })
-              .pipe(Effect.mapError(fsError(`write ${staging}`)));
-            yield* fs
-              .writeFileString(
-                join(staging, "Contents", "Info.plist"),
-                infoPlist(),
-              )
-              .pipe(Effect.mapError(fsError(`write ${staging}`)));
-            yield* fs
-              .copyFile(helperPath, stagingMain)
-              .pipe(Effect.mapError(fsError(`copy ${stagingMain}`)));
-            yield* fs
-              .chmod(stagingMain, 0o755)
-              .pipe(Effect.mapError(fsError(`write ${stagingMain}`)));
-            const lines = yield* stderrLines(
-              Command.make("codesign", "-dv", stagingMain),
-            );
-            if (!hasDeveloperIdSignature(lines)) {
-              const code = yield* exit(
-                "codesign",
-                "codesign",
-                "--force",
-                "--sign",
-                "-",
-                staging,
-              );
-              if (code !== 0) {
-                return yield* new AppError({
-                  step: "codesign",
-                  detail: `exit ${code}`,
-                });
+                .remove(staging, { recursive: true, force: true })
+                .pipe(Effect.mapError(fsError(`write ${staging}`)));
+              const builtExists = yield* fs
+                .exists(built)
+                .pipe(Effect.mapError(fsError(`copy ${built}`)));
+              if (builtExists) {
+                yield* fs
+                  .copy(built, staging)
+                  .pipe(Effect.mapError(fsError(`copy ${staging}`)));
+                return;
               }
-            }
-          });
+              yield* fs
+                .makeDirectory(join(staging, "Contents", "MacOS"), {
+                  recursive: true,
+                })
+                .pipe(Effect.mapError(fsError(`write ${staging}`)));
+              yield* fs
+                .writeFileString(
+                  join(staging, "Contents", "Info.plist"),
+                  infoPlist(),
+                )
+                .pipe(Effect.mapError(fsError(`write ${staging}`)));
+              yield* fs
+                .copyFile(helperPath, stagingMain)
+                .pipe(Effect.mapError(fsError(`copy ${stagingMain}`)));
+              yield* fs
+                .chmod(stagingMain, 0o755)
+                .pipe(Effect.mapError(fsError(`write ${stagingMain}`)));
+              const lines = yield* stderrLines(
+                Command.make("codesign", "-dv", stagingMain),
+              );
+              if (!hasDeveloperIdSignature(lines)) {
+                const code = yield* exit(
+                  "codesign",
+                  "codesign",
+                  "--force",
+                  "--sign",
+                  "-",
+                  staging,
+                );
+                if (code !== 0) {
+                  return yield* new AppError({
+                    step: "codesign",
+                    detail: `exit ${code}`,
+                  });
+                }
+              }
+            }),
+          );
           // The live app moves aside first so a failed staging rename puts
           // it back and says whether it could; a landed rename keeps the
-          // rollback until the caller commits or rolls it back.
+          // rollback until the caller commits or rolls it back. A failure or
+          // a stop removes .new.
           const result: AppInstall = yield* build.pipe(
             Effect.andThen(
               fs.remove(rollback, { recursive: true, force: true }).pipe(
@@ -283,7 +289,7 @@ export class App extends Effect.Service<App>()("App", {
                 ),
               ),
             ),
-            Effect.tapError(() =>
+            Effect.onError(() =>
               Effect.ignore(
                 fs.remove(staging, { recursive: true, force: true }),
               ),
