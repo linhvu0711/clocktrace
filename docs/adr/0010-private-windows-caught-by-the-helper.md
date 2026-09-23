@@ -6,9 +6,9 @@ status: accepted
 
 A Private window's title and URL must never reach the Store, with or without
 Accessibility. Private rules test the title, and without Accessibility there is
-no title, so the URL was written (#165). The Helper now decides before it emits a
+no title, so the URL was written (#165). The Helper decides before it emits a
 line. For a Private window it sends no title and no URL. When it cannot tell, it
-sends no URL.
+sends no URL. Built in #167.
 
 - In Chromium browsers (Chrome, Brave, Edge, Vivaldi, Opera, Chromium) the URL
   script also reads `mode of front window`, which is `incognito` for a private
