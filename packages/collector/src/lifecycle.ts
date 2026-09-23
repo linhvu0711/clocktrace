@@ -1,4 +1,4 @@
-import { Effect, Layer, Schedule, Schema } from "effect";
+import { Data, Effect, Layer, Schedule, Schema } from "effect";
 
 import { App } from "./app.js";
 import { entryPath, Launchd, LaunchdError } from "./launchd.js";
@@ -20,6 +20,19 @@ export type CollectorSettings = Schema.Schema.Type<typeof CollectorSettings>;
 export const loadRetry = Schedule.spaced("100 millis").pipe(
   Schedule.upTo("45 seconds"),
 );
+
+// The Collector did not reach Loaded. The old App and plist were put back
+// first; `appRestored` is false when the App could not be.
+export class CollectorNotLoadedError extends Data.TaggedError(
+  "CollectorNotLoadedError",
+)<{
+  readonly cause: LaunchdError;
+  readonly appRestored: boolean;
+}> {
+  override get message(): string {
+    return this.cause.message;
+  }
+}
 
 export type InstallStep = "app" | "agent";
 
@@ -52,7 +65,8 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
       );
       return {
         // Swaps in the App, replaces the agent, and waits until the
-        // Collector is Loaded.
+        // Collector is Loaded. On a failure it puts the old App and plist
+        // back.
         install: <R>(
           settings: CollectorSettings,
           progress: InstallProgress<R>,
@@ -60,19 +74,46 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
           Effect.gen(function* () {
             yield* app.install(settings.helperPath);
             yield* progress.done("app");
-            if (yield* launchd.isInstalled()) {
+            const installed = yield* launchd.isInstalled();
+            const previous = installed ? yield* launchd.readPlist() : null;
+            if (installed) {
               yield* launchd.bootout();
             }
-            yield* launchd.install({
-              app: appMainPath,
-              node: process.execPath,
-              entry: entryPath,
-              databasePath: settings.databasePath,
-              helperPath: settings.helperPath,
-              logPath,
-            });
-            yield* progress.done("agent");
-            yield* progress.starting(loaded);
+            // A fresh install that fails is removed; a rewrite that fails
+            // puts the previous app and agent back, unloading the new one
+            // first so the old plist is the one launchd runs. An unload
+            // that fails stops the restore there.
+            const restore = Effect.gen(function* () {
+              yield* launchd.uninstall();
+              const appRestored = yield* app.rollback().pipe(
+                Effect.as(true),
+                Effect.catchAll(() => Effect.succeed(false)),
+              );
+              if (previous !== null) {
+                yield* Effect.ignore(launchd.install(previous));
+              }
+              return appRestored;
+            }).pipe(Effect.catchAll(() => Effect.succeed(true)));
+            yield* Effect.gen(function* () {
+              yield* launchd.install({
+                app: appMainPath,
+                node: process.execPath,
+                entry: entryPath,
+                databasePath: settings.databasePath,
+                helperPath: settings.helperPath,
+                logPath,
+              });
+              yield* progress.done("agent");
+              yield* progress.starting(loaded);
+            }).pipe(
+              Effect.catchTag("LaunchdError", (cause) =>
+                Effect.flatMap(
+                  restore,
+                  (appRestored) =>
+                    new CollectorNotLoadedError({ cause, appRestored }),
+                ),
+              ),
+            );
             // A failed .old delete must not undo a Collector that is
             // already running.
             yield* Effect.ignore(app.commit());

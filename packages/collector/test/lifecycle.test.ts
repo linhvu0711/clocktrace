@@ -5,10 +5,15 @@ import { App, AppError } from "../src/app.js";
 import {
   entryPath,
   fakeLaunchd,
-  type Launchd,
+  Launchd,
+  LaunchdError,
   type LaunchdState,
 } from "../src/launchd.js";
-import { type InstallProgress, Lifecycle } from "../src/lifecycle.js";
+import {
+  CollectorNotLoadedError,
+  type InstallProgress,
+  Lifecycle,
+} from "../src/lifecycle.js";
 import { CollectorPaths } from "../src/paths.js";
 import {
   type CollectorPlist,
@@ -52,6 +57,32 @@ const fakeApp = (
       remove: () => Ref.set(installs, 0).pipe(Effect.as("removed" as const)),
     }),
   );
+
+// The first install fails at bootstrap; later ones (the restore) pass.
+const failFirstInstall = (state: Ref.Ref<LaunchdState>) =>
+  Layer.effect(
+    Launchd,
+    Effect.gen(function* () {
+      const base = yield* Launchd;
+      const calls = yield* Ref.make(0);
+      return new Launchd({
+        ...base,
+        install: (plist) =>
+          Ref.getAndUpdate(calls, (n) => n + 1).pipe(
+            Effect.flatMap((n) =>
+              n === 0
+                ? Effect.fail(
+                    new LaunchdError({
+                      step: "launchctl bootstrap",
+                      detail: "exit 1",
+                    }),
+                  )
+                : base.install(plist),
+            ),
+          ),
+      });
+    }),
+  ).pipe(Layer.provide(fakeLaunchd(state)));
 
 const run = <A, E>(
   initial: LaunchdState,
@@ -189,6 +220,138 @@ describe("Lifecycle.install", () => {
     );
     expect(steps).toEqual([]);
     expect(state.installs).toBe(0);
+  });
+});
+
+describe("Lifecycle.install restores", () => {
+  const withAgent: LaunchdState = {
+    installed: true,
+    running: true,
+    plist: samplePlist,
+    installs: 1,
+  };
+
+  it("a failed bootstrap puts the old App and plist back", async () => {
+    // Given: a running agent; the new agent's bootstrap fails
+    // When
+    const { exit, steps, state, appRollbacks, appCommits } = await run(
+      withAgent,
+      install,
+      { launchdLayer: failFirstInstall },
+    );
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+          appRestored: true,
+        }),
+      ),
+    );
+    expect(steps).toEqual(["app"]);
+    expect(state.plist).toEqual(samplePlist);
+    expect(state.installed).toBe(true);
+    expect(appRollbacks).toBe(1);
+    expect(appCommits).toBe(0);
+  });
+
+  it("a failed fresh install leaves no plist", async () => {
+    // Given: no agent; the bootstrap fails
+    // When
+    const { exit, state } = await run(fresh, install, {
+      launchd: { failBootstrap: true },
+    });
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+          appRestored: true,
+        }),
+      ),
+    );
+    expect(state.plist).toBe(null);
+    expect(state.installs).toBe(0);
+  });
+
+  it("a stuck bootstrap over an old agent puts it back", async () => {
+    // Given: a running agent; the new one loads but never runs
+    // When
+    const { exit, steps, state, appRollbacks, appCommits } = await run(
+      withAgent,
+      install,
+      { launchd: { bootstrapStuck: true } },
+    );
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "collector did not start",
+            log: "/Users/me/Library/Logs/clocktrace/collector.log",
+          }),
+          appRestored: true,
+        }),
+      ),
+    );
+    expect(steps).toEqual(["app", "agent", "starting"]);
+    expect(state.plist).toEqual(samplePlist);
+    expect(state.installed).toBe(true);
+    expect(state.installs).toBe(3);
+    expect(appRollbacks).toBe(1);
+    expect(appCommits).toBe(0);
+  });
+
+  it("a fresh stuck bootstrap removes the plist", async () => {
+    // Given: no agent; the new one loads but never runs
+    // When
+    const { exit, state } = await run(fresh, install, {
+      launchd: { bootstrapStuck: true },
+    });
+    // Then
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(state.plist).toBe(null);
+    expect(state.installed).toBe(false);
+  });
+
+  it("an App that cannot be put back is named in the failure", async () => {
+    // Given: a stuck bootstrap over an agent, and an App rollback that fails
+    const rollbackFails = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(true),
+        install: () => Effect.succeed("written" as const),
+        commit: () => Effect.void,
+        rollback: () =>
+          Effect.fail(new AppError({ step: "rename", detail: "busy" })),
+        remove: () => Effect.succeed("removed" as const),
+      }),
+    );
+    // When
+    const { exit } = await run(withAgent, install, {
+      launchd: { bootstrapStuck: true },
+      app: rollbackFails,
+    });
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "collector did not start",
+            log: "/Users/me/Library/Logs/clocktrace/collector.log",
+          }),
+          appRestored: false,
+        }),
+      ),
+    );
   });
 });
 
