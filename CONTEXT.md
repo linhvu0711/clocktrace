@@ -27,7 +27,7 @@ The background process that watches the Mac and writes Activities. Runs as a per
 _Avoid_: Tracker, daemon, watcher, recorder
 
 **Stand-in id**:
-The id an Activity gets when macOS gives its app a name but no bundle id, such as a Windows game run through Wine: `noid:` and the app name, as `noid:QSanguosha.exe`. A real bundle id never holds a colon, so the two never clash. Two such apps with one name share one Stand-in id. An app with no name or an empty name gets none and is not tracked.
+The id an Activity gets when macOS gives its app a name but no bundle id, such as a Windows game run through Wine: `noid:` and the app name, as `noid:QSanguosha.exe`. A real bundle id never holds a colon, so the two never clash. Two such apps with one name share one Stand-in id. An app with no name or an empty name gets none and is not tracked. Planned in #171, not built.
 _Avoid_: Fake id, fallback id, pseudo bundle id
 
 **Installed**:
