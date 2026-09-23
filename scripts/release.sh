@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the release tarball release/clocktrace-<version>-darwin-arm64.tar.gz:
 # bump the version, build, then stage the CLI with its production dependencies
-# (pnpm deploy), the Helper, and Clocktrace.app, and pack them (ADR 0009).
+# (pnpm deploy), the Helper, and Clocktrace.app, and pack them (ADR 0010).
 #   scripts/release.sh [--no-sign] <version>
 # Without --no-sign the app is signed with the Developer ID, notarized through
 # the `clocktrace` keychain profile, and stapled; then the version is committed
