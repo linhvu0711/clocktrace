@@ -321,7 +321,6 @@ export const walkPermissions = (): Effect.Effect<
               ? [browserName(p.request.bundleId)]
               : [],
           );
-          const before = picture;
           if (
             !(yield* offerReset(
               perm,
@@ -330,14 +329,11 @@ export const walkPermissions = (): Effect.Effect<
           ) {
             return;
           }
-          // The reset cleared every browser. Each one still denied before
-          // it gets the reset row, and reads notAsked now, so it is not
-          // asked again in this walk.
+          // The reset cleared every browser, granted ones too, so each gets
+          // the reset row. Each reads notAsked now, so none is asked again
+          // in this walk.
           for (const other of perms) {
-            if (
-              other.request.kind !== "automation" ||
-              stateOf(before, other.request) !== "denied"
-            ) {
+            if (other.request.kind !== "automation") {
               continue;
             }
             rows[perms.indexOf(other)] = [

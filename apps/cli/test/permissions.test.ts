@@ -819,6 +819,37 @@ describe("permissions", () => {
     );
   });
 
+  it("a browser reset shows every browser as reset, granted ones too", async () => {
+    // Given: Safari granted, Chrome denied; the re-read still says denied;
+    // y at the reset offer; open and tccutil both succeed
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.apple.Safari": "granted",
+        "com.google.Chrome": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output } = await run(
+      [p],
+      [{ key: "enter" }, { key: "enter" }, "y", { key: "enter" }],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then: the reset cleared Safari's Grant too, so its row says reset
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toContain(
+      "  ○ Automation · Safari  reset · macOS asks the next time Safari comes to the front",
+    );
+  });
+
   it("a browser reset clears the other denied browsers without asking them", async () => {
     // Given: Safari and Chrome both denied; Safari's re-read still says
     // denied; y at the reset offer
