@@ -384,7 +384,7 @@ export const resetGrant = (
   request: GrantRequest,
 ): Effect.Effect<
   GrantPicture,
-  GrantResetError | StoreError,
+  GrantResetError,
   CommandExecutor.CommandExecutor | Store
 > =>
   Effect.gen(function* () {
@@ -407,8 +407,17 @@ export const resetGrant = (
         ),
       };
     }
+    // macOS already cleared every browser, so one failed delete must not
+    // stop the others; a Saved grant left behind goes at the next check
+    // that finds notAsked.
     for (const bundleId of knownBrowsers) {
-      yield* deleteSavedGrant(bundleId);
+      yield* deleteSavedGrant(bundleId).pipe(
+        Effect.catchTag("StoreError", () =>
+          Effect.logWarning("saved grant not deleted").pipe(
+            Effect.annotateLogs({ bundleId }),
+          ),
+        ),
+      );
     }
     return {
       ...picture,

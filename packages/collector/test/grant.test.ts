@@ -616,6 +616,45 @@ describe("grant", () => {
     });
   });
 
+  it("a reset whose Saved grant delete fails still clears every browser", async () => {
+    // Given: Safari granted, Chrome denied; a Store whose deleteSetting
+    // fails; tccutil succeeds
+    const logs: Array<string> = [];
+    const exec = await Effect.runPromise(
+      fakeExecutor({
+        "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+      }),
+    );
+    // When
+    const states = await runAt(
+      Effect.gen(function* () {
+        const after = yield* resetGrant(yield* grantPicture(), {
+          kind: "automation",
+          bundleId: "com.google.Chrome",
+        });
+        return after.items.map((i) => [i.name, i.state]);
+      }).pipe(Effect.provide(exec.layer)),
+      stubHelper({
+        ...allGranted,
+        automation: {
+          "com.apple.Safari": "granted",
+          "com.google.Chrome": "denied",
+        },
+      }),
+      { store: failing("deleteSetting"), logs },
+    );
+    // Then: every browser was tried, each failure logged
+    expect({ states, logs }).toEqual({
+      states: [
+        ["accessibility", "granted"],
+        ["automation Safari", "notAsked"],
+        ["automation Chrome", "notAsked"],
+        ["full disk access", "granted"],
+      ],
+      logs: Array(7).fill("saved grant not deleted"),
+    });
+  });
+
   it("a failed reset gives tccutil's first line and keeps every Saved grant", async () => {
     // Given: Chrome denied; tccutil exits 1 and says why
     const exec = await Effect.runPromise(
