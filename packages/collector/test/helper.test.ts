@@ -421,6 +421,21 @@ describe("Helper shared sample files", () => {
       count: Exit.isSuccess(exit) ? exit.value.length : 0,
     }).toEqual({ success: true, count: 3 });
   });
+
+  it("watch decodes every line of watch.expected.jsonl", async () => {
+    // Given: watch printed the shared watch sample
+    const stdout = sharedSample("watch.expected.jsonl");
+    // When
+    const { exit, logs } = await runHelperProcess(
+      (helper) => helper.lines("/h").pipe(Stream.take(5), Stream.runCollect),
+      stdout,
+    );
+    // Then
+    expect({
+      count: Exit.isSuccess(exit) ? Chunk.size(exit.value) : 0,
+      logs,
+    }).toEqual({ count: 5, logs: [] });
+  });
 });
 
 describe("openArgs", () => {
