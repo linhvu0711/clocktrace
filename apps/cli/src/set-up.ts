@@ -1,5 +1,6 @@
 import {
-  dbPathConfig,
+  type CollectorPaths,
+  configuredDbPath,
   type Launchd,
   type NotSetUpError,
   requireInstalled,
@@ -18,17 +19,17 @@ export { NotSetUpError } from "@clocktrace/collector";
 export const requireSetUp: Effect.Effect<
   void,
   NotSetUpError,
-  Launchd | FileSystem.FileSystem
-> = Effect.flatMap(Effect.orDie(dbPathConfig), requireInstalled);
+  Launchd | FileSystem.FileSystem | CollectorPaths
+> = Effect.flatMap(Effect.orDie(configuredDbPath), requireInstalled);
 
 export const withStore = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<
   A,
   E | StoreError | DatabaseNewerError,
-  Exclude<R, Store | AppStore>
+  Exclude<R, Store | AppStore> | CollectorPaths
 > =>
-  Effect.flatMap(Effect.orDie(dbPathConfig), (path) =>
+  Effect.flatMap(Effect.orDie(configuredDbPath), (path) =>
     Effect.provide(
       effect,
       Layer.mergeAll(Store.Default(path), AppStore.Default),

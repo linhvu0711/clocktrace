@@ -6,7 +6,7 @@ import {
   type AppMissingError,
   CollectorPaths,
   collectorPlist,
-  dbPathConfig,
+  configuredDbPath,
   entryPath,
   Helper,
   type HelperExitedError,
@@ -136,7 +136,7 @@ export const setup = (
     const helper = yield* Helper;
     const helperPath = yield* Effect.orDie(helperPathConfig);
     yield* helper.check(helperPath);
-    const databasePath = yield* Effect.orDie(dbPathConfig);
+    const databasePath = yield* Effect.orDie(configuredDbPath);
     yield* withStore(
       Effect.gen(function* () {
         const launchd = yield* Launchd;

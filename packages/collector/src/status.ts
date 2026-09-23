@@ -2,7 +2,7 @@ import { Store, type StoreError } from "@clocktrace/core";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 import type { App } from "./app.js";
-import { dbPathConfig } from "./config.js";
+import { configuredDbPath } from "./config.js";
 import {
   browserName,
   type GrantItem,
@@ -107,7 +107,7 @@ export const readStatus = (): Effect.Effect<
     const launchd = yield* Launchd;
     const collector = yield* launchd.state();
     const last = yield* store.latestActivityEnd();
-    const databasePath = yield* Effect.orDie(dbPathConfig);
+    const databasePath = yield* Effect.orDie(configuredDbPath);
     let iosImport: IosImport | null = null;
     const devices: Array<DeviceStatus> = [];
     if (

@@ -5,7 +5,6 @@ import {
   App,
   appBundleId,
   CollectorPaths,
-  defaultDbPath,
   Launchd,
   plistEnv,
 } from "@clocktrace/collector";
@@ -45,7 +44,7 @@ export class PurgeError extends Data.TaggedError("PurgeError")<{
 // keeps other things in.
 export const purgeTargets = (
   dbPath: string,
-  defaultPath: string = defaultDbPath,
+  defaultPath: string,
 ): { readonly files: ReadonlyArray<string>; readonly dir: string | null } => ({
   files: [dbPath, `${dbPath}-wal`, `${dbPath}-shm`],
   dir: dbPath === defaultPath ? dirname(dbPath) : null,
@@ -76,7 +75,7 @@ export const uninstall = (options: {
     const fs = yield* FileSystem.FileSystem;
     const look = yield* Style;
     const home = homedir();
-    const { appPath, logDir } = yield* CollectorPaths;
+    const { appPath, logDir, defaultDbPath } = yield* CollectorPaths;
     const done = (text: string) =>
       prompt.print(line([mark("ok", look), ` ${text}`], look));
     const skipped = (text: string) =>
@@ -183,7 +182,7 @@ export const uninstall = (options: {
         : true;
       if (consent) {
         const hadDb = yield* reportStep(exists(dbPath));
-        const { files, dir } = purgeTargets(dbPath);
+        const { files, dir } = purgeTargets(dbPath, defaultDbPath);
         for (const file of files) {
           yield* reportStep(remove(file));
         }

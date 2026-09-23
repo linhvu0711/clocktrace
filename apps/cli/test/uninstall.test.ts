@@ -13,7 +13,6 @@ import {
   CollectorPaths,
   collectorPaths,
   collectorPlist,
-  defaultDbPath,
   fakeLaunchd,
   Launchd,
   LaunchdError,
@@ -415,7 +414,7 @@ describe("uninstall", () => {
     // Given: the plist names a custom database; CLOCKTRACE_DB is not set
     const custom = join(dir, "custom.db");
     writeFileSync(custom, "db");
-    const hadDefault = existsSync(defaultDbPath);
+    const hadDefault = existsSync(collectorPaths(home).defaultDbPath);
     // When
     const { exit, output } = await run({
       purge: true,
@@ -425,7 +424,7 @@ describe("uninstall", () => {
     // Then: the plist's database is gone and the default one is untouched
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(existsSync(custom)).toBe(false);
-    expect(existsSync(defaultDbPath)).toBe(hadDefault);
+    expect(existsSync(collectorPaths(home).defaultDbPath)).toBe(hadDefault);
     expect(output).toContain("✔ database removed");
   });
 

@@ -1,8 +1,9 @@
-import { homedir } from "node:os";
 import { join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Config } from "effect";
+import { Config, type ConfigError, Effect } from "effect";
+
+import { CollectorPaths } from "./paths.js";
 
 // An installed copy (the release tarball, Homebrew's libexec) keeps the Helper
 // in helper/ next to its top node_modules; a workspace build uses SwiftPM's.
@@ -22,14 +23,12 @@ export const helperPathConfig = Config.string("CLOCKTRACE_HELPER").pipe(
   Config.withDefault(defaultHelperPath),
 );
 
-export const defaultDbPath = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "clocktrace",
-  "clocktrace.db",
-);
-
-export const dbPathConfig = Config.string("CLOCKTRACE_DB").pipe(
-  Config.withDefault(defaultDbPath),
+// CLOCKTRACE_DB, or the default database under the home folder the
+// paths were built from.
+export const configuredDbPath: Effect.Effect<
+  string,
+  ConfigError.ConfigError,
+  CollectorPaths
+> = Effect.flatMap(CollectorPaths, (paths) =>
+  Config.string("CLOCKTRACE_DB").pipe(Config.withDefault(paths.defaultDbPath)),
 );
