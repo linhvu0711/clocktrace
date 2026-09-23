@@ -789,6 +789,115 @@ describe("permissions", () => {
     );
   });
 
+  it("accessibility still denied after the ask offers the reset and asks again", async () => {
+    // Given: accessibility denied; the first re-check still reads denied,
+    // tccutil succeeds, the re-check after the second ask reads granted
+    const p = {
+      accessibility: "denied" as const,
+      automation: {},
+      fullDiskAccess: "granted" as const,
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [p, p, { ...p, accessibility: "granted" }],
+      [
+        { key: "enter" },
+        { key: "enter" },
+        "y",
+        { key: "enter" },
+        { key: "enter" },
+      ],
+      true,
+      {
+        commands: {
+          "tccutil reset Accessibility com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([
+      "tccutil reset Accessibility com.clocktrace.app",
+    ]);
+    expect(requests).toEqual([
+      { kind: "accessibility" },
+      { kind: "accessibility" },
+    ]);
+    expect(shown).toContain("Still denied — reset the grant for Clocktrace?");
+    expect(output).toEqual([
+      "Permissions   1 of 2 granted",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "  → macOS dialog opened, turn it on for Clocktrace",
+      "  → macOS dialog opened, turn it on for Clocktrace",
+      "  ✔ Accessibility     granted",
+    ]);
+  });
+
+  it("full disk access still denied after the ask offers the reset and asks again", async () => {
+    // Given: full disk access denied; the first re-check still reads denied,
+    // tccutil succeeds, the re-check after the second ask reads granted
+    const p = {
+      accessibility: "granted" as const,
+      automation: {},
+      fullDiskAccess: "denied" as const,
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p, p, { ...p, fullDiskAccess: "granted" }],
+      [
+        { key: "enter" },
+        { key: "enter" },
+        "y",
+        { key: "enter" },
+        { key: "enter" },
+      ],
+      true,
+      {
+        commands: {
+          "tccutil reset SystemPolicyAllFiles com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([
+      "tccutil reset SystemPolicyAllFiles com.clocktrace.app",
+    ]);
+    expect(requests).toEqual([
+      { kind: "fullDiskAccess" },
+      { kind: "fullDiskAccess" },
+    ]);
+    expect(output).toEqual([
+      "Permissions   1 of 2 granted",
+      "  ✔ Accessibility     window titles",
+      "  → System Settings opened, turn it on for Clocktrace",
+      "  → System Settings opened, add Clocktrace with + and turn it on",
+      "  ✔ Full Disk Access  granted",
+    ]);
+  });
+
+  it("n at the full disk access reset offer prints its manual command", async () => {
+    // Given: full disk access denied and still denied after the ask
+    const p = {
+      accessibility: "granted" as const,
+      automation: {},
+      fullDiskAccess: "denied" as const,
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p, p],
+      [{ key: "enter" }, { key: "enter" }, "n", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
+    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
+    expect(output[output.length - 1]).toBe(
+      "  ○ Full Disk Access  later: tccutil reset SystemPolicyAllFiles com.clocktrace.app, then run clocktrace permissions",
+    );
+  });
+
   it("a browser that stays closed after polling shows the warn line", async () => {
     // Given
     const p = {

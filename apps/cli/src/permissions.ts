@@ -275,7 +275,7 @@ export const walkPermissions = (
         return true;
       });
     // True when macOS was asked and the grant is worth reading again.
-    const requestGrant = (perm: Perm) =>
+    const requestGrant = (perm: Perm, afterReset: boolean) =>
       Effect.gen(function* () {
         const { item } = perm;
         const request = yield* Effect.scoped(
@@ -306,7 +306,9 @@ export const walkPermissions = (
         if (item.request.kind !== "automation") {
           yield* prompt.print(
             item.request.kind === "fullDiskAccess"
-              ? "  → System Settings opened, turn it on for Clocktrace"
+              ? afterReset
+                ? "  → System Settings opened, add Clocktrace with + and turn it on"
+                : "  → System Settings opened, turn it on for Clocktrace"
               : "  → macOS dialog opened, turn it on for Clocktrace",
           );
           const turnedOn = yield* prompt.confirm({
@@ -374,7 +376,7 @@ export const walkPermissions = (
           ) {
             return;
           }
-          if (yield* requestGrant(perm)) {
+          if (yield* requestGrant(perm, true)) {
             yield* recheck(perm, true);
             yield* printResult(perm);
           }
@@ -392,10 +394,25 @@ export const walkPermissions = (
           yield* printRow(perm);
           return;
         }
-        if (!(yield* requestGrant(perm))) {
+        if (!(yield* requestGrant(perm, false))) {
           return;
         }
         yield* recheck(perm, false);
+        // Turned on yet still denied: the stored grant is stale.
+        if (item.request.kind !== "automation" && perm.state === "denied") {
+          if (
+            !(yield* offerReset(
+              perm,
+              "Still denied — reset the grant for Clocktrace?",
+            ))
+          ) {
+            return;
+          }
+          if (!(yield* requestGrant(perm, true))) {
+            return;
+          }
+          yield* recheck(perm, true);
+        }
         yield* printResult(perm);
       });
     yield* Effect.forEach(
