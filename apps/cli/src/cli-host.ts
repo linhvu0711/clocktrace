@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { runCommand } from "@clocktrace/collector";
 import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
 import { Effect } from "effect";
 
@@ -11,7 +12,6 @@ import {
   type Registration,
   serverRegistration,
 } from "./host.js";
-import { runCommand } from "./run-command.js";
 
 // What a Host with its own CLI gives: its words, where it keeps its
 // config, and how its CLI adds, removes, and says it has no clocktrace.

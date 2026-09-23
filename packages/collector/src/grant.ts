@@ -1,8 +1,9 @@
 import { Store, type StoreError } from "@clocktrace/core";
-import { DateTime, Effect, Option, Schema } from "effect";
+import type { CommandExecutor } from "@effect/platform";
+import { Data, DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { App } from "./app.js";
+import { App, appBundleId } from "./app.js";
 import {
   type GrantRequest,
   GrantState,
@@ -11,6 +12,7 @@ import {
   type Permissions,
 } from "./helper.js";
 import { CollectorPaths } from "./paths.js";
+import { runCommand } from "./run-command.js";
 
 const browserNames: Record<string, string> = {
   "com.apple.Safari": "Safari",
@@ -202,6 +204,14 @@ export const tccService = (
   }
 };
 
+// macOS asks once per grant. After a denial, or once an ad-hoc re-sign
+// orphans the stored grant (ADR 0007), only a reset makes it ask again.
+export const resetArgs = (request: GrantRequest): ReadonlyArray<string> => [
+  "reset",
+  tccService(request),
+  appBundleId,
+];
+
 export const SavedGrant = Schema.parseJson(
   Schema.Struct({
     state: Schema.Literal("granted", "denied"),
@@ -311,4 +321,110 @@ export const grantPicture = (): Effect.Effect<
     yield* saveLiveGrants(grants, yield* DateTime.now);
     const saved = yield* readSavedGrants();
     return { app: "present", items: pictureItems(grants, saved) };
+  });
+
+const sameGrant = (item: GrantItem, request: GrantRequest): boolean =>
+  item.kind === request.kind &&
+  (request.kind !== "automation" || item.bundleId === request.bundleId);
+
+// The state the picture gives the requested Grant; notChecked when the
+// picture has no item for it.
+export const stateOf = (
+  picture: GrantPicture,
+  request: GrantRequest,
+): GrantItemState =>
+  picture.items.find((i) => sameGrant(i, request))?.state ?? "notChecked";
+
+// Checks one Grant again after an ask: a live check through the App, the
+// Saved grants it writes or removes, and the picture with that Grant's
+// live state. The other items keep the state they had. A closed browser
+// reads notRunning, not its Saved grant.
+export const checkAgain = (
+  picture: GrantPicture,
+  request: GrantRequest,
+): Effect.Effect<
+  GrantPicture,
+  HelperExitedError | ParseError,
+  Helper | Store | CollectorPaths
+> =>
+  Effect.gen(function* () {
+    const { appPath } = yield* CollectorPaths;
+    const helper = yield* Helper;
+    const after = yield* Effect.scoped(helper.permissions(appPath));
+    yield* saveLiveGrants(after, yield* DateTime.now);
+    // The Helper lists every browser it checks, so a missing one is not
+    // one of them.
+    const state =
+      request.kind === "automation"
+        ? (after.automation[request.bundleId] ?? "notInstalled")
+        : request.kind === "fullDiskAccess"
+          ? after.fullDiskAccess
+          : after.accessibility;
+    return {
+      ...picture,
+      items: picture.items.map((i) =>
+        sameGrant(i, request) ? { ...i, state, checkedAt: null } : i,
+      ),
+    };
+  });
+
+export class GrantResetError extends Data.TaggedError("GrantResetError")<{
+  readonly detail: string;
+}> {
+  override get message(): string {
+    return this.detail;
+  }
+}
+
+// Resets one Grant of the App so macOS asks again. Automation is one TCC
+// service for every browser (ADR 0009), so its reset clears every
+// browser: each Saved grant goes and each browser reads notAsked.
+export const resetGrant = (
+  picture: GrantPicture,
+  request: GrantRequest,
+): Effect.Effect<
+  GrantPicture,
+  GrantResetError,
+  CommandExecutor.CommandExecutor | Store
+> =>
+  Effect.gen(function* () {
+    const { code, output } = yield* runCommand("tccutil", resetArgs(request));
+    if (code !== 0) {
+      return yield* new GrantResetError({
+        detail:
+          output
+            .split("\n")
+            .map((l) => l.trim())
+            .find((l) => l !== "") ?? `tccutil reset exited ${code}`,
+      });
+    }
+    const cleared = { state: "notAsked", checkedAt: null } as const;
+    if (request.kind !== "automation") {
+      return {
+        ...picture,
+        items: picture.items.map((i) =>
+          sameGrant(i, request) ? { ...i, ...cleared } : i,
+        ),
+      };
+    }
+    // macOS already cleared every browser, so one failed delete must not
+    // stop the others; a Saved grant left behind goes at the next check
+    // that finds notAsked.
+    for (const bundleId of knownBrowsers) {
+      yield* deleteSavedGrant(bundleId).pipe(
+        Effect.catchTag("StoreError", () =>
+          Effect.logWarning("saved grant not deleted").pipe(
+            Effect.annotateLogs({ bundleId }),
+          ),
+        ),
+      );
+    }
+    return {
+      ...picture,
+      items: picture.items.map((i) =>
+        i.kind === "automation" && i.bundleId !== null
+          ? { ...i, ...cleared }
+          : i,
+      ),
+    };
   });
