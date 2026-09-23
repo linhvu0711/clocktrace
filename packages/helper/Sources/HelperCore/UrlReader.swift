@@ -6,13 +6,12 @@ public final class UrlReader {
   private let readLimit: DispatchTimeInterval
   private let retryAfter: TimeInterval
   private let log: (String) -> Void
-  private let readQueue = DispatchQueue(label: "clocktrace.url-read")
+  private let checks = Probe()
+  private let urlReads = Probe(queue: DispatchQueue(label: "clocktrace.url-read"))
 
   private struct State {
-    var checkRunning = false
     var nextCheck = Date.distantPast
     var logged = false
-    var readRunning = false
     var asking = false
   }
   private var states: [String: State] = [:]
@@ -69,28 +68,19 @@ public final class UrlReader {
 
   private func check(bundleId: String, at now: Date) -> OSStatus? {
     lock.lock()
-    var state = states[bundleId] ?? State()
-    if state.checkRunning || state.nextCheck > now {
-      lock.unlock()
+    let waiting = (states[bundleId] ?? State()).nextCheck > now
+    lock.unlock()
+    if waiting {
       return nil
     }
-    state.checkRunning = true
-    states[bundleId] = state
-    lock.unlock()
 
-    let semaphore = DispatchSemaphore(value: 0)
-    var answer: OSStatus?
-    DispatchQueue.global().async {
-      let status = self.reads.automationStatus(bundleId, false)
-      self.lock.lock()
-      var s = self.states[bundleId] ?? State()
-      s.checkRunning = false
-      self.states[bundleId] = s
-      self.lock.unlock()
-      answer = status
-      semaphore.signal()
+    let answer = checks.run(bundleId, within: checkLimit) {
+      self.reads.automationStatus(bundleId, false)
     }
-    if semaphore.wait(timeout: .now() + checkLimit) == .timedOut {
+    switch answer {
+    case .busy:
+      return nil
+    case .timedOut:
       lock.lock()
       var s = states[bundleId] ?? State()
       s.nextCheck = now.addingTimeInterval(retryAfter)
@@ -103,41 +93,24 @@ public final class UrlReader {
           "\(bundleId) did not answer the Grant check, trying again every 30 s")
       }
       return nil
+    case .value(let status):
+      lock.lock()
+      if var s = states[bundleId] {
+        s.logged = false
+        states[bundleId] = s
+      }
+      lock.unlock()
+      return status
     }
-    lock.lock()
-    if var s = states[bundleId] {
-      s.logged = false
-      states[bundleId] = s
-    }
-    lock.unlock()
-    return answer
   }
 
   private func readUrl(bundleId: String, script: String) -> UrlRead {
-    lock.lock()
-    var state = states[bundleId] ?? State()
-    if state.readRunning {
-      lock.unlock()
+    let answer = urlReads.run(bundleId, within: readLimit) { self.reads.runScript(script) }
+    switch answer {
+    case .value(let url):
+      return .granted(url)
+    case .busy, .timedOut:
       return .granted(nil)
     }
-    state.readRunning = true
-    states[bundleId] = state
-    lock.unlock()
-
-    let semaphore = DispatchSemaphore(value: 0)
-    var url: String?
-    readQueue.async {
-      url = self.reads.runScript(script)
-      self.lock.lock()
-      var s = self.states[bundleId] ?? State()
-      s.readRunning = false
-      self.states[bundleId] = s
-      self.lock.unlock()
-      semaphore.signal()
-    }
-    if semaphore.wait(timeout: .now() + readLimit) == .timedOut {
-      return .granted(nil)
-    }
-    return .granted(url)
   }
 }
