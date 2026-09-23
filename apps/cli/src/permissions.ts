@@ -1,17 +1,18 @@
 import {
-  App,
+  type App,
   AppMissingError,
   appBundleId,
   appPath,
   browserName,
-  type GrantState,
+  type GrantItem,
+  type GrantItemState,
+  type GrantRequest,
+  grantPicture,
+  grantRequest,
   Helper,
   type HelperExitedError,
   type Launchd,
   noAnswerNote,
-  type PermissionItem,
-  permissionItems,
-  readSavedGrants,
   savedGrantKey,
   saveLiveGrants,
   tccService,
@@ -28,7 +29,7 @@ import type {
   Path,
   Terminal,
 } from "@effect/platform";
-import { DateTime, Effect } from "effect";
+import { DateTime, Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import {
@@ -44,29 +45,16 @@ import { Prompt, type Stdin, type StoppedError } from "./prompt.js";
 import { runCommand } from "./run-command.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
 
-const itemLabel = (item: PermissionItem): string =>
-  item.request.kind === "automation"
-    ? `Automation · ${browserName(item.request.bundleId)}`
-    : item.request.kind === "fullDiskAccess"
-      ? "Full Disk Access"
-      : "Accessibility";
-
-const itemPane = (item: PermissionItem): string =>
-  item.request.kind === "automation" ? "Automation" : itemLabel(item);
-
-const deniedFix = (item: PermissionItem): string =>
-  `denied · turn it on in System Settings › Privacy › ${itemPane(item)}`;
-
 // macOS asks once per grant. After a denial, or once an ad-hoc re-sign
 // orphans the stored grant (ADR 0007), only a reset makes it ask again.
-const resetArgs = (item: PermissionItem): ReadonlyArray<string> => [
+const resetArgs = (request: GrantRequest): ReadonlyArray<string> => [
   "reset",
-  tccService(item.request),
+  tccService(request),
   appBundleId,
 ];
 
-const resetLater = (item: PermissionItem): string =>
-  `later: tccutil ${resetArgs(item).join(" ")}, then run clocktrace permissions`;
+const resetLater = (request: GrantRequest): string =>
+  `later: tccutil ${resetArgs(request).join(" ")}, then run clocktrace permissions`;
 
 const joinNames = (names: ReadonlyArray<string>): string =>
   names.length <= 2
@@ -76,7 +64,7 @@ const joinNames = (names: ReadonlyArray<string>): string =>
 const automationSettingsUrl =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
 
-const askable = (_item: PermissionItem, state: GrantState): boolean =>
+const askable = (_item: GrantItem, state: GrantItemState): boolean =>
   state === "denied";
 
 export const walkPermissions = (): Effect.Effect<
@@ -97,69 +85,63 @@ export const walkPermissions = (): Effect.Effect<
   Effect.gen(function* () {
     const prompt = yield* Prompt;
     const helper = yield* Helper;
-    const app = yield* App;
     const store = yield* Store;
     const look = yield* Style;
-    if (!(yield* app.isInstalled())) {
-      yield* new AppMissingError({ path: appPath });
-      return;
+    const picture = yield* grantPicture();
+    if (picture.app === "missing") {
+      return yield* new AppMissingError({ path: appPath });
     }
     const interactive = yield* prompt.interactive;
-    const p = yield* Effect.scoped(helper.permissions(appPath));
-    yield* saveLiveGrants(p, yield* DateTime.now);
-    const saved = yield* readSavedGrants();
-    const items = permissionItems(p, saved);
+    const items = picture.items;
     const now = yield* DateTime.nowInCurrentZone;
-    const checked = (item: PermissionItem): string =>
+    const checked = (item: GrantItem): string =>
       item.checkedAt === null
         ? ""
         : ` · last checked ${clock(item.checkedAt, now)}`;
-    const lead = (tone: "ok" | "warn" | "bad", item: PermissionItem) => [
+    const lead = (tone: "ok" | "warn" | "bad", item: GrantItem) => [
       "  ",
       mark(tone, look),
       " ",
-      itemLabel(item),
+      item.label,
     ];
     const givesWidth = Math.max(
       0,
       ...items.map((item) =>
         item.state === "notRunning" ||
         item.state === "noAnswer" ||
-        (item.state === "notAsked" && item.request.kind === "automation")
+        (item.state === "notAsked" && item.kind === "automation")
           ? item.gives.length
           : 0,
       ),
     );
-    const noteCell = (item: PermissionItem, note: string): Cell => [
+    const noteCell = (item: GrantItem, note: string): Cell => [
       span("dim", item.gives),
       " ".repeat(Math.max(2, givesWidth - item.gives.length + 2)),
       span("warn", note),
     ];
-    const initialRow = (item: PermissionItem): ReadonlyArray<Cell> => {
+    const initialRow = (item: GrantItem): ReadonlyArray<Cell> => {
       const state = item.state;
       if (state === "granted") {
         return [lead("ok", item), span("dim", `${item.gives}${checked(item)}`)];
       }
       if (state === "noAnswer") {
         const browser =
-          item.request.kind === "automation"
-            ? browserName(item.request.bundleId)
-            : item.name;
+          item.bundleId === null ? item.name : browserName(item.bundleId);
         return [lead("warn", item), noteCell(item, noAnswerNote(browser))];
       }
       if (state === "denied") {
-        return [
-          lead("bad", item),
-          span("bad", `${deniedFix(item)}${checked(item)}`),
-        ];
+        return [lead("bad", item), span("bad", `${item.fix}${checked(item)}`)];
       }
       return [lead("warn", item), noteCell(item, "not asked")];
     };
-    const perms = items.map((item) => ({
-      item,
-      state: item.state,
-      row: initialRow(item),
-    }));
+    const perms = items.flatMap((item) =>
+      Option.match(grantRequest(item), {
+        onNone: () => [],
+        onSome: (request) => [
+          { item, request, state: item.state, row: initialRow(item) },
+        ],
+      }),
+    );
     const printRow = (perm: (typeof perms)[number]) =>
       prompt.print(
         columns(
@@ -168,7 +150,7 @@ export const walkPermissions = (): Effect.Effect<
         )[perms.indexOf(perm)] ?? "",
       );
     const granted = perms.filter((p) => p.state === "granted");
-    const hasAutomation = items.some((i) => i.request.kind === "automation");
+    const hasAutomation = perms.some((p) => p.request.kind === "automation");
     yield* prompt.print(
       line(
         [
@@ -212,14 +194,17 @@ export const walkPermissions = (): Effect.Effect<
     // True when tccutil cleared the grant, so macOS can ask again.
     const offerReset = (perm: Perm, message: string) =>
       Effect.gen(function* () {
-        const { item } = perm;
+        const { item, request } = perm;
         const reset = yield* prompt.confirm({ message, initial: false });
         if (!reset) {
-          perm.row = [lead("warn", item), span("warn", resetLater(item))];
+          perm.row = [lead("warn", item), span("warn", resetLater(request))];
           yield* printRow(perm);
           return false;
         }
-        const { code, output } = yield* runCommand("tccutil", resetArgs(item));
+        const { code, output } = yield* runCommand(
+          "tccutil",
+          resetArgs(request),
+        );
         if (code !== 0) {
           const error =
             output
@@ -235,23 +220,23 @@ export const walkPermissions = (): Effect.Effect<
     // True when macOS was asked and the grant is worth reading again.
     const requestGrant = (perm: Perm, afterReset: boolean) =>
       Effect.gen(function* () {
-        const { item } = perm;
-        const request = yield* Effect.scoped(
-          helper.request(appPath, item.request),
+        const { item, request } = perm;
+        const asked = yield* Effect.scoped(
+          helper.request(appPath, request),
         ).pipe(
           Effect.map((outcome) => ({ outcome }) as const),
           Effect.catchTag("HelperExitedError", (e) =>
             Effect.succeed({ error: e } as const),
           ),
         );
-        if ("error" in request) {
-          perm.row = [lead("bad", item), span("bad", request.error.message)];
+        if ("error" in asked) {
+          perm.row = [lead("bad", item), span("bad", asked.error.message)];
           yield* printRow(perm);
           return false;
         }
-        if (item.request.kind !== "automation") {
+        if (request.kind !== "automation") {
           yield* prompt.print(
-            item.request.kind === "fullDiskAccess"
+            request.kind === "fullDiskAccess"
               ? afterReset
                 ? "  → System Settings opened, add Clocktrace with + and turn it on"
                 : "  → System Settings opened, turn it on for Clocktrace"
@@ -277,41 +262,38 @@ export const walkPermissions = (): Effect.Effect<
       });
     const recheck = (perm: Perm) =>
       Effect.gen(function* () {
-        const { item } = perm;
+        const { request } = perm;
         const after = yield* Effect.scoped(helper.permissions(appPath));
         yield* saveLiveGrants(after, yield* DateTime.now);
         perm.state =
-          item.request.kind === "automation"
-            ? (after.automation[item.request.bundleId] ?? perm.state)
-            : item.request.kind === "fullDiskAccess"
+          request.kind === "automation"
+            ? (after.automation[request.bundleId] ?? perm.state)
+            : request.kind === "fullDiskAccess"
               ? after.fullDiskAccess
               : after.accessibility;
         return perm.state;
       });
     const printResult = (perm: Perm) => {
-      const { item } = perm;
+      const { item, request } = perm;
       perm.row =
         perm.state === "granted"
           ? [lead("ok", item), span("dim", "granted")]
-          : perm.state === "noAnswer" && item.request.kind === "automation"
+          : perm.state === "noAnswer" && request.kind === "automation"
             ? [
                 lead("warn", item),
-                noteCell(
-                  item,
-                  noAnswerNote(browserName(item.request.bundleId)),
-                ),
+                noteCell(item, noAnswerNote(browserName(request.bundleId))),
               ]
-            : [lead("bad", item), span("bad", deniedFix(item))];
+            : [lead("bad", item), span("bad", item.fix)];
       return printRow(perm);
     };
     const ask = (perm: Perm) =>
       Effect.gen(function* () {
-        const { item } = perm;
-        if (item.request.kind === "automation") {
+        const { item, request } = perm;
+        if (request.kind === "automation") {
           if (perm.state !== "denied") {
             return;
           }
-          const browser = browserName(item.request.bundleId);
+          const browser = browserName(request.bundleId);
           const open = yield* prompt.confirm({
             message: `${browser} is denied. Open System Settings to turn it on?`,
             initial: true,
@@ -364,8 +346,8 @@ export const walkPermissions = (): Effect.Effect<
             return;
           }
           const names = perms.flatMap((p) =>
-            p.item.request.kind === "automation"
-              ? [browserName(p.item.request.bundleId)]
+            p.request.kind === "automation"
+              ? [browserName(p.request.bundleId)]
               : [],
           );
           if (
@@ -377,12 +359,10 @@ export const walkPermissions = (): Effect.Effect<
             return;
           }
           for (const other of perms) {
-            if (other.item.request.kind !== "automation") {
+            if (other.request.kind !== "automation") {
               continue;
             }
-            yield* store.deleteSetting(
-              savedGrantKey(other.item.request.bundleId),
-            );
+            yield* store.deleteSetting(savedGrantKey(other.request.bundleId));
             // The reset cleared every browser's grant, so a sibling still
             // queued as denied is already back to notAsked — it must not be
             // asked again in this walk.
@@ -392,7 +372,7 @@ export const walkPermissions = (): Effect.Effect<
                 lead("warn", other.item),
                 span(
                   "warn",
-                  `reset · macOS asks the next time ${browserName(other.item.request.bundleId)} comes to the front`,
+                  `reset · macOS asks the next time ${browserName(other.request.bundleId)} comes to the front`,
                 ),
               ];
               if (other !== perm) {
@@ -404,7 +384,7 @@ export const walkPermissions = (): Effect.Effect<
           return;
         }
         const allow = yield* prompt.confirm({
-          message: `Allow ${itemLabel(item)} (${item.gives})`,
+          message: `Allow ${item.label} (${item.gives})`,
           initial: true,
         });
         if (!allow) {

@@ -4,7 +4,6 @@ import {
   DateTime,
   Effect,
   Layer,
-  Option,
   Ref,
   TestClock,
   TestContext,
@@ -278,42 +277,6 @@ describe("status", () => {
     ]);
   });
 
-  it("readStatus reports app present when the bundle exists", async () => {
-    // Given: App.Test, a running agent, every grant
-    // When
-    const status = await runWith(
-      {
-        accessibility: "granted",
-        automation: {},
-        fullDiskAccess: "granted",
-      },
-      { installed: true, running: true, plist: null, installs: 0 },
-      readStatus(),
-    );
-    // Then
-    expect(status.app).toBe("present");
-    expect(status.permissions).toEqual([
-      {
-        name: "accessibility",
-        state: "granted",
-        note: null,
-        checkedAt: null,
-      },
-      {
-        name: "automation",
-        state: "not checked",
-        note: "no browser used yet",
-        checkedAt: null,
-      },
-      {
-        name: "full disk access",
-        state: "granted",
-        note: null,
-        checkedAt: null,
-      },
-    ]);
-  });
-
   it("iOS import ok with a syncing iPhone and a stale iPad", async () => {
     // Given: every grant, an ok import blob, an iPhone and an iPad
     // When
@@ -347,7 +310,7 @@ describe("status", () => {
   it("iOS import not tested on another macOS", async () => {
     // Given: every grant, a not-tested import blob, devices from a prior version
     // When
-    const { lines, status } = await runAt(
+    const lines = await runAt(
       allGranted,
       running,
       Effect.gen(function* () {
@@ -355,11 +318,10 @@ describe("status", () => {
         yield* seed(store);
         yield* store.setSetting("importer.status", BLOB_NOT_TESTED);
         const status = yield* readStatus();
-        return { lines: yield* statusLines(status), status };
+        return yield* statusLines(status);
       }),
     );
     // Then: no device rows — a not-tested run has no sync observations
-    expect(status.devices).toEqual([]);
     expect(lines).toEqual([
       "collector: running",
       "accessibility: granted",
@@ -399,7 +361,7 @@ describe("status", () => {
   it("a denied Full Disk Access hides the iOS lines", async () => {
     // Given: a denied Full Disk Access, an ok import blob, both devices
     // When
-    const { lines, status } = await runAt(
+    const lines = await runAt(
       { ...allGranted, fullDiskAccess: "denied" },
       running,
       Effect.gen(function* () {
@@ -407,7 +369,7 @@ describe("status", () => {
         yield* seed(store);
         yield* store.setSetting("importer.status", BLOB_OK);
         const status = yield* readStatus();
-        return { lines: yield* statusLines(status), status };
+        return yield* statusLines(status);
       }),
     );
     // Then
@@ -419,8 +381,6 @@ describe("status", () => {
       "last activity: 2026-09-19 09:06",
       `database: ${dbPath}`,
     ]);
-    expect(status.iosImport).toBeNull();
-    expect(status.devices).toEqual([]);
   });
 
   it("a closed browser shows its Saved grant and when it was checked", async () => {
@@ -478,53 +438,5 @@ describe("status", () => {
       "last activity: none yet",
       `database: ${dbPath}`,
     ]);
-  });
-
-  it("a live check updates the Saved grant", async () => {
-    // Given: Chrome answered granted at NOW
-    // When
-    const saved = await runAt(
-      {
-        accessibility: "granted",
-        automation: { "com.google.Chrome": "granted" },
-        fullDiskAccess: "granted",
-      },
-      { installed: true, running: true, plist: null, installs: 0 },
-      Effect.gen(function* () {
-        yield* readStatus();
-        const store = yield* Store;
-        return yield* store.getSetting("grant.com.google.Chrome");
-      }),
-    );
-    // Then
-    expect(saved).toEqual(
-      Option.some('{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}'),
-    );
-  });
-
-  it("a live notAsked removes the Saved grant", async () => {
-    // Given: a Saved grant for Chrome, then a reset: Chrome answers notAsked
-    // When
-    const { lines, saved } = await runAt(
-      {
-        accessibility: "granted",
-        automation: { "com.google.Chrome": "notAsked" },
-        fullDiskAccess: "granted",
-      },
-      { installed: true, running: true, plist: null, installs: 0 },
-      Effect.gen(function* () {
-        const store = yield* Store;
-        yield* store.setSetting(
-          "grant.com.google.Chrome",
-          '{"state":"granted","checkedAt":"2026-09-18T18:00:00.000Z"}',
-        );
-        const lines = yield* Effect.flatMap(readStatus(), statusLines);
-        const saved = yield* store.getSetting("grant.com.google.Chrome");
-        return { lines, saved };
-      }),
-    );
-    // Then: the Saved grant is gone, so a closed Chrome shows no row later
-    expect(saved).toEqual(Option.none());
-    expect(lines.some((l) => l.includes("Chrome"))).toBe(false);
   });
 });

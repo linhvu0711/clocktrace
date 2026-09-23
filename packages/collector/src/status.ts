@@ -1,17 +1,15 @@
 import { Store, type StoreError } from "@clocktrace/core";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
-import { App, appPath } from "./app.js";
+import type { App } from "./app.js";
 import { dbPathConfig } from "./config.js";
 import {
   browserName,
+  type GrantItem,
+  grantPicture,
   noAnswerNote,
-  type PermissionItem,
-  permissionItems,
-  readSavedGrants,
-  saveLiveGrants,
 } from "./grant.js";
-import { Helper, type HelperExitedError } from "./helper.js";
+import type { Helper, HelperExitedError } from "./helper.js";
 import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
@@ -64,56 +62,33 @@ export const Status = Schema.Struct({
 
 export type Status = Schema.Schema.Type<typeof Status>;
 
-export const permissionLine = (item: PermissionItem): PermissionLine => {
-  if (item.state === "granted") {
-    return {
-      name: item.name,
-      state: "granted",
-      note: null,
-      checkedAt: item.checkedAt,
-    };
-  }
-  if (item.state === "notRunning") {
-    const browser =
-      item.request.kind === "automation"
-        ? browserName(item.request.bundleId)
-        : item.name;
-    return {
-      name: item.name,
-      state: "not checked",
-      note: `${browser} is closed`,
-      checkedAt: item.checkedAt,
-    };
-  }
-  if (item.state === "noAnswer") {
-    const browser =
-      item.request.kind === "automation"
-        ? browserName(item.request.bundleId)
-        : item.name;
-    return {
-      name: item.name,
-      state: "not checked",
-      note: noAnswerNote(browser),
-      checkedAt: item.checkedAt,
-    };
-  }
-  return {
+export const permissionLine = (item: GrantItem): PermissionLine => {
+  const line = (
+    state: PermissionLine["state"],
+    note: string | null,
+  ): PermissionLine => ({
     name: item.name,
-    state: "denied",
-    note: item.loss,
+    state,
+    note,
     checkedAt: item.checkedAt,
-  };
+  });
+  const browser =
+    item.bundleId === null ? item.name : browserName(item.bundleId);
+  switch (item.state) {
+    case "granted":
+      return line("granted", null);
+    case "notRunning":
+      return line("not checked", `${browser} is closed`);
+    case "noAnswer":
+      return line("not checked", noAnswerNote(browser));
+    case "notChecked":
+      return line("not checked", null);
+    case "noBrowser":
+      return line("not checked", "no browser used yet");
+    default:
+      return line("denied", item.loss);
+  }
 };
-
-export const notCheckedLines: ReadonlyArray<PermissionLine> = [
-  { name: "accessibility", state: "not checked", note: null, checkedAt: null },
-  {
-    name: "full disk access",
-    state: "not checked",
-    note: null,
-    checkedAt: null,
-  },
-];
 
 export const readStatus = (): Effect.Effect<
   Status,
@@ -121,41 +96,19 @@ export const readStatus = (): Effect.Effect<
   Store | Launchd | Helper | App
 > =>
   Effect.gen(function* () {
-    const app = yield* App;
-    const helper = yield* Helper;
-    const present = yield* app.isInstalled();
-    const grants = present
-      ? yield* Effect.scoped(helper.permissions(appPath))
-      : null;
+    const picture = yield* grantPicture();
     const store = yield* Store;
-    if (grants !== null) {
-      yield* saveLiveGrants(grants, yield* DateTime.now);
-    }
-    const saved = yield* readSavedGrants();
-    const items =
-      grants === null
-        ? notCheckedLines
-        : permissionItems(grants, saved).map(permissionLine);
-    const permissions =
-      grants !== null && !items.some((p) => p.name.startsWith("automation "))
-        ? [
-            ...items.slice(0, 1),
-            {
-              name: "automation",
-              state: "not checked" as const,
-              note: "no browser used yet",
-              checkedAt: null,
-            },
-            ...items.slice(1),
-          ]
-        : items;
     const launchd = yield* Launchd;
     const collector = yield* launchd.state();
     const last = yield* store.latestActivityEnd();
     const databasePath = yield* Effect.orDie(dbPathConfig);
     let iosImport: IosImport | null = null;
     const devices: Array<DeviceStatus> = [];
-    if (grants?.fullDiskAccess === "granted") {
+    if (
+      picture.items.some(
+        (i) => i.kind === "fullDiskAccess" && i.state === "granted",
+      )
+    ) {
       const raw = yield* store.getSetting(importStatusKey);
       const blob = Option.isSome(raw)
         ? yield* Effect.option(Schema.decodeUnknown(ImportResult)(raw.value))
@@ -198,8 +151,8 @@ export const readStatus = (): Effect.Effect<
     }
     return {
       collector,
-      app: present ? "present" : "missing",
-      permissions,
+      app: picture.app,
+      permissions: picture.items.map(permissionLine),
       lastActivity: Option.getOrNull(last),
       iosImport,
       devices,
