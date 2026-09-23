@@ -10,7 +10,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { type Command, CommandExecutor } from "@effect/platform";
+import {
+  type Command,
+  CommandExecutor,
+  FileSystem,
+  Error as PlatformError,
+} from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Exit, Layer, Ref, Sink, Stream } from "effect";
 import { NodeInspectSymbol } from "effect/Inspectable";
@@ -19,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   App,
   AppError,
+  AppNotInstalledError,
   hasDeveloperIdSignature,
   infoPlist,
   lsregisterPath,
@@ -91,10 +97,50 @@ const ADHOC = "Executable=/x\nSignature=adhoc\n";
 const DEVID =
   "Executable=/x\nAuthority=Developer ID Application: Example Corp (ABCDE12345)\n";
 
+// The paths whose rename or remove fails with PermissionDenied; every
+// other call reaches the real file system.
+type Fails = {
+  readonly rename?: (from: string) => boolean;
+  readonly remove?: (path: string) => boolean;
+};
+
+const denied = (method: string, path: string) =>
+  Effect.fail(
+    new PlatformError.SystemError({
+      reason: "PermissionDenied",
+      module: "FileSystem",
+      method,
+      pathOrDescriptor: path,
+    }),
+  );
+
+const failingFs = (fails: Fails) =>
+  Layer.effect(
+    FileSystem.FileSystem,
+    Effect.map(FileSystem.FileSystem, (fs) => ({
+      ...fs,
+      rename: (from: string, to: string) =>
+        fails.rename?.(from) ? denied("rename", from) : fs.rename(from, to),
+      remove: (path: string, options?: FileSystem.RemoveOptions) =>
+        fails.remove?.(path)
+          ? denied("remove", path)
+          : fs.remove(path, options),
+    })),
+  ).pipe(Layer.provide(NodeFileSystem.layer));
+
+// Every lsregister call exits with `code`, every other command 0.
+const lsregisterExits =
+  (code: number) =>
+  (command: Command.Command): number =>
+    command._tag === "StandardCommand" && command.command.includes("lsregister")
+      ? code
+      : 0;
+
 const runApp = async <A>(
   stderrText: string,
   use: (app: App) => Effect.Effect<A, unknown, never>,
   exitCodeFor?: (command: Command.Command) => number,
+  fails: Fails = {},
 ) => {
   const recorded = await Effect.runPromise(
     Ref.make<ReadonlyArray<ReadonlyArray<string>>>([]),
@@ -102,7 +148,7 @@ const runApp = async <A>(
   const layer = App.DefaultWithoutDependencies.pipe(
     Layer.provide(
       Layer.mergeAll(
-        NodeFileSystem.layer,
+        failingFs(fails),
         CollectorPaths.Default(home),
         Layer.succeed(
           CommandExecutor.CommandExecutor,
@@ -327,9 +373,15 @@ describe("App.install", () => {
           ? 1
           : 0,
     );
-    // Then: install fails, the previous bundle is back, and .old is gone
+    // Then: the previous bundle is back and .old is gone, but its own
+    // registration failed too, so it is not restored
     expect(result).toEqual(
-      Exit.fail(new AppError({ step: "lsregister", detail: "exit 1" })),
+      Exit.fail(
+        new AppNotInstalledError({
+          cause: new AppError({ step: "lsregister", detail: "exit 1" }),
+          appRestored: false,
+        }),
+      ),
     );
     expect(
       readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
@@ -351,13 +403,103 @@ describe("App.install", () => {
           ? 1
           : 0,
     );
-    // Then: install fails and no bundle or sibling is left
+    // Then: install fails, restored, and no bundle or sibling is left
     expect(result).toEqual(
-      Exit.fail(new AppError({ step: "lsregister", detail: "exit 1" })),
+      Exit.fail(
+        new AppNotInstalledError({
+          cause: new AppError({ step: "lsregister", detail: "exit 1" }),
+          appRestored: true,
+        }),
+      ),
     );
     expect(existsSync(appPath)).toBe(false);
     expect(existsSync(`${appPath}.old`)).toBe(false);
     expect(existsSync(`${appPath}.new`)).toBe(false);
+  });
+
+  it("a failed registration on a first install whose app cannot be removed is not restored", async () => {
+    // Given: no app yet; lsregister exits 1 and the new app cannot be removed
+    // When
+    const { result } = await runApp(
+      ADHOC,
+      (app) => app.install(helperPath),
+      lsregisterExits(1),
+      { remove: (path) => path === appPath },
+    );
+    // Then: the failure says the app was not restored, and it is still there
+    expect(result).toEqual(
+      Exit.fail(
+        new AppNotInstalledError({
+          cause: new AppError({ step: "lsregister", detail: "exit 1" }),
+          appRestored: false,
+        }),
+      ),
+    );
+    expect(existsSync(appPath)).toBe(true);
+  });
+
+  it("a failed registration whose old app cannot come back is not restored", async () => {
+    // Given: a first install with the old helper; the helper rebuilt
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    writeFileSync(helperPath, "helper-bytes-2");
+    // When: lsregister exits 1 and .old cannot be renamed back
+    const { result } = await runApp(
+      ADHOC,
+      (app) => app.install(helperPath),
+      lsregisterExits(1),
+      { rename: (from) => from === `${appPath}.old` },
+    );
+    // Then: not restored; the new app stays live and the old one in .old
+    expect(result).toEqual(
+      Exit.fail(
+        new AppNotInstalledError({
+          cause: new AppError({ step: "lsregister", detail: "exit 1" }),
+          appRestored: false,
+        }),
+      ),
+    );
+    expect(
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
+    ).toBe("helper-bytes-2");
+    expect(
+      readFileSync(
+        join(`${appPath}.old`, "Contents", "MacOS", "Clocktrace"),
+        "utf8",
+      ),
+    ).toBe("helper-bytes");
+  });
+
+  it("a failed registration whose put-back registers is restored", async () => {
+    // Given: a first install with the old helper; the helper rebuilt
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    writeFileSync(helperPath, "helper-bytes-2");
+    // When: only the install's lsregister exits 1; the put-back's exits 0
+    let registers = 0;
+    const { result } = await runApp(
+      ADHOC,
+      (app) => app.install(helperPath),
+      (command) =>
+        command._tag === "StandardCommand" &&
+        command.command.includes("lsregister") &&
+        registers++ === 0
+          ? 1
+          : 0,
+    );
+    // Then: restored; the previous bundle is back and no sibling is left
+    expect(result).toEqual(
+      Exit.fail(
+        new AppNotInstalledError({
+          cause: new AppError({ step: "lsregister", detail: "exit 1" }),
+          appRestored: true,
+        }),
+      ),
+    );
+    expect(
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
+    ).toBe("helper-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(existsSync(`${appPath}.reverting`)).toBe(false);
   });
 
   it("install copies a built app next to the Helper whole and signs nothing", async () => {
