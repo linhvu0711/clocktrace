@@ -833,7 +833,6 @@ describe("collector", () => {
     );
   });
 
->>>>>>> 760025b (fix(cli,collector): keep reset siblings unasked, re-save Grants after a reset)
   it("a line with no grant key still records", async () => {
     // Given: a Chrome line without a grant key, then a Finder line
     const lines = [
