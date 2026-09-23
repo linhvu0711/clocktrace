@@ -95,6 +95,27 @@ const failFirstInstall = (state: Ref.Ref<LaunchdState>) =>
     }),
   ).pipe(Layer.provide(fakeLaunchd(state)));
 
+// The bootstrap never reaches running and the unload fails, so a restore
+// stops at its first step.
+const unloadFails = (state: Ref.Ref<LaunchdState>) =>
+  Layer.effect(
+    Launchd,
+    Effect.map(
+      Launchd,
+      (base) =>
+        new Launchd({
+          ...base,
+          uninstall: () =>
+            Effect.fail(
+              new LaunchdError({
+                step: "launchctl bootout",
+                detail: "exit 1",
+              }),
+            ),
+        }),
+    ),
+  ).pipe(Layer.provide(fakeLaunchd(state, { bootstrapStuck: true })));
+
 const run = <A, E>(
   initial: LaunchdState,
   use: (
@@ -425,24 +446,6 @@ describe("Lifecycle.install restores", () => {
   it("an unload that fails leaves the App not put back", async () => {
     // Given: a stuck bootstrap over an agent, and an unload that fails, so
     // the restore stops before the App rollback
-    const unloadFails = (state: Ref.Ref<LaunchdState>) =>
-      Layer.effect(
-        Launchd,
-        Effect.map(
-          Launchd,
-          (base) =>
-            new Launchd({
-              ...base,
-              uninstall: () =>
-                Effect.fail(
-                  new LaunchdError({
-                    step: "launchctl bootout",
-                    detail: "exit 1",
-                  }),
-                ),
-            }),
-        ),
-      ).pipe(Layer.provide(fakeLaunchd(state, { bootstrapStuck: true })));
     // When
     const { exit, appRollbacks } = await run(withAgent, install, {
       launchdLayer: unloadFails,
@@ -462,6 +465,26 @@ describe("Lifecycle.install restores", () => {
       ),
     );
     expect(appRollbacks).toBe(0);
+  });
+
+  it("a fresh install whose cleanup fails has no old agent to put back", async () => {
+    // Given: no agent before, a stuck bootstrap, and an unload that fails
+    // When
+    const { exit } = await run(fresh, install, { launchdLayer: unloadFails });
+    // Then: only the App counts as not put back
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "collector did not start",
+            log: "/Users/me/Library/Logs/clocktrace/collector.log",
+          }),
+          appRestored: false,
+          agentRestored: true,
+        }),
+      ),
+    );
   });
 });
 

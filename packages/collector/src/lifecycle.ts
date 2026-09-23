@@ -86,7 +86,8 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
             // puts the previous app and agent back, unloading the new one
             // first so the old plist is the one launchd runs. An unload
             // that fails stops the restore there, before the App rollback,
-            // so the App counts as not put back.
+            // so the App counts as not put back, and so does an old agent;
+            // a fresh install had none to lose.
             const restore = Effect.gen(function* () {
               yield* launchd.uninstall();
               const appRestored = yield* app.rollback().pipe(
@@ -103,7 +104,10 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
               return { appRestored, agentRestored };
             }).pipe(
               Effect.catchAll(() =>
-                Effect.succeed({ appRestored: false, agentRestored: false }),
+                Effect.succeed({
+                  appRestored: false,
+                  agentRestored: previous === null,
+                }),
               ),
             );
             yield* Effect.gen(function* () {
