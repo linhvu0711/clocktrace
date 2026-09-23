@@ -1,13 +1,13 @@
 import {
   type AppStore,
-  emptyNote,
+  type InvalidInputError,
   type InvalidRangeError,
   type Store,
   type StoreError,
-  TimelineBlock,
+  type TimelineBlock,
   type TimelineInput,
+  TimelineReply,
   timeline,
-  usedRange,
 } from "@clocktrace/core";
 import { Command } from "@effect/cli";
 import { DateTime, Effect, Option, Schema } from "effect";
@@ -79,22 +79,20 @@ export const timelineScreen = (
 };
 
 export const printTimeline = (
-  input: TimelineInput,
+  input: Schema.Schema.Encoded<typeof TimelineInput>,
   json: boolean,
 ): Effect.Effect<
   void,
-  InvalidRangeError | StoreError | ParseError,
+  InvalidInputError | InvalidRangeError | StoreError | ParseError,
   Store | AppStore | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
     const look = yield* Style;
     const zone = yield* DateTime.CurrentTimeZone;
-    const range = yield* usedRange(input.range);
-    const blocks = yield* timeline(input);
-    const rows = yield* Schema.encode(Schema.Array(TimelineBlock))(blocks);
-    const lines = timelineScreen(blocks, zone, look);
-    const value = { range, rows, total: rows.length, ...emptyNote(rows) };
-    yield* report(json, value, (v) =>
+    const reply = yield* timeline(input);
+    const encoded = yield* Schema.encode(TimelineReply)(reply);
+    const lines = timelineScreen(reply.rows, zone, look);
+    yield* report(json, encoded, (v) =>
       v.note === undefined
         ? [windowLine(input.range, v.range.zone, look), ...lines]
         : [windowLine(input.range, v.range.zone, look), "no activity"],
@@ -113,7 +111,7 @@ export const timelineCommand = Command.make(
     Effect.gen(function* () {
       const range = yield* requireWindow("timeline", from, to);
       return yield* whenSetUp(
-        printTimeline({ range, deviceId: Option.getOrUndefined(device) }, json),
+        printTimeline({ range, device: Option.getOrUndefined(device) }, json),
       );
     }),
 ).pipe(Command.withDescription("show a timeline of activity blocks"));

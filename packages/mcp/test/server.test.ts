@@ -19,6 +19,7 @@ import {
   Store,
   type StoreShape,
 } from "@clocktrace/core";
+import { seedDay, seedMany, seedTwoDevices } from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -93,75 +94,6 @@ const withActivities = (
   );
 
 const t = (s: string) => DateTime.unsafeMake(s);
-
-// Studio: Code 08:00 to 09:30Z, then Chrome to 09:40Z; 01:00 to 02:40 in Los Angeles
-const seedDay = (store: StoreShape) =>
-  Effect.gen(function* () {
-    const studio = yield* store.upsertDevice({
-      kind: "mac",
-      name: "Studio",
-      externalId: "mac-1",
-    });
-    yield* store.insertActivity({
-      deviceId: studio.id,
-      bundleId: "com.microsoft.VSCode",
-      appName: "Code",
-      title: "a",
-      url: null,
-      startedAt: t("2026-09-18T08:00:00.000Z"),
-      endedAt: t("2026-09-18T09:30:00.000Z"),
-    });
-    yield* store.insertActivity({
-      deviceId: studio.id,
-      bundleId: "com.google.Chrome",
-      appName: "Google Chrome",
-      title: "b",
-      url: "https://github.com/acme/shop",
-      startedAt: t("2026-09-18T09:30:00.000Z"),
-      endedAt: t("2026-09-18T09:40:00.000Z"),
-    });
-    return studio;
-  });
-
-const seedMany = (store: StoreShape, count: number) =>
-  Effect.gen(function* () {
-    const studio = yield* store.upsertDevice({
-      kind: "mac",
-      name: "Studio",
-      externalId: "mac-1",
-    });
-    for (let i = 0; i < count; i++) {
-      const startedAt = Date.UTC(2026, 8, 18, 8) + i * 60_000;
-      yield* store.insertActivity({
-        deviceId: studio.id,
-        bundleId: "com.microsoft.VSCode",
-        appName: "Code",
-        title: null,
-        url: null,
-        startedAt: DateTime.unsafeMake(startedAt),
-        endedAt: DateTime.unsafeMake(startedAt + 60_000),
-      });
-    }
-  });
-
-const seedTwoDevices = (store: StoreShape) =>
-  Effect.gen(function* () {
-    yield* seedDay(store);
-    const laptop = yield* store.upsertDevice({
-      kind: "mac",
-      name: "Laptop",
-      externalId: "mac-2",
-    });
-    yield* store.insertActivity({
-      deviceId: laptop.id,
-      bundleId: "com.apple.Safari",
-      appName: "Safari",
-      title: "c",
-      url: null,
-      startedAt: t("2026-09-18T10:00:00.000Z"),
-      endedAt: t("2026-09-18T10:05:00.000Z"),
-    });
-  });
 
 const stubHelper = (p: Permissions) =>
   Helper.Test({ permissions: () => Effect.succeed(p) });
@@ -961,20 +893,20 @@ describe("server", () => {
     });
   });
 
-  it("a word range is an error naming range", async () => {
+  it("a device that is not a Device id gets core's text", async () => {
     // Given: the same
     const { client, close } = await connect(withActivities(seedDay));
     // When
     const result = await callTool(client, {
       name: "summary",
-      arguments: { range: { from: "today", to: "today" }, groupBy: "app" },
+      arguments: { range: day, groupBy: "app", device: "Studio" },
     });
     await close();
     // Then
-    expect(result.isError).toBe(true);
-    expect(text(result)).toBe(
-      'range: from "today" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
-    );
+    expect({ isError: result.isError, text: text(result) }).toEqual({
+      isError: true,
+      text: "device: must be a Device id",
+    });
   });
 
   it("to before from is an error naming range", async () => {
@@ -1116,6 +1048,56 @@ describe("server", () => {
     expect(page.rows).toHaveLength(200);
     expect(page.total).toBe(205);
     expect(page.hasMore).toBe(true);
+  });
+
+  it("activities with a limit over 200 says capped", async () => {
+    // Given: 205 one-minute Code Activities from 08:00Z
+    const { client, close } = await connect(
+      withActivities((store) => seedMany(store, 205)),
+    );
+    // When
+    const result = await callTool(client, {
+      name: "activities",
+      arguments: { range: day, limit: 500 },
+    });
+    await close();
+    // Then
+    const page = result.structuredContent ?? {};
+    expect({
+      isError: result.isError,
+      capped: page.capped,
+      keys: Object.keys(page),
+    }).toEqual({
+      isError: undefined,
+      capped: true,
+      keys: ["range", "rows", "total", "hasMore", "capped"],
+    });
+  });
+
+  it("a bad limit gets core's text", async () => {
+    // Given: the seeded day
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const results = [];
+    for (const limit of [0, -1]) {
+      results.push(
+        await callTool(client, {
+          name: "activities",
+          arguments: { range: day, limit },
+        }),
+      );
+    }
+    await close();
+    // Then
+    expect(
+      results.map((result) => ({
+        isError: result.isError,
+        text: text(result),
+      })),
+    ).toEqual([
+      { isError: true, text: "limit: must be a whole number above 0" },
+      { isError: true, text: "limit: must be a whole number above 0" },
+    ]);
   });
 
   it("activities filters by app", async () => {

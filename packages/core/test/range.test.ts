@@ -1,12 +1,12 @@
-import { DateTime, Effect, Either, Exit, Schema } from "effect";
+import { DateTime, Effect, Either, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
-  InvalidRangeError,
+  type InvalidRangeError,
   isoMinute,
   Range,
   resolveRange,
-  usedRange,
+  usedWindow,
 } from "../src/index.js";
 
 const friday = DateTime.unsafeMakeZoned("2026-09-18T17:00:00Z", {
@@ -158,40 +158,18 @@ describe("range", () => {
     );
   });
 
-  it("usedRange echoes a bare day as midnight to the next midnight with the zone", async () => {
-    // Given: the Los Angeles zone
-    // When
-    const result = await Effect.runPromise(
-      usedRange({ from: "2026-09-18", to: "2026-09-18" }).pipe(
-        DateTime.withCurrentZoneNamed("America/Los_Angeles"),
-      ),
+  it("usedWindow echoes a bare day as midnight to the next midnight with the zone", () => {
+    // Given: the Friday now in Los Angeles
+    const { from, to } = Effect.runSync(
+      resolveRange({ from: "2026-09-18", to: "2026-09-18" }, friday),
     );
+    // When
+    const result = usedWindow(from, to, friday.zone);
     // Then
     expect(result).toEqual({
       from: "2026-09-18T00:00",
       to: "2026-09-19T00:00",
       zone: "America/Los_Angeles",
     });
-  });
-
-  it("usedRange fails to before from naming range", async () => {
-    // Given: the Los Angeles zone
-    // When
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        usedRange({ from: "2026-09-08", to: "2026-09-01" }).pipe(
-          DateTime.withCurrentZoneNamed("America/Los_Angeles"),
-        ),
-      ),
-    );
-    // Then
-    expect(exit).toEqual(
-      Exit.fail(
-        new InvalidRangeError({
-          field: "range",
-          reason: "from 2026-09-08 is after to 2026-09-01",
-        }),
-      ),
-    );
   });
 });

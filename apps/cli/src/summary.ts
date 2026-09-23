@@ -1,15 +1,14 @@
 import {
   type AppStore,
-  emptyNote,
   GroupBy,
+  type InvalidInputError,
   type InvalidRangeError,
   type Store,
   type StoreError,
-  Summary,
   type SummaryInput,
+  SummaryReply,
   type SummaryRow,
   summary,
-  usedRange,
 } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
 import { type DateTime, Effect, Option, Schema } from "effect";
@@ -77,20 +76,18 @@ export const summaryScreen = (
 };
 
 export const printSummary = (
-  input: SummaryInput,
+  input: Schema.Schema.Encoded<typeof SummaryInput>,
   json: boolean,
 ): Effect.Effect<
   void,
-  InvalidRangeError | StoreError | ParseError,
+  InvalidInputError | InvalidRangeError | StoreError | ParseError,
   Store | AppStore | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
     const look = yield* Style;
-    const range = yield* usedRange(input.range);
-    const result = yield* summary(input);
-    const encoded = yield* Schema.encode(Summary)(result);
-    const value = { range, ...encoded, ...emptyNote(encoded.rows) };
-    yield* report(json, value, (v) =>
+    const reply = yield* summary(input);
+    const encoded = yield* Schema.encode(SummaryReply)(reply);
+    yield* report(json, encoded, (v) =>
       v.note === undefined
         ? [
             windowLine(input.range, v.range.zone, look, `by ${input.groupBy}`),
@@ -122,7 +119,7 @@ export const summaryCommand = Command.make(
       const range = yield* requireWindow("summary", from, to);
       return yield* whenSetUp(
         printSummary(
-          { range, groupBy, deviceId: Option.getOrUndefined(device) },
+          { range, groupBy, device: Option.getOrUndefined(device) },
           json,
         ),
       );

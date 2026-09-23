@@ -1,7 +1,7 @@
 import { Command } from "@effect/cli";
 import { Console, Effect } from "effect";
 
-import { activitiesCommand, BadLimitError } from "./activities.js";
+import { activitiesCommand } from "./activities.js";
 import { categoriesCommand } from "./categories.js";
 import { mcpCommand } from "./mcp.js";
 import { permissionsCommand } from "./permissions.js";
@@ -41,22 +41,17 @@ const cliRun = Command.run(command, {
   version: version(),
 });
 
-export const isFriendlyError = (
-  e: unknown,
-): e is MissingWindowError | BadLimitError =>
-  e instanceof MissingWindowError || e instanceof BadLimitError;
+export const isFriendlyError = (e: unknown): e is MissingWindowError =>
+  e instanceof MissingWindowError;
 
 // A friendly error is one the command raised in place of a library validation
 // error, so we render the whole message ourselves: one line plus an example.
 export const renderFriendly = (
-  e: MissingWindowError | BadLimitError,
-): ReadonlyArray<string> =>
-  e._tag === "MissingWindowError"
-    ? [
-        `${e.command} needs --from and --to.`,
-        `example:  clocktrace ${e.command} --from YYYY-MM-DD --to YYYY-MM-DD`,
-      ]
-    : ["--limit needs a whole number."];
+  e: MissingWindowError,
+): ReadonlyArray<string> => [
+  `${e.command} needs --from and --to.`,
+  `example:  clocktrace ${e.command} --from YYYY-MM-DD --to YYYY-MM-DD`,
+];
 
 // The library's built-in version option has no short alias; keep the old
 // parser's lone `-v`. On a friendly error, print the message here so the run
