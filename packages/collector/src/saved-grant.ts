@@ -30,6 +30,14 @@ export const saveGrant = (
     );
   });
 
+export const deleteSavedGrant = (
+  bundleId: string,
+): Effect.Effect<void, StoreError, Store> =>
+  Effect.gen(function* () {
+    const store = yield* Store;
+    yield* store.deleteSetting(savedGrantKey(bundleId));
+  });
+
 export const readSavedGrants = (): Effect.Effect<
   ReadonlyMap<string, SavedGrant>,
   StoreError,
@@ -56,6 +64,17 @@ export const saveLiveGrants = (
 ): Effect.Effect<void, never, Store> =>
   Effect.gen(function* () {
     for (const [bundleId, state] of Object.entries(p.automation)) {
+      // macOS has no Grant for this browser any more (a reset, a new app
+      // identity), so the Saved grant is no longer true.
+      if (state === "notAsked") {
+        yield* deleteSavedGrant(bundleId).pipe(
+          Effect.catchTag("StoreError", () =>
+            Effect.logWarning("saved grant not deleted").pipe(
+              Effect.annotateLogs({ bundleId }),
+            ),
+          ),
+        );
+      }
       if (state === "granted" || state === "denied") {
         yield* saveGrant(bundleId, state, at).pipe(
           Effect.catchTag("StoreError", () =>
