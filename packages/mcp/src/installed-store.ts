@@ -1,31 +1,26 @@
-import { existsSync } from "node:fs";
+import {
+  type Launchd,
+  type NotSetUpError,
+  requireInstalled,
+} from "@clocktrace/collector";
 import {
   AppStore,
   type DatabaseNewerError,
   Store,
   type StoreError,
 } from "@clocktrace/core";
-import { Data, Effect, Layer } from "effect";
-
-export class NotInstalledError extends Data.TaggedError("NotInstalledError")<{
-  readonly path: string;
-}> {
-  override get message(): string {
-    return "not set up, run clocktrace setup";
-  }
-}
+import type { FileSystem } from "@effect/platform";
+import { Effect, Layer } from "effect";
 
 export const InstalledStore = (
   path: string,
 ): Layer.Layer<
   Store | AppStore,
-  NotInstalledError | StoreError | DatabaseNewerError
+  NotSetUpError | StoreError | DatabaseNewerError,
+  Launchd | FileSystem.FileSystem
 > =>
   Layer.unwrapEffect(
-    Effect.gen(function* () {
-      if (!existsSync(path)) {
-        return yield* new NotInstalledError({ path });
-      }
-      return Layer.mergeAll(Store.Default(path), AppStore.Default);
-    }),
+    requireInstalled(path).pipe(
+      Effect.as(Layer.mergeAll(Store.Default(path), AppStore.Default)),
+    ),
   );

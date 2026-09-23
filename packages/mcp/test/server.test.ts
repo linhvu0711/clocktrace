@@ -19,6 +19,7 @@ import {
   Store,
   type StoreShape,
 } from "@clocktrace/core";
+import { NodeContext } from "@effect/platform-node";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -66,6 +67,14 @@ const connect = async (
   };
   return { client, close };
 };
+
+const installedStore = (
+  path: string,
+  launchd: Layer.Layer<Launchd> = Launchd.Test,
+) =>
+  InstalledStore(path).pipe(
+    Layer.provide(Layer.mergeAll(launchd, NodeContext.layer)),
+  );
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -179,6 +188,18 @@ const stoppedLaunchd = Layer.unwrapEffect(
   ),
 );
 
+const uninstalledLaunchd = Layer.unwrapEffect(
+  Effect.map(
+    Ref.make<LaunchdState>({
+      installed: false,
+      running: false,
+      plist: null,
+      installs: 0,
+    }),
+    fakeLaunchd,
+  ),
+);
+
 const day = { from: "2026-09-18", to: "2026-09-18" };
 const dayWindow = {
   from: "2026-09-18T00:00",
@@ -267,7 +288,7 @@ describe("server", () => {
 
   it("every tool returns not installed without a database", async () => {
     // Given: a server over a path whose file does not exist
-    const { client, close } = await connect(InstalledStore(path));
+    const { client, close } = await connect(installedStore(path));
     // When
     const results = [
       await callTool(client, { name: "list_categories", arguments: {} }),
@@ -304,7 +325,9 @@ describe("server", () => {
     // Then
     for (const result of results) {
       expect(result.isError).toBe(true);
-      expect(text(result)).toBe("not set up, run clocktrace setup");
+      expect(text(result)).toBe(
+        `not set up, run clocktrace setup · looked for ${path}`,
+      );
     }
     expect(existsSync(path)).toBe(false);
   });
@@ -811,7 +834,7 @@ describe("server", () => {
 
   it("the four question tools return not installed without a database", async () => {
     // Given: a server over a path whose file does not exist
-    const { client, close } = await connect(InstalledStore(path));
+    const { client, close } = await connect(installedStore(path));
     // When
     const results = [
       await callTool(client, {
@@ -829,9 +852,55 @@ describe("server", () => {
     // Then
     for (const result of results) {
       expect(result.isError).toBe(true);
-      expect(text(result)).toBe("not set up, run clocktrace setup");
+      expect(text(result)).toBe(
+        `not set up, run clocktrace setup · looked for ${path}`,
+      );
     }
     expect(existsSync(path)).toBe(false);
+  });
+
+  it("every tool answers not set up when the plist is missing", async () => {
+    // Given: the database file, no plist
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const { client, close } = await connect(
+      installedStore(path, uninstalledLaunchd),
+    );
+    // When
+    const results = [
+      await callTool(client, { name: "list_categories", arguments: {} }),
+      await callTool(client, { name: "list_rules", arguments: {} }),
+      await callTool(client, {
+        name: "summary",
+        arguments: { range: day, groupBy: "app" },
+      }),
+      await callTool(client, { name: "status", arguments: {} }),
+    ];
+    await close();
+    // Then
+    for (const result of results) {
+      expect(result.isError).toBe(true);
+      expect(text(result)).toBe(
+        `not set up, run clocktrace setup · looked for ${path}`,
+      );
+    }
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("a stopped Collector with the plist and the database answers summary", async () => {
+    // Given: the database file, the plist, the Collector stopped
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const { client, close } = await connect(
+      installedStore(path, stoppedLaunchd),
+    );
+    // When
+    const result = await callTool(client, {
+      name: "summary",
+      arguments: { range: day, groupBy: "app" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent?.total).toBe(0);
   });
 
   it("summary by app answers with the window first, then rows and total", async () => {

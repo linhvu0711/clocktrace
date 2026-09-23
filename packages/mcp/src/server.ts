@@ -5,6 +5,7 @@ import {
   type HelperNotFoundError,
   type Launchd,
   type LaunchdError,
+  type NotSetUpError,
   readStatus,
   Status,
 } from "@clocktrace/collector";
@@ -54,13 +55,9 @@ import {
 import type { ParseError } from "effect/ParseResult";
 import { z } from "zod";
 
-import type { NotInstalledError } from "./installed-store.js";
 import { version } from "./version.js";
 
-export type StoreLayerError =
-  | StoreError
-  | DatabaseNewerError
-  | NotInstalledError;
+export type StoreLayerError = StoreError | DatabaseNewerError | NotSetUpError;
 
 export type Services =
   | Store
