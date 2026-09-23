@@ -713,7 +713,7 @@ describe("collector", () => {
   });
 
   it("a failed Grant save logs and keeps recording", async () => {
-    // Given: a Store whose setSetting fails; Chrome denied twice, then Finder
+    // Given: a Store whose first setSetting fails; Chrome denied twice, then Finder
     const lines = [
       line({
         ts: "2026-01-01T09:00:00Z",
@@ -734,22 +734,24 @@ describe("collector", () => {
       }),
     ];
     let writes = 0;
-    const failingSetSetting = Layer.effect(
+    const flakySetSetting = Layer.effect(
       Store,
       Effect.map(
         Store,
         (s) =>
           new Store({
             ...s,
-            setSetting: () => {
+            setSetting: (key, value) => {
               writes += 1;
-              return Effect.fail(new StoreError({ cause: "disk full" }));
+              return writes === 1
+                ? Effect.fail(new StoreError({ cause: "disk full" }))
+                : s.setSetting(key, value);
             },
           }),
       ),
     );
     // When
-    const rows = await Effect.runPromise(
+    const { rows, saved } = await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* Store;
         const device = yield* store.upsertDevice({
@@ -762,15 +764,22 @@ describe("collector", () => {
           from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
           to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
         });
-        return activities.map((a) => ({
-          appName: a.appName,
-          startedAt: DateTime.formatIso(a.startedAt),
-          endedAt: DateTime.formatIso(a.endedAt),
-        }));
-      }).pipe(Effect.provide(Layer.provide(failingSetSetting, Store.Test))),
+        const saved = yield* store.getSetting("grant.com.google.Chrome");
+        return {
+          saved,
+          rows: activities.map((a) => ({
+            appName: a.appName,
+            startedAt: DateTime.formatIso(a.startedAt),
+            endedAt: DateTime.formatIso(a.endedAt),
+          })),
+        };
+      }).pipe(Effect.provide(Layer.provide(flakySetSetting, Store.Test))),
     );
-    // Then: one failed save per Grant change, not one per heartbeat
-    expect(writes).toBe(1);
+    // Then: the next heartbeat retries the failed save once, not on every line
+    expect(writes).toBe(2);
+    expect(saved).toEqual(
+      Option.some('{"state":"denied","checkedAt":"2026-01-01T09:00:02.000Z"}'),
+    );
     expect(rows).toEqual([
       {
         appName: "Google Chrome",

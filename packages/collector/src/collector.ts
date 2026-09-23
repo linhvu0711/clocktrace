@@ -52,6 +52,7 @@ export const collect = <E, R>(
     const remembered = yield* Ref.make<
       ReadonlyMap<string, "granted" | "denied">
     >(new Map());
+    const warned = yield* Ref.make<ReadonlySet<string>>(new Set());
 
     const remember = (line: HelperLine): Effect.Effect<void, never, Store> =>
       Effect.gen(function* () {
@@ -61,19 +62,29 @@ export const collect = <E, R>(
         ) {
           return;
         }
+        const bundleId = line.bundleId;
         const last = yield* Ref.get(remembered);
-        if (last.get(line.bundleId) === line.grant) {
+        if (last.get(bundleId) === line.grant) {
           return;
         }
-        yield* Ref.set(
-          remembered,
-          new Map(last).set(line.bundleId, line.grant as "granted" | "denied"),
-        );
-        yield* saveGrant(line.bundleId, line.grant, line.ts).pipe(
-          Effect.catchTag("StoreError", () =>
-            Effect.logWarning("saved grant not written").pipe(
-              Effect.annotateLogs({ bundleId: line.bundleId }),
+        yield* saveGrant(bundleId, line.grant, line.ts).pipe(
+          Effect.tap(() =>
+            Ref.set(
+              remembered,
+              new Map(last).set(bundleId, line.grant as "granted" | "denied"),
             ),
+          ),
+          Effect.catchTag("StoreError", () =>
+            Effect.gen(function* () {
+              const seen = yield* Ref.get(warned);
+              if (seen.has(bundleId)) {
+                return;
+              }
+              yield* Ref.update(warned, (s) => new Set(s).add(bundleId));
+              yield* Effect.logWarning("saved grant not written").pipe(
+                Effect.annotateLogs({ bundleId }),
+              );
+            }),
           ),
         );
       });
