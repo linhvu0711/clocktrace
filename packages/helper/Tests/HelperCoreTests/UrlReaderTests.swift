@@ -15,6 +15,7 @@ final class UrlReaderTests: XCTestCase {
       focusedTitle: { _ in nil },
       automationStatus: automationStatus,
       runScript: runScript,
+      safariPrivateFormats: { [] },
       idleSeconds: { 0 }
     )
   }

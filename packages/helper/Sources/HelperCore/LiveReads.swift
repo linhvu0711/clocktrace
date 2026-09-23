@@ -44,6 +44,7 @@ extension Reads {
         .executeAndReturnError(&error)
       return result?.stringValue
     },
+    safariPrivateFormats: { [] },
     idleSeconds: {
       CGEventSource.secondsSinceLastEventType(
         .combinedSessionState, eventType: CGEventType(rawValue: ~0)!)

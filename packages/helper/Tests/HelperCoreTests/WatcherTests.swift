@@ -15,6 +15,7 @@ final class WatcherTests: XCTestCase {
       focusedTitle: focusedTitle,
       automationStatus: { _, _ in 0 },
       runScript: { _ in nil },
+      safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
   }
@@ -98,6 +99,7 @@ final class WatcherTests: XCTestCase {
       },
       automationStatus: { _, _ in -1743 },
       runScript: { _ in nil },
+      safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
     let t0 = Date(timeIntervalSince1970: 1_767_225_600)
