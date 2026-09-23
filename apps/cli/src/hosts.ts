@@ -4,11 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
-import { Data, Effect, Layer } from "effect";
-import { parseDocument } from "yaml";
+import { Data, Effect, Layer, Option } from "effect";
 
 import { shellQuote } from "./format.js";
-import { setRegistration } from "./hermes-config.js";
+import { removeRegistration, setRegistration } from "./hermes-config.js";
 import { runCommand } from "./run-command.js";
 
 export const hostNames = ["claude", "codex", "hermes", "openclaw"] as const;
@@ -398,12 +397,6 @@ const onPath = (
     Effect.catchAll(() => Effect.succeed(false)),
   );
 
-class HermesConfigParseError extends Data.TaggedError(
-  "HermesConfigParseError",
-)<{
-  cause: unknown;
-}> {}
-
 const hermesConfigPath = () => join(homedir(), ".hermes", "config.yaml");
 
 const readHermes: Effect.Effect<
@@ -477,15 +470,11 @@ const unregisterHermes: Effect.Effect<
   FileSystem.FileSystem
 > = Effect.gen(function* () {
   const { text, exists } = yield* readHermes;
-  const doc = parseDocument(text);
-  if (doc.errors.length > 0) {
-    return yield* new HermesConfigParseError({ cause: doc.errors });
-  }
-  if (doc.getIn(["mcp_servers", "clocktrace"]) === undefined) {
+  const next = yield* removeRegistration(text);
+  if (Option.isNone(next)) {
     return "not registered" as const;
   }
-  doc.deleteIn(["mcp_servers", "clocktrace"]);
-  yield* writeHermes(doc.toString(), exists);
+  yield* writeHermes(next.value, exists);
   return "unregistered" as const;
 }).pipe(Effect.mapError(() => new HostRemoveError({ host: "hermes" })));
 

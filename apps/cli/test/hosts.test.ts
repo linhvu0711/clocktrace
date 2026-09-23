@@ -956,4 +956,38 @@ describe("hosts", () => {
     expect(outcome).toEqual(Exit.fail(new HostRemoveError({ host: "hermes" })));
     expect(readFileSync(path, "utf8")).toBe("model: [\n");
   });
+
+  it("hermes setup then uninstall gives back the file byte for byte", async () => {
+    // Given: ~/.hermes/config.yaml with its own spacing, blank lines, and hex
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    const original =
+      "model: nous-1   # note\nother: {command: x}\n\n\nz: 0x1F\n";
+    writeFileSync(path, original);
+    await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    // When
+    const outcome = await unregister("hermes");
+    // Then
+    expect(outcome).toEqual(Exit.succeed("unregistered"));
+    expect(readFileSync(path, "utf8")).toBe(original);
+  });
+
+  it("hermes unregister on a one-line mcp_servers list is a HostRemoveError", async () => {
+    // Given: the Registration sits inside a one-line mcp_servers list
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(path, "mcp_servers: {clocktrace: {command: x}}\n");
+    // When
+    const outcome = await unregister("hermes");
+    // Then
+    expect(outcome).toEqual(Exit.fail(new HostRemoveError({ host: "hermes" })));
+    expect(readFileSync(path, "utf8")).toBe(
+      "mcp_servers: {clocktrace: {command: x}}\n",
+    );
+  });
 });
