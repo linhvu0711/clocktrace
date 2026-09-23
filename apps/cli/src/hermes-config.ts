@@ -57,8 +57,12 @@ const lineEndAt = (text: string, offset: number): string => {
 const lineStart = (text: string, offset: number): number =>
   text.lastIndexOf("\n", offset - 1) + 1;
 
-const column = (text: string, offset: number): number =>
-  offset - lineStart(text, offset);
+// A byte-order mark before the first line is not indentation.
+const column = (text: string, offset: number): number => {
+  const start = lineStart(text, offset);
+  const bom = start === 0 && text.startsWith("\uFEFF") ? 1 : 0;
+  return offset - start - bom;
+};
 
 // The offset just past the line end that follows the last non-space
 // character before `end`: a node's range can reach into the next line.

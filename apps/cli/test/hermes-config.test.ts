@@ -180,6 +180,17 @@ describe("setRegistration", () => {
     );
   });
 
+  it("a byte-order mark at the start is not indentation", () => {
+    // Given: a file saved with a UTF-8 BOM
+    const text = "\uFEFFmodel: nous-1\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(result).toEqual(
+      Either.right(`\uFEFFmodel: nous-1\nmcp_servers:\n${b2}`),
+    );
+  });
+
   it("set stops when another key aliases the Registration", () => {
     // Given: backup points at the Registration through an anchor
     const text =
