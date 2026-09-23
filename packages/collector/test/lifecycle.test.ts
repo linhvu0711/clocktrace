@@ -362,6 +362,46 @@ describe("Lifecycle.install restores", () => {
       ),
     );
   });
+  it("an unload that fails leaves the App not put back", async () => {
+    // Given: a stuck bootstrap over an agent, and an unload that fails, so
+    // the restore stops before the App rollback
+    const unloadFails = (state: Ref.Ref<LaunchdState>) =>
+      Layer.effect(
+        Launchd,
+        Effect.map(
+          Launchd,
+          (base) =>
+            new Launchd({
+              ...base,
+              uninstall: () =>
+                Effect.fail(
+                  new LaunchdError({
+                    step: "launchctl bootout",
+                    detail: "exit 1",
+                  }),
+                ),
+            }),
+        ),
+      ).pipe(Layer.provide(fakeLaunchd(state, { bootstrapStuck: true })));
+    // When
+    const { exit, appRollbacks } = await run(withAgent, install, {
+      launchdLayer: unloadFails,
+    });
+    // Then: the failure says the App did not come back
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "collector did not start",
+            log: "/Users/me/Library/Logs/clocktrace/collector.log",
+          }),
+          appRestored: false,
+        }),
+      ),
+    );
+    expect(appRollbacks).toBe(0);
+  });
 });
 
 describe("Lifecycle settings", () => {
