@@ -13,5 +13,5 @@ writes. It is not a command.
 
 | Env var | Default |
 | --- | --- |
-| `CLOCKTRACE_HELPER` | `packages/helper/.build/release/clocktrace-helper` next to this package |
+| `CLOCKTRACE_HELPER` | `packages/helper/.build/release/clocktrace-helper` in the workspace; `helper/clocktrace-helper` at the root of an installed copy |
 | `CLOCKTRACE_DB` | `~/Library/Application Support/clocktrace/clocktrace.db` |
