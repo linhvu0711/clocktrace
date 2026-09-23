@@ -186,7 +186,7 @@ describe("codex host", () => {
   });
 
   it("a host binary missing from PATH is no cli and runs no remove", async () => {
-    // Given: which codex exits 1
+    // Given: codex is not on PATH
     // When
     const { value, recorded } = await run(codexHost.unregister);
     // Then

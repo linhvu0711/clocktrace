@@ -2,7 +2,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -22,10 +21,15 @@ import {
 import { NodeContext } from "@effect/platform-node";
 import { ConfigProvider, Console, Effect, Exit, Layer, Ref } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { parse } from "yaml";
 
 import { Style } from "../src/format.js";
-import { HostRemoveError, Hosts } from "../src/hosts.js";
+import type { UnregisterOutcome } from "../src/host.js";
+import {
+  type HostName,
+  HostRemoveError,
+  Hosts,
+  manualRemoveCommand,
+} from "../src/hosts.js";
 import { ReportedError } from "../src/output.js";
 import { Prompt, Stdin } from "../src/prompt.js";
 import { purgeTargets, uninstall } from "../src/uninstall.js";
@@ -88,10 +92,25 @@ const bootoutFails = (state: Ref.Ref<LaunchdState>) =>
     ),
   ).pipe(Layer.provide(fakeLaunchd(state)));
 
-const claudeFound = { "which claude": { code: 0 } };
-const claudeRemoved = {
-  "claude mcp remove clocktrace --scope user": { code: 0 },
-};
+// A Hosts that finds the named Hosts and answers each unregister with
+// `unregister`.
+const hostsFinding = (
+  found: ReadonlyArray<HostName>,
+  unregister: (
+    host: HostName,
+  ) => Effect.Effect<UnregisterOutcome, HostRemoveError>,
+) =>
+  Hosts.testWith({
+    detect: () =>
+      Effect.succeed({
+        claude: found.includes("claude"),
+        codex: found.includes("codex"),
+        hermes: found.includes("hermes"),
+        openclaw: found.includes("openclaw"),
+      }),
+    unregister,
+  });
+
 const tccReset = { "tccutil reset All com.clocktrace.app": { code: 0 } };
 
 describe("uninstall", () => {
@@ -147,6 +166,7 @@ describe("uninstall", () => {
     readonly db?: string | null;
     /** A bundle folder on disk without its executable. */
     readonly damaged?: boolean;
+    readonly hostLayer?: Layer.Layer<Hosts>;
   }) =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -179,7 +199,7 @@ describe("uninstall", () => {
           Stdin.Test,
           (opts.launchd ?? fakeLaunchd)(state),
           fakeApp(appPresent, executor.recorded),
-          Hosts.Default,
+          opts.hostLayer ?? Hosts.Test,
           executor.layer,
           Style.Test,
         );
@@ -208,11 +228,13 @@ describe("uninstall", () => {
     );
 
   it("removes the agent, the app, and the host entry, and resets the grants", async () => {
-    // Given: agent loaded, app present, claude on PATH, remove and tccutil ok
+    // Given: agent loaded, app present, Claude Code found and removed,
+    // tccutil ok
     writeState();
     // When
     const { exit, output, recorded, state, appPresent } = await run({
-      results: { ...claudeFound, ...claudeRemoved, ...tccReset },
+      results: tccReset,
+      hostLayer: hostsFinding(["claude"], () => Effect.succeed("unregistered")),
     });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
@@ -232,7 +254,6 @@ describe("uninstall", () => {
       "tccutil reset All com.clocktrace.app",
       "app.remove",
     ]);
-    expect(recorded.at(-1)).toBe("claude mcp remove clocktrace --scope user");
     expect(existsSync(dbPath)).toBe(true);
     expect(existsSync(join(logDir, "collector.log"))).toBe(true);
   });
@@ -315,52 +336,30 @@ describe("uninstall", () => {
     expect(custom.dir).toBe(null);
   });
 
-  it("removes the hermes block and keeps the rest of the config", async () => {
-    // Given: ~/.hermes/config.yaml with a model and two servers
-    mkdirSync(join(home, ".hermes"), { recursive: true });
-    const path = join(home, ".hermes", "config.yaml");
-    writeFileSync(
-      path,
-      [
-        "model: nous-1",
-        "mcp_servers:",
-        "  clocktrace:",
-        "    command: clocktrace",
-        '    args: ["mcp"]',
-        "  other:",
-        "    command: other",
-        "",
-      ].join("\n"),
-    );
+  it("prints the Hermes Agent line when its block is removed", async () => {
+    // Given: Hermes Agent found; its unregister removes the block
     // When
-    const { exit, output } = await run({});
+    const { exit, output } = await run({
+      hostLayer: hostsFinding(["hermes"], () => Effect.succeed("unregistered")),
+    });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toContain("✔ Hermes Agent unregistered");
-    expect(parse(readFileSync(path, "utf8"))).toEqual({
-      model: "nous-1",
-      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
-      mcp_servers: { other: { command: "other" } },
-    });
   });
 
   it("a host remove that fails is reported, the rest still runs, and the exit is 1", async () => {
-    // Given: claude and codex on PATH; claude's remove exits 1 printing
-    // boom, codex's exits 0; --purge without a terminal
+    // Given: Claude Code and Codex found; Claude Code's remove fails,
+    // Codex's works; --purge without a terminal
     writeState();
     // When
     const { exit, output } = await run({
       purge: true,
-      results: {
-        ...claudeFound,
-        "which codex": { code: 0 },
-        "claude mcp remove clocktrace --scope user": {
-          code: 1,
-          output: "boom",
-        },
-        "codex mcp remove clocktrace": { code: 0 },
-        ...tccReset,
-      },
+      results: tccReset,
+      hostLayer: hostsFinding(["claude", "codex"], (host) =>
+        host === "claude"
+          ? Effect.fail(new HostRemoveError({ host }))
+          : Effect.succeed("unregistered"),
+      ),
     });
     // Then: every step ran and the Done line is printed; the exit says 1
     expect(exit).toEqual(
@@ -372,7 +371,7 @@ describe("uninstall", () => {
       "✔ launch agent removed",
       "✔ permissions reset",
       "✔ app removed",
-      "✘ Claude Code failed · run by hand: claude mcp remove clocktrace --scope user",
+      `✘ Claude Code failed · run by hand: ${manualRemoveCommand.claude}`,
       "✔ Codex unregistered",
       "✔ database removed",
       "✔ logs removed",
@@ -383,17 +382,13 @@ describe("uninstall", () => {
   });
 
   it("a host without the server is not registered, not an error", async () => {
-    // Given: claude on PATH; its remove prints the real absent message
+    // Given: Claude Code found; it has no clocktrace server
     // When
     const { exit, output } = await run({
-      results: {
-        ...claudeFound,
-        "claude mcp remove clocktrace --scope user": {
-          code: 1,
-          output: 'No MCP server named "clocktrace" in user scope',
-        },
-        ...tccReset,
-      },
+      results: tccReset,
+      hostLayer: hostsFinding(["claude"], () =>
+        Effect.succeed("not registered"),
+      ),
     });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
@@ -401,16 +396,17 @@ describe("uninstall", () => {
   });
 
   it("a host found by its config but not on PATH is a skip line with the manual command", async () => {
-    // Given: ~/.claude.json exists, which claude exits 1
-    writeFileSync(join(home, ".claude.json"), "{}");
+    // Given: Claude Code found by its config, its binary not on PATH
     // When
-    const { exit, output, recorded } = await run({ results: tccReset });
+    const { exit, output } = await run({
+      results: tccReset,
+      hostLayer: hostsFinding(["claude"], () => Effect.succeed("no cli")),
+    });
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toContain(
-      "○ Claude Code: claude not on PATH · run by hand: claude mcp remove clocktrace --scope user",
+      `○ Claude Code: claude not on PATH · run by hand: ${manualRemoveCommand.claude}`,
     );
-    expect(recorded).not.toContain("claude mcp remove clocktrace --scope user");
   });
 
   it("--purge takes the database path from the agent's plist when the env var is unset", async () => {

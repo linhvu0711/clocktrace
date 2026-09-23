@@ -163,7 +163,7 @@ describe("claude host", () => {
   });
 
   it("missing from PATH is no cli and runs no remove", async () => {
-    // Given: which claude exits 1
+    // Given: claude is not on PATH
     // When
     const { value, recorded } = await run(claudeHost.unregister);
     // Then

@@ -43,7 +43,7 @@ import {
   manualCommand,
 } from "../src/hosts.js";
 import { ReportedError } from "../src/output.js";
-import { Prompt, Stdin } from "../src/prompt.js";
+import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
 import { setup } from "../src/setup.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
@@ -86,7 +86,7 @@ const fakeProcess = (code: number): CommandExecutor.Process => ({
   [NodeInspectSymbol]: () => ({}),
 });
 
-// `which` finds no host binary; every spawned add command succeeds.
+// No command runs for real: exitCode says 1 and a started process exits 0.
 const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
   [CommandExecutor.TypeId]: CommandExecutor.TypeId,
   exitCode: () => Effect.succeed(1 as CommandExecutor.ExitCode),
@@ -154,6 +154,7 @@ describe("setup", () => {
         readonly stalledSamples?: number;
       };
       readonly app?: Layer.Layer<App>;
+      readonly hostLayer?: Layer.Layer<Hosts>;
     } = {},
   ) =>
     Effect.runPromise(
@@ -183,7 +184,7 @@ describe("setup", () => {
           fakeLaunchd(state, opts.launchd),
           helperLayer,
           opts.app ?? fakeApp(appInstalls, appCommits, appRollbacks),
-          Hosts.Default,
+          opts.hostLayer ?? Hosts.Test,
           noCommandsLayer,
           Style.Test,
         );
@@ -540,5 +541,126 @@ describe("setup", () => {
     expect(output).toContain("  ✔ Claude Code registered");
     expect(output).toContain("  ✔ Codex registered");
     expect(shown).not.toContain("Hosts");
+  });
+
+  // Claude Code is found; each register is recorded and succeeds.
+  const recordingHosts = (calls: Ref.Ref<ReadonlyArray<HostName>>) =>
+    Hosts.testWith({
+      detect: () =>
+        Effect.succeed({
+          claude: true,
+          codex: false,
+          hermes: false,
+          openclaw: false,
+        }),
+      register: (host) =>
+        Ref.update(calls, (c) => [...c, host]).pipe(
+          Effect.as({ outcome: "registered" } as const),
+        ),
+    });
+
+  const running: LaunchdState = {
+    installed: true,
+    running: true,
+    plist: null,
+    installs: 0,
+  };
+
+  it("the checklist registers the ticked hosts", async () => {
+    // Given: Claude Code found, the others not
+    const calls = Effect.runSync(Ref.make<ReadonlyArray<HostName>>([]));
+    // When: down to Codex, space ticks it, enter registers claude and codex
+    const { exit, output, shown } = await run(
+      helperStub(allGranted),
+      running,
+      "/stub",
+      {
+        keys: [
+          { key: "down" },
+          { key: "down" },
+          { key: "down" },
+          { key: "space" },
+          { key: "enter" },
+        ],
+        interactive: true,
+        hostLayer: recordingHosts(calls),
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain(
+      "? Hosts  ↑↓ move · space toggle · enter register ›",
+    );
+    expect(shown).toContain("  ☒ Claude Code - found");
+    expect(shown).toContain("  ☐ Codex");
+    expect(shown).toContain("  ☐ Hermes Agent");
+    expect(shown).toContain("  ☐ OpenClaw");
+    expect(shown).toContain("  ☒ Codex");
+    expect(Effect.runSync(Ref.get(calls))).toEqual(["claude", "codex"]);
+    expect(output).toContain("  ✔ Claude Code registered");
+    expect(output).toContain("  ✔ Codex registered");
+  });
+
+  it("ctrl-c at the checklist stops setup and registers nothing", async () => {
+    // Given: Claude Code found; ctrl-c arrives at the checklist
+    const calls = Effect.runSync(Ref.make<ReadonlyArray<HostName>>([]));
+    // When
+    const { exit, output } = await run(
+      helperStub(allGranted),
+      running,
+      "/stub",
+      {
+        keys: [{ key: "c", ctrl: true }],
+        interactive: true,
+        hostLayer: recordingHosts(calls),
+      },
+    );
+    // Then
+    expect(exit).toEqual(Exit.fail(new StoppedError()));
+    expect(Effect.runSync(Ref.get(calls))).toEqual([]);
+    expect(output.every((line) => !line.endsWith("registered"))).toBe(true);
+  });
+
+  it("a key other than arrows, space, enter does nothing at the checklist", async () => {
+    // Given: Claude Code found; an unrelated key, then enter
+    const calls = Effect.runSync(Ref.make<ReadonlyArray<HostName>>([]));
+    // When
+    const { exit, output, shown } = await run(
+      helperStub(allGranted),
+      running,
+      "/stub",
+      {
+        keys: ["x", { key: "enter" }],
+        interactive: true,
+        hostLayer: recordingHosts(calls),
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown.split("Inverse Selection")).toHaveLength(2);
+    expect(output).toContain("  ✔ Claude Code registered");
+  });
+
+  it("a failed add prints the ✘ line with the manual command", async () => {
+    // Given: not a TTY; the Codex add fails
+    // When
+    const { exit, output } = await run(
+      helperStub(allGranted),
+      running,
+      "/stub",
+      {
+        hosts: ["codex"],
+        interactive: false,
+        hostLayer: Hosts.testWith({
+          register: () =>
+            Effect.succeed({ outcome: "failed", byHand: manualCommand.codex }),
+        }),
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toContain(
+      `  ✘ Codex failed · run by hand: ${manualCommand.codex}`,
+    );
   });
 });

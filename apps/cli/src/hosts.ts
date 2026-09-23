@@ -6,8 +6,6 @@ import { hermesHost } from "./hermes-host.js";
 import type { Borders, RegisterOutcome, UnregisterOutcome } from "./host.js";
 import { openclawHost } from "./openclaw-host.js";
 
-export { serverEntry, serverNode } from "./host.js";
-
 // Setup lists, ticks, and prints the Hosts in this order.
 const hostList = [claudeHost, codexHost, hermesHost, openclawHost] as const;
 
@@ -70,19 +68,21 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
       ),
   },
 }) {
+  // Tests give only the methods they need; the rest find no Host and
+  // succeed.
+  static testWith = (
+    over: Partial<Pick<Hosts, "detect" | "register" | "unregister">>,
+  ) =>
+    Layer.succeed(
+      Hosts,
+      new Hosts({
+        detect: () => Effect.succeed(byName(() => false)),
+        register: () => Effect.succeed({ outcome: "registered" } as const),
+        unregister: () => Effect.succeed("unregistered" as const),
+        ...over,
+      }),
+    );
+
   // biome-ignore lint/style/useNamingConvention: layers are PascalCase
-  static Test = Layer.succeed(
-    this,
-    new Hosts({
-      detect: () =>
-        Effect.succeed({
-          claude: false,
-          codex: false,
-          hermes: false,
-          openclaw: false,
-        }),
-      register: () => Effect.succeed({ outcome: "registered" } as const),
-      unregister: () => Effect.succeed("unregistered" as const),
-    }),
-  );
+  static Test = Hosts.testWith({});
 }

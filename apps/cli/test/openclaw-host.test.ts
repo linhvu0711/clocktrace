@@ -134,7 +134,7 @@ describe("openclaw host", () => {
   });
 
   it("missing from PATH is no cli and runs no remove", async () => {
-    // Given: which openclaw exits 1
+    // Given: openclaw is not on PATH
     // When
     const { value, recorded } = await run(openclawHost.unregister);
     // Then
