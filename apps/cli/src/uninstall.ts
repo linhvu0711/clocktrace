@@ -6,7 +6,6 @@ import {
   appBundleId,
   CollectorPaths,
   Launchd,
-  plistEnv,
 } from "@clocktrace/collector";
 import { Command, Options } from "@effect/cli";
 import {
@@ -103,9 +102,7 @@ export const uninstall = (options: {
     );
     const dbPath = Option.getOrElse(
       envDb,
-      () =>
-        (plist === null ? null : plistEnv(plist, "CLOCKTRACE_DB")) ??
-        defaultDbPath,
+      () => plist?.databasePath ?? defaultDbPath,
     );
     yield* reportLaunchd(launchd.uninstall());
     yield* done(

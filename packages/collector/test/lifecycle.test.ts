@@ -1,6 +1,7 @@
+import { Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { collectorPlist, plistEnv } from "../src/plist.js";
+import { CollectorPlistFromJson, collectorPlist } from "../src/plist.js";
 
 const input = {
   app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
@@ -12,7 +13,7 @@ const input = {
   logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
 };
 
-describe("collectorPlist", () => {
+describe("the Collector plist", () => {
   it("runs the Collector through the app's spawn verb with RunAtLoad and KeepAlive", () => {
     // Given: input
     // When
@@ -71,26 +72,33 @@ describe("collectorPlist", () => {
     // Then
     expect(has).toBe(false);
   });
-});
 
-describe("plistEnv", () => {
-  it("reads an environment value back, including an escaped &", () => {
-    // Given: a plist with a database path holding & and <
-    const databasePath = "/Users/me/Work & <Play>/clocktrace.db";
-    const plist = collectorPlist({ ...input, databasePath });
+  // What `plutil -convert json` printed on a Mac for a plist collectorPlist
+  // wrote, slashes escaped as plutil escapes them.
+  const plutilJson = String.raw`{"Label":"com.clocktrace.collector","ProgramArguments":["\/Users\/me\/Applications\/Clocktrace.app\/Contents\/MacOS\/Clocktrace","spawn","\/usr\/local\/bin\/node","\/repo\/packages\/collector\/dist\/main.js"],"RunAtLoad":true,"KeepAlive":true,"EnvironmentVariables":{"CLOCKTRACE_DB":"\/Users\/me\/Work & <Play>\/clocktrace.db","CLOCKTRACE_HELPER":"\/repo\/packages\/helper\/.build\/release\/clocktrace-helper"},"StandardOutPath":"\/Users\/me\/Library\/Logs\/clocktrace\/collector.log","StandardErrorPath":"\/Users\/me\/Library\/Logs\/clocktrace\/collector.log","ProcessType":"Background"}`;
+
+  it("the plist reads back from plutil's JSON", () => {
+    // Given: plutil's JSON for a plist with a database path holding & and <
+    const text = plutilJson;
     // When
-    const db = plistEnv(plist, "CLOCKTRACE_DB");
-    const helper = plistEnv(plist, "CLOCKTRACE_HELPER");
+    const plist = Schema.decodeUnknownSync(CollectorPlistFromJson)(text);
     // Then
-    expect(db).toBe(databasePath);
-    expect(helper).toBe(input.helperPath);
+    expect(plist).toEqual({
+      app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
+      node: "/usr/local/bin/node",
+      entry: "/repo/packages/collector/dist/main.js",
+      databasePath: "/Users/me/Work & <Play>/clocktrace.db",
+      helperPath: "/repo/packages/helper/.build/release/clocktrace-helper",
+      logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
+    });
   });
 
-  it("is null for a key the plist does not hold", () => {
-    // Given: the default plist
+  it("a plist without the spawn verb reads as none", () => {
+    // Given: the layout before the App owned the grants (ADR 0007)
+    const text = plutilJson.replace('"spawn",', "");
     // When
-    const value = plistEnv(collectorPlist(input), "CLOCKTRACE_NOPE");
+    const plist = Schema.decodeUnknownOption(CollectorPlistFromJson)(text);
     // Then
-    expect(value).toBe(null);
+    expect(plist).toEqual(Option.none());
   });
 });

@@ -3,15 +3,20 @@ import { fileURLToPath } from "node:url";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Layer, Ref, Schedule, Schema } from "effect";
+import { Data, Effect, Layer, Option, Ref, Schedule, Schema } from "effect";
 
 import { CollectorPaths } from "./paths.js";
-import { collectorLabel } from "./plist.js";
+import {
+  CollectorPlist,
+  CollectorPlistFromJson,
+  collectorLabel,
+  collectorPlist,
+} from "./plist.js";
 
 export const LaunchdState = Schema.Struct({
   installed: Schema.Boolean,
   running: Schema.Boolean,
-  plist: Schema.NullOr(Schema.String),
+  plist: Schema.NullOr(CollectorPlist),
   installs: Schema.Number,
 });
 
@@ -178,7 +183,10 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
       );
     return {
       isInstalled: () => fs.exists(plistPath).pipe(Effect.orDie),
-      readPlist: () =>
+      // The file is read first so a read error keeps its own step; plutil
+      // then parses the text. A plist in a layout we did not write reads
+      // as null, like no plist.
+      readPlist: (): Effect.Effect<CollectorPlist | null, LaunchdError> =>
         fs.readFileString(plistPath).pipe(
           Effect.catchIf(
             (e) => e._tag === "SystemError" && e.reason === "NotFound",
@@ -190,6 +198,30 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 step: `read ${plistPath}`,
                 detail: e.message,
               }),
+          ),
+          Effect.flatMap((text) =>
+            text === null
+              ? Effect.succeed(null)
+              : Command.make("plutil", "-convert", "json", "-o", "-", "-").pipe(
+                  Command.feed(text),
+                  Command.string,
+                  Effect.provideService(
+                    CommandExecutor.CommandExecutor,
+                    executor,
+                  ),
+                  Effect.mapError(
+                    (cause) =>
+                      new LaunchdError({
+                        step: "plutil",
+                        detail: String(cause),
+                      }),
+                  ),
+                  Effect.map((json) =>
+                    Option.getOrNull(
+                      Schema.decodeUnknownOption(CollectorPlistFromJson)(json),
+                    ),
+                  ),
+                ),
           ),
         ),
       bootstrap,
@@ -212,10 +244,10 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
             ),
           ),
         ),
-      install: (plist: string) =>
+      install: (plist: CollectorPlist) =>
         fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
           Effect.andThen(fs.makeDirectory(logDir, { recursive: true })),
-          Effect.andThen(fs.writeFileString(plistPath, plist)),
+          Effect.andThen(fs.writeFileString(plistPath, collectorPlist(plist))),
           Effect.mapError(
             (e) =>
               new LaunchdError({

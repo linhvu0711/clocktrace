@@ -6,6 +6,7 @@ import {
   App,
   AppError,
   CollectorPaths,
+  type CollectorPlist,
   collectorPaths,
   entryPath,
   fakeLaunchd,
@@ -114,6 +115,15 @@ const fakeApp = (
       remove: () => Ref.set(installs, 0).pipe(Effect.as("removed" as const)),
     }),
   );
+
+const samplePlist: CollectorPlist = {
+  app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
+  node: "/usr/local/bin/node",
+  entry: "/repo/main.js",
+  databasePath: "/old/clocktrace.db",
+  helperPath: "/old-helper",
+  logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
+};
 
 const manualLines = hostNames.map(
   (h) => `${hostLabel[h]}: ${manualCommand[h]}`,
@@ -249,14 +259,14 @@ describe("setup", () => {
     expect(state.installed).toBe(true);
     expect(state.running).toBe(true);
     expect(state.installs).toBe(1);
-    expect(state.plist).toContain(
-      `<string>${collectorPaths(home).appMainPath}</string>`,
-    );
-    expect(state.plist).toContain("<string>spawn</string>");
-    expect(state.plist).toContain(`<string>${process.execPath}</string>`);
-    expect(state.plist).toContain(`<string>${entryPath}</string>`);
-    expect(state.plist).toContain(`<string>${path}</string>`);
-    expect(state.plist).toContain("<string>/stub</string>");
+    expect(state.plist).toEqual({
+      app: collectorPaths(home).appMainPath,
+      node: process.execPath,
+      entry: entryPath,
+      databasePath: path,
+      helperPath: "/stub",
+      logPath: collectorPaths(home).logPath,
+    });
   });
 
   it("setup again rewrites the app and the agent and walks the permissions", async () => {
@@ -353,21 +363,21 @@ describe("setup", () => {
     const { exit, state } = await run(helperStub(allGranted), {
       installed: true,
       running: false,
-      plist: "<plist>",
+      plist: samplePlist,
       installs: 1,
     });
     // Then: the re-run rewrites the agent and loads the Collector
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(state.running).toBe(true);
     expect(state.installs).toBe(2);
-    expect(state.plist).toContain("<string>spawn</string>");
+    expect(state.plist?.helperPath).toBe("/stub");
   });
 
   it("setup fails loudly when the load step fails", async () => {
     // Given: the plist present, not loaded, and the load step fails
     const { exit, output, state } = await run(
       helperStub(allGranted),
-      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      { installed: true, running: false, plist: samplePlist, installs: 1 },
       "/stub",
       { launchd: { failBootstrap: true } },
     );
@@ -395,7 +405,7 @@ describe("setup", () => {
     // Collector never comes up (launchctl bootstrap exit 5 on a bad plist)
     const { exit, output, state, appCommits, appRollbacks } = await run(
       helperStub(allGranted),
-      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      { installed: true, running: false, plist: samplePlist, installs: 1 },
       "/stub",
       { launchd: { bootstrapStuck: true } },
     );
@@ -417,7 +427,7 @@ describe("setup", () => {
       "  starting collector…",
       "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
     ]);
-    expect(state.plist).toBe("<plist>");
+    expect(state.plist).toEqual(samplePlist);
     expect(state.installed).toBe(true);
     expect(state.installs).toBe(3);
     expect(appRollbacks).toBe(1);
@@ -429,7 +439,7 @@ describe("setup", () => {
     // after two stopped samples (RunAtLoad startup latency)
     const { exit } = await run(
       helperStub(allGranted),
-      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      { installed: true, running: false, plist: samplePlist, installs: 1 },
       "/stub",
       { launchd: { stalledSamples: 2 } },
     );

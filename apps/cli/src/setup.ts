@@ -5,7 +5,6 @@ import {
   type AppError,
   type AppMissingError,
   CollectorPaths,
-  collectorPlist,
   configuredDbPath,
   entryPath,
   Helper,
@@ -188,16 +187,14 @@ export const setup = (
             ),
           );
         yield* Effect.gen(function* () {
-          yield* launchd.install(
-            collectorPlist({
-              app: appMainPath,
-              node: process.execPath,
-              entry: entryPath,
-              databasePath,
-              helperPath,
-              logPath,
-            }),
-          );
+          yield* launchd.install({
+            app: appMainPath,
+            node: process.execPath,
+            entry: entryPath,
+            databasePath,
+            helperPath,
+            logPath,
+          });
           yield* prompt.print(collectorRows[1] ?? "");
           yield* prompt.wait(
             "  starting collector…",

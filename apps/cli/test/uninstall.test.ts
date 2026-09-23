@@ -11,8 +11,8 @@ import { join } from "node:path";
 import {
   App,
   CollectorPaths,
+  type CollectorPlist,
   collectorPaths,
-  collectorPlist,
   fakeLaunchd,
   Launchd,
   LaunchdError,
@@ -39,10 +39,19 @@ import * as MockTerminal from "./mock-terminal.js";
 
 type Key = { readonly key: string; readonly ctrl?: boolean } | string;
 
+const samplePlist: CollectorPlist = {
+  app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
+  node: "/usr/local/bin/node",
+  entry: "/repo/main.js",
+  databasePath: "/old/clocktrace.db",
+  helperPath: "/old-helper",
+  logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
+};
+
 const installedAgent: LaunchdState = {
   installed: true,
   running: true,
-  plist: "<plist>",
+  plist: samplePlist,
   installs: 1,
 };
 
@@ -130,15 +139,14 @@ describe("uninstall", () => {
   });
 
   // The plist setup would write for a database at `databasePath`.
-  const plistFor = (databasePath: string) =>
-    collectorPlist({
-      app: join(appPath, "Contents", "MacOS", "Clocktrace"),
-      node: "/usr/local/bin/node",
-      entry: "/repo/main.js",
-      databasePath,
-      helperPath: "/stub",
-      logPath: collectorPaths(home).logPath,
-    });
+  const plistFor = (databasePath: string): CollectorPlist => ({
+    app: join(appPath, "Contents", "MacOS", "Clocktrace"),
+    node: "/usr/local/bin/node",
+    entry: "/repo/main.js",
+    databasePath,
+    helperPath: "/stub",
+    logPath: collectorPaths(home).logPath,
+  });
 
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });

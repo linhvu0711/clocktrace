@@ -1,30 +1,76 @@
+import { Schema } from "effect";
+
 export const collectorLabel = "com.clocktrace.collector";
 
 const escapeXml = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-const unescapeXml = (text: string): string =>
-  text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+// What the Collector's plist holds: how launchd starts it and the settings
+// it runs with.
+export const CollectorPlist = Schema.Struct({
+  app: Schema.String,
+  node: Schema.String,
+  entry: Schema.String,
+  databasePath: Schema.String,
+  helperPath: Schema.String,
+  logPath: Schema.String,
+});
 
-// The string value that follows `<key>name</key>` in a plist written by
-// collectorPlist, or null when the key is absent.
-export const plistEnv = (text: string, name: string): string | null => {
-  const key = name.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(
-    `<key>${key}</key>\\s*<string>([^<]*)</string>`,
-  ).exec(text);
-  const value = match?.[1];
-  return value === undefined ? null : unescapeXml(value);
-};
+export type CollectorPlist = Schema.Schema.Type<typeof CollectorPlist>;
 
-export const collectorPlist = (input: {
-  readonly app: string;
-  readonly node: string;
-  readonly entry: string;
-  readonly databasePath: string;
-  readonly helperPath: string;
-  readonly logPath: string;
-}): string => `<?xml version="1.0" encoding="UTF-8"?>
+// A key of plutil's JSON, read under a camelCase name.
+const plistKey = <S extends Schema.Schema.Any>(key: string, schema: S) =>
+  Schema.propertySignature(schema).pipe(Schema.fromKey(key));
+
+// The JSON `plutil -convert json` prints for a plist collectorPlist wrote.
+// A plist in another layout does not decode.
+const PlutilJson = Schema.Struct({
+  programArguments: plistKey(
+    "ProgramArguments",
+    Schema.Tuple(
+      Schema.String,
+      Schema.Literal("spawn"),
+      Schema.String,
+      Schema.String,
+    ),
+  ),
+  environment: plistKey(
+    "EnvironmentVariables",
+    Schema.Struct({
+      databasePath: plistKey("CLOCKTRACE_DB", Schema.String),
+      helperPath: plistKey("CLOCKTRACE_HELPER", Schema.String),
+    }),
+  ),
+  logPath: plistKey("StandardOutPath", Schema.String),
+});
+
+export const CollectorPlistFromJson = Schema.transform(
+  Schema.parseJson(PlutilJson),
+  CollectorPlist,
+  {
+    strict: true,
+    decode: ({ programArguments, environment, logPath }) => ({
+      app: programArguments[0],
+      node: programArguments[2],
+      entry: programArguments[3],
+      databasePath: environment.databasePath,
+      helperPath: environment.helperPath,
+      logPath,
+    }),
+    encode: (plist) => ({
+      programArguments: [plist.app, "spawn", plist.node, plist.entry] as const,
+      environment: {
+        databasePath: plist.databasePath,
+        helperPath: plist.helperPath,
+      },
+      logPath: plist.logPath,
+    }),
+  },
+);
+
+export const collectorPlist = (
+  input: CollectorPlist,
+): string => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
