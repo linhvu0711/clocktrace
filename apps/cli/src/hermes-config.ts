@@ -1,5 +1,8 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { Data, Either } from "effect";
 import {
+  type Document,
   isMap,
   isScalar,
   type Node,
@@ -125,76 +128,159 @@ const registrationEntry = (
   };
 };
 
-export const setRegistration = (
-  text: string,
-  server: HermesServer,
+const refuse = (reason: string) =>
+  Either.left(new HermesConfigEditError({ reason }));
+
+// The parsed file as plain data, an empty file read as an empty map.
+const plain = (doc: Document): unknown =>
+  doc.contents === null ? {} : doc.toJSON();
+
+// The data minus the Registration, and minus `mcp_servers` when that
+// leaves it empty, so a file before and after an edit compare equal.
+const withoutRegistration = (data: unknown): unknown => {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) {
+    return data;
+  }
+  const { [serversKey]: servers, ...rest } = data as Record<string, unknown>;
+  if (servers === null || servers === undefined) {
+    return rest;
+  }
+  if (typeof servers !== "object" || Array.isArray(servers)) {
+    return { ...rest, [serversKey]: servers };
+  }
+  const { [registrationKey]: _, ...others } = servers as Record<
+    string,
+    unknown
+  >;
+  return Object.keys(others).length === 0
+    ? rest
+    : { ...rest, [serversKey]: others };
+};
+
+const registrationOf = (data: unknown): unknown =>
+  (data as Record<string, Record<string, unknown> | undefined> | null)?.[
+    serversKey
+  ]?.[registrationKey];
+
+// Parses the edited text again: it must hold `registration` (undefined
+// for none) and everything else the original held.
+const checkEdit = (
+  before: Document,
+  after: string,
+  registration: unknown,
 ): Either.Either<string, HermesConfigEditError> => {
-  const doc = parseDocument(text);
+  const doc = parseDocument(after);
+  if (doc.errors.length > 0) {
+    return refuse("the edited file does not parse");
+  }
+  const data = plain(doc);
+  return isDeepStrictEqual(registrationOf(data), registration) &&
+    isDeepStrictEqual(
+      withoutRegistration(data),
+      withoutRegistration(plain(before)),
+    )
+    ? Either.right(after)
+    : refuse("the edited file does not hold what it should");
+};
+
+const placeRegistration = (
+  text: string,
+  doc: Document,
+  entry: Record<string, unknown>,
+): Either.Either<string, HermesConfigEditError> => {
   const eol = lineEnd(text);
   const root = doc.contents;
+  const newServers = (step: number, indent: number) =>
+    blockLines({ [serversKey]: { [registrationKey]: entry } }, step, indent);
   if (root === null) {
-    const entry = registrationEntry(server, undefined);
     return Either.right(
       spliceLines(
         text,
         text.length,
         text.length,
-        blockLines(
-          { [serversKey]: { [registrationKey]: entry } },
-          defaultStep,
-          0,
-        ),
+        newServers(defaultStep, 0),
         eol,
       ),
     );
   }
   if (!isMap(root)) {
-    return Either.left(
-      new HermesConfigEditError({ reason: "the top level is not a map" }),
+    return refuse("the top level is not a map");
+  }
+  if (root.flow) {
+    if (root.items.length > 0) {
+      return refuse("the top level is a one-line map");
+    }
+    const from = lineStart(text, nodeStart(root));
+    const to = lineAfter(text, nodeEnd(root));
+    return Either.right(
+      spliceLines(text, from, to, newServers(defaultStep, 0), eol),
     );
   }
   const step = indentStep(text, root);
   const serversPair = findPair(root, serversKey);
   if (serversPair === undefined) {
-    const entry = registrationEntry(server, undefined);
     return Either.right(
       spliceLines(
         text,
         text.length,
         text.length,
-        blockLines(
-          { [serversKey]: { [registrationKey]: entry } },
-          step,
-          column(text, nodeStart(root.items[0]?.key)),
-        ),
+        newServers(step, column(text, nodeStart(root.items[0]?.key))),
         eol,
       ),
     );
   }
   const servers = serversPair.value;
-  if (isMap(servers) && !servers.flow && servers.items.length > 0) {
-    const old = findPair(servers, registrationKey);
+  const keyColumn = column(text, nodeStart(serversPair.key));
+  const emptyServers =
+    (isScalar(servers) && servers.value === null) ||
+    (isMap(servers) && servers.flow && servers.items.length === 0);
+  if (emptyServers) {
+    // `mcp_servers: {}` or `~` becomes `mcp_servers:`, and the
+    // Registration goes on the lines below it.
+    const keyEnd = (serversPair.key as Node).range?.[1] ?? 0;
+    const valueEnd = (servers as Node).range?.[1] ?? keyEnd;
+    const cleared = `${text.slice(0, keyEnd)}:${text.slice(valueEnd)}`;
+    const at = lineAfter(cleared, keyEnd + 1);
     const lines = blockLines(
-      { [registrationKey]: registrationEntry(server, old?.value) },
+      { [registrationKey]: entry },
       step,
-      column(text, nodeStart(servers.items[0]?.key)),
+      keyColumn + step,
     );
-    if (old !== undefined) {
-      const from = lineStart(text, nodeStart(old.key));
-      const to = lineAfter(
-        text,
-        Math.max(nodeEnd(old.key), nodeEnd(old.value)),
-      );
-      return Either.right(spliceLines(text, from, to, lines, eol));
-    }
-    const last = servers.items[servers.items.length - 1];
-    const at = lineAfter(
-      text,
-      Math.max(nodeEnd(last?.key), nodeEnd(last?.value)),
-    );
-    return Either.right(spliceLines(text, at, at, lines, eol));
+    return Either.right(spliceLines(cleared, at, at, lines, eol));
   }
-  return Either.left(
-    new HermesConfigEditError({ reason: "mcp_servers is not a block map" }),
+  if (!isMap(servers) || servers.flow) {
+    return refuse("mcp_servers is not a block map");
+  }
+  const lines = blockLines(
+    { [registrationKey]: entry },
+    step,
+    column(text, nodeStart(servers.items[0]?.key)),
+  );
+  const old = findPair(servers, registrationKey);
+  if (old !== undefined) {
+    const from = lineStart(text, nodeStart(old.key));
+    const to = lineAfter(text, Math.max(nodeEnd(old.key), nodeEnd(old.value)));
+    return Either.right(spliceLines(text, from, to, lines, eol));
+  }
+  const last = servers.items[servers.items.length - 1];
+  const at = lineAfter(
+    text,
+    Math.max(nodeEnd(last?.key), nodeEnd(last?.value)),
+  );
+  return Either.right(spliceLines(text, at, at, lines, eol));
+};
+
+export const setRegistration = (
+  text: string,
+  server: HermesServer,
+): Either.Either<string, HermesConfigEditError> => {
+  const doc = parseDocument(text);
+  if (doc.errors.length > 0) {
+    return refuse(doc.errors[0]?.message ?? "the file does not parse");
+  }
+  const old = doc.getIn([serversKey, registrationKey], true);
+  const entry = registrationEntry(server, old);
+  return placeRegistration(text, doc, entry).pipe(
+    Either.flatMap((after) => checkEdit(doc, after, entry)),
   );
 };

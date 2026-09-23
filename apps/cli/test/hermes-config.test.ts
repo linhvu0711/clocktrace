@@ -1,4 +1,4 @@
-import { Either } from "effect";
+import { Either, Option } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { type HermesServer, setRegistration } from "../src/hermes-config.js";
@@ -108,5 +108,58 @@ describe("setRegistration", () => {
     expect(result).toEqual(
       Either.right(`mcp_servers:\n${b2}  foo: {command: foo}\n`),
     );
+  });
+
+  it("mcp_servers: {} becomes a block", () => {
+    // Given
+    const text = "a: 1\nmcp_servers: {}\nz: 2\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(result).toEqual(Either.right(`a: 1\nmcp_servers:\n${b2}z: 2\n`));
+  });
+
+  it("an empty mcp_servers value becomes a block", () => {
+    // Given
+    const text = "mcp_servers:\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(result).toEqual(Either.right(`mcp_servers:\n${b2}`));
+  });
+
+  it("mcp_servers: ~ keeps its comment", () => {
+    // Given
+    const text = "mcp_servers: ~ # none\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(result).toEqual(Either.right(`mcp_servers: # none\n${b2}`));
+  });
+
+  it.each([
+    "model: [\n",
+    "a: 1\n---\nb: 2\n",
+    "- a\n",
+    "mcp_servers: text\n",
+    "mcp_servers: {foo: {command: foo}}\n",
+    "{model: x}\n",
+  ])("set stops on bad input: %j", (text) => {
+    // Given: text the edit must not touch
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(Either.getLeft(result).pipe(Option.map((e) => e._tag))).toEqual(
+      Option.some("HermesConfigEditError"),
+    );
+  });
+
+  it("a result that fails the check stops", () => {
+    // Given: a document end marker, so added lines would form a second document
+    const text = "a: 1\n...\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
   });
 });
