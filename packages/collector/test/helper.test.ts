@@ -436,6 +436,24 @@ describe("Helper shared sample files", () => {
       logs,
     }).toEqual({ count: 5, logs: [] });
   });
+
+  it("permissions decodes every line of permissions.expected.jsonl", async () => {
+    // Given: each line of the shared permissions sample as the Helper's answer
+    const answers = sharedSample("permissions.expected.jsonl")
+      .trim()
+      .split("\n");
+    // When
+    const results = await Promise.all(
+      answers.map((answer) =>
+        runHelper((helper) => helper.permissions("/x/Clocktrace.app"), answer),
+      ),
+    );
+    // Then
+    expect(results.map(({ exit }) => Exit.isSuccess(exit))).toEqual([
+      true,
+      true,
+    ]);
+  });
 });
 
 describe("openArgs", () => {
