@@ -298,9 +298,9 @@ describe("hosts", () => {
       addOpenclaw,
     ]);
     expect(lines).toEqual([
-      "claude code: registered",
-      "codex: registered",
-      "openclaw: registered",
+      { outcome: "registered" },
+      { outcome: "registered" },
+      { outcome: "registered" },
     ]);
   });
 
@@ -317,7 +317,7 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe("hermes agent: registered");
+    expect(line).toEqual({ outcome: "registered" });
     expect(parse(readFileSync(path, "utf8"))).toEqual({
       model: "nous-1",
       // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
@@ -342,9 +342,10 @@ describe("hosts", () => {
     const recorded = await Effect.runPromise(Ref.get(executor.recorded));
     // Then: remove then add, nothing more to put back
     expect(recorded).toEqual([removeCodex, addCodex]);
-    expect(line).toBe(
-      `codex: failed. run by hand: codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
-    );
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: `codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
+    });
   });
 
   it("a failed add puts back the previous claude registration", async () => {
@@ -374,7 +375,7 @@ describe("hosts", () => {
       addClaude,
       "claude mcp add --scope user clocktrace -- clocktrace mcp",
     ]);
-    expect(line).toContain("claude code: failed");
+    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.claude });
   });
 
   it("a failed add puts back the previous codex registration", async () => {
@@ -401,7 +402,7 @@ describe("hosts", () => {
       addCodex,
       "codex mcp add clocktrace -- /old/node /old/entry.js mcp",
     ]);
-    expect(line).toContain("codex: failed");
+    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.codex });
   });
 
   it("a failed add puts back the previous openclaw registration", async () => {
@@ -432,7 +433,10 @@ describe("hosts", () => {
       addOpenclaw,
       "openclaw mcp add clocktrace --command clocktrace --arg mcp",
     ]);
-    expect(line).toContain("openclaw: failed");
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: manualCommand.openclaw,
+    });
   });
 
   it("a failed add restores the prior env map too", async () => {
@@ -459,7 +463,11 @@ describe("hosts", () => {
       addCodexWithEnv,
       "codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- clocktrace mcp",
     ]);
-    expect(line).toContain("codex: failed");
+    // And the by-hand command keeps the env too
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: `codex mcp add clocktrace --env 'CLOCKTRACE_DB=/work/db.db' -- '${serverNode}' '${serverEntry}' 'mcp'`,
+    });
   });
 
   it("re-registration keeps the prior env map", async () => {
@@ -483,7 +491,7 @@ describe("hosts", () => {
       removeCodex,
       `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`,
     ]);
-    expect(line).toBe("codex: registered");
+    expect(line).toEqual({ outcome: "registered" });
   });
 
   it("a failed add does not restore a url-based registration", async () => {
@@ -506,18 +514,18 @@ describe("hosts", () => {
     const recorded = await Effect.runPromise(Ref.get(executor.recorded));
     // Then: remove then add, and no partial restore of a wrong entry
     expect(recorded).toEqual([removeClaude, addClaude]);
-    expect(line).toContain("claude code: failed");
+    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.claude });
   });
 
   it("manual commands quote the node and entry paths", () => {
     expect(manualCommand.claude).toBe(
-      `claude mcp add --scope user clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
+      `claude mcp add --scope user clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
     );
     expect(manualCommand.codex).toBe(
-      `codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
+      `codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
     );
     expect(manualCommand.openclaw).toBe(
-      `openclaw mcp add clocktrace --command '${serverNode}' --arg '${serverEntry}' --arg mcp`,
+      `openclaw mcp add clocktrace --command '${serverNode}' --arg '${serverEntry}' --arg 'mcp'`,
     );
   });
 
@@ -533,7 +541,7 @@ describe("hosts", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toContain(
-      `  ✘ Codex failed · run by hand: codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' mcp`,
+      `  ✘ Codex failed · run by hand: codex mcp add clocktrace -- '${serverNode}' '${serverEntry}' 'mcp'`,
     );
   });
 
@@ -553,12 +561,42 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe("hermes agent: registered");
+    expect(line).toEqual({ outcome: "registered" });
     expect(parse(readFileSync(path, "utf8"))).toEqual({
       model: "nous-1",
       // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
       mcp_servers: {
         clocktrace: { command: serverNode, args: [serverEntry, "mcp"] },
+      },
+    });
+  });
+
+  it("hermes re-registration keeps the env map", async () => {
+    // Given: config.yaml holds a clocktrace entry with env
+    mkdirSync(join(home, ".hermes"), { recursive: true });
+    const path = join(home, ".hermes", "config.yaml");
+    writeFileSync(
+      path,
+      'mcp_servers:\n  clocktrace:\n    command: clocktrace\n    args: ["mcp"]\n    env:\n      CLOCKTRACE_DB: /work/db.db\n',
+    );
+    // When
+    const line = await Effect.runPromise(
+      Effect.flatMap(Hosts, (h) => h.register("hermes")).pipe(
+        Effect.provide(Hosts.Default),
+        Effect.provide(NodeContext.layer),
+      ),
+    );
+    // Then
+    expect(line).toEqual({ outcome: "registered" });
+    expect(parse(readFileSync(path, "utf8"))).toEqual({
+      // biome-ignore lint/style/useNamingConvention: the yaml key is snake_case
+      mcp_servers: {
+        clocktrace: {
+          command: serverNode,
+          args: [serverEntry, "mcp"],
+          // biome-ignore lint/style/useNamingConvention: the env key is the name
+          env: { CLOCKTRACE_DB: "/work/db.db" },
+        },
       },
     });
   });
@@ -578,9 +616,10 @@ describe("hosts", () => {
     );
     chmodSync(path, 0o644);
     // Then
-    expect(line).toBe(
-      `hermes agent: failed. run by hand: ${manualCommand.hermes}`,
-    );
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: manualCommand.hermes,
+    });
     expect(readFileSync(path, "utf8")).toBe("model: nous-1\n");
   });
 
@@ -597,9 +636,10 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe(
-      `hermes agent: failed. run by hand: ${manualCommand.hermes}`,
-    );
+    expect(line).toEqual({
+      outcome: "failed",
+      byHand: manualCommand.hermes,
+    });
     expect(readFileSync(path, "utf8")).toBe("model: [\n");
   });
 
@@ -620,7 +660,7 @@ describe("hosts", () => {
       ),
     );
     // Then
-    expect(line).toBe("hermes agent: registered");
+    expect(line).toEqual({ outcome: "registered" });
     expect(lstatSync(link).isSymbolicLink()).toBe(true);
     expect(readFileSync(target, "utf8")).toContain("clocktrace");
     expect(statSync(target).mode & 0o777).toBe(0o600);

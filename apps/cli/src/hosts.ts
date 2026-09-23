@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
 import { Chunk, Data, Effect, Layer, Stream } from "effect";
-import { type Document, parseDocument } from "yaml";
+import { type Document, isMap, parseDocument } from "yaml";
 
 import { shellQuote } from "./format.js";
 
@@ -46,11 +46,112 @@ export const hostTitle: Record<HostName, string> = {
   openclaw: "OpenClaw",
 };
 
+type CliHost = Exclude<HostName, "hermes">;
+
+// The shape a host add command can express; a registration carrying any
+// other field cannot be restored through it.
+type Registration = {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly env: Readonly<Record<string, string>>;
+};
+
+const serverRegistration: Registration = {
+  command: serverNode,
+  args: [serverEntry, "mcp"],
+  env: {},
+};
+
+const envPairs = (env: Readonly<Record<string, string>>) =>
+  Object.entries(env).map(([k, v]) => `${k}=${v}`);
+
+const addArgvFor = (
+  host: CliHost,
+  { command, args, env }: Registration,
+): ReadonlyArray<string> => {
+  const pairs = envPairs(env);
+  return host === "claude"
+    ? [
+        "mcp",
+        "add",
+        "--scope",
+        "user",
+        "clocktrace",
+        ...pairs.flatMap((p) => ["-e", p]),
+        "--",
+        command,
+        ...args,
+      ]
+    : host === "codex"
+      ? [
+          "mcp",
+          "add",
+          "clocktrace",
+          ...pairs.flatMap((p) => ["--env", p]),
+          "--",
+          command,
+          ...args,
+        ]
+      : [
+          "mcp",
+          "add",
+          "clocktrace",
+          "--command",
+          command,
+          ...pairs.flatMap((p) => ["--env", p]),
+          ...args.flatMap((a) => ["--arg", a]),
+        ];
+};
+
+// The same add argv as one shell line for a person to run by hand. Variable
+// words are always quoted so the printed command is safe on any machine.
+const addCommandFor = (
+  host: CliHost,
+  { command, args, env }: Registration,
+): string => {
+  const words =
+    host === "claude"
+      ? [
+          "claude",
+          "mcp",
+          "add",
+          "--scope",
+          "user",
+          "clocktrace",
+          ...envPairs(env).flatMap((p) => ["-e", shellQuote(p)]),
+          "--",
+          shellQuote(command),
+          ...args.map(shellQuote),
+        ]
+      : host === "codex"
+        ? [
+            "codex",
+            "mcp",
+            "add",
+            "clocktrace",
+            ...envPairs(env).flatMap((p) => ["--env", shellQuote(p)]),
+            "--",
+            shellQuote(command),
+            ...args.map(shellQuote),
+          ]
+        : [
+            "openclaw",
+            "mcp",
+            "add",
+            "clocktrace",
+            "--command",
+            shellQuote(command),
+            ...envPairs(env).flatMap((p) => ["--env", shellQuote(p)]),
+            ...args.flatMap((a) => ["--arg", shellQuote(a)]),
+          ];
+  return words.join(" ");
+};
+
 export const manualCommand: Record<HostName, string> = {
-  claude: `claude mcp add --scope user clocktrace -- ${shellQuote(serverNode)} ${shellQuote(serverEntry)} mcp`,
-  codex: `codex mcp add clocktrace -- ${shellQuote(serverNode)} ${shellQuote(serverEntry)} mcp`,
+  claude: addCommandFor("claude", serverRegistration),
+  codex: addCommandFor("codex", serverRegistration),
   hermes: `add mcp_servers.clocktrace with command "${serverNode}" and args ["${serverEntry}", "mcp"] to ~/.hermes/config.yaml`,
-  openclaw: `openclaw mcp add clocktrace --command ${shellQuote(serverNode)} --arg ${shellQuote(serverEntry)} --arg mcp`,
+  openclaw: addCommandFor("openclaw", serverRegistration),
 };
 
 export const manualRemoveCommand: Record<HostName, string> = {
@@ -67,60 +168,6 @@ export class HostRemoveError extends Data.TaggedError("HostRemoveError")<{
     return `${hostTitle[this.host]} failed · run by hand: ${manualRemoveCommand[this.host]}`;
   }
 }
-
-type CliHost = Exclude<HostName, "hermes">;
-
-// The shape a host add command can express; a registration carrying any
-// other field cannot be restored through it.
-type Registration = {
-  readonly command: string;
-  readonly args: ReadonlyArray<string>;
-  readonly env: Readonly<Record<string, string>>;
-};
-
-const addArgvFor = (
-  host: CliHost,
-  { command, args, env }: Registration,
-): ReadonlyArray<string> => {
-  const pairs = Object.entries(env);
-  return host === "claude"
-    ? [
-        "mcp",
-        "add",
-        "--scope",
-        "user",
-        "clocktrace",
-        ...pairs.flatMap(([k, v]) => ["-e", `${k}=${v}`]),
-        "--",
-        command,
-        ...args,
-      ]
-    : host === "codex"
-      ? [
-          "mcp",
-          "add",
-          "clocktrace",
-          ...pairs.flatMap(([k, v]) => ["--env", `${k}=${v}`]),
-          "--",
-          command,
-          ...args,
-        ]
-      : [
-          "mcp",
-          "add",
-          "clocktrace",
-          "--command",
-          command,
-          ...pairs.flatMap(([k, v]) => ["--env", `${k}=${v}`]),
-          ...args.flatMap((a) => ["--arg", a]),
-        ];
-};
-
-const serverRegistration: Registration = {
-  command: serverNode,
-  args: [serverEntry, "mcp"],
-  env: {},
-};
 
 const removeArgv: Record<CliHost, ReadonlyArray<string>> = {
   claude: ["mcp", "remove", "clocktrace", "--scope", "user"],
@@ -442,22 +489,32 @@ const writeHermes = (
     );
   });
 
-const registerHermes: Effect.Effect<string, never, FileSystem.FileSystem> =
-  Effect.gen(function* () {
-    const { doc, exists } = yield* readHermes;
-    doc.setIn(["mcp_servers", "clocktrace"], {
-      command: serverNode,
-      args: [serverEntry, "mcp"],
-    });
-    yield* writeHermes(doc, exists);
-    return `${hostLabel.hermes}: registered`;
-  }).pipe(
-    Effect.catchAll(() =>
-      Effect.succeed(
-        `${hostLabel.hermes}: failed. run by hand: ${manualCommand.hermes}`,
-      ),
-    ),
-  );
+export type RegisterOutcome =
+  | { readonly outcome: "registered" }
+  | { readonly outcome: "failed"; readonly byHand: string };
+
+const registerHermes: Effect.Effect<
+  RegisterOutcome,
+  never,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const { doc, exists } = yield* readHermes;
+  const env = doc.getIn(["mcp_servers", "clocktrace", "env"]);
+  doc.setIn(["mcp_servers", "clocktrace"], {
+    command: serverNode,
+    args: [serverEntry, "mcp"],
+    ...(isMap(env) ? { env: env.toJSON() } : {}),
+  });
+  yield* writeHermes(doc, exists);
+  return { outcome: "registered" } as const;
+}).pipe(
+  Effect.catchAll(() =>
+    Effect.succeed({
+      outcome: "failed" as const,
+      byHand: manualCommand.hermes,
+    }),
+  ),
+);
 
 const unregisterHermes: Effect.Effect<
   UnregisterOutcome,
@@ -491,26 +548,29 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
         const hermes = yield* has(detectPath.hermes);
         return { claude, codex, hermes, openclaw };
       }),
-    register: (host: HostName): Effect.Effect<string, never, Borders> =>
+    register: (
+      host: HostName,
+    ): Effect.Effect<RegisterOutcome, never, Borders> =>
       host === "hermes"
         ? registerHermes
         : Effect.gen(function* () {
             const prior = yield* readPrior(host);
             yield* runHost(host, removeArgv[host]);
-            const { code } = yield* runHost(
-              host,
-              addArgvFor(host, {
-                ...serverRegistration,
-                env: prior?.env ?? {},
-              }),
-            );
+            const next: Registration = {
+              ...serverRegistration,
+              env: prior?.env ?? {},
+            };
+            const { code } = yield* runHost(host, addArgvFor(host, next));
             if (code === 0) {
-              return `${hostLabel[host]}: registered`;
+              return { outcome: "registered" } as const;
             }
             if (prior !== null) {
               yield* runHost(host, addArgvFor(host, prior));
             }
-            return `${hostLabel[host]}: failed. run by hand: ${manualCommand[host]}`;
+            return {
+              outcome: "failed" as const,
+              byHand: addCommandFor(host, next),
+            };
           }),
     unregister: (
       host: HostName,
@@ -545,7 +605,7 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
           hermes: false,
           openclaw: false,
         }),
-      register: (host) => Effect.succeed(`${hostLabel[host]}: registered`),
+      register: () => Effect.succeed({ outcome: "registered" } as const),
       unregister: () => Effect.succeed("unregistered" as const),
     }),
   );
