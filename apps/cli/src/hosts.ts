@@ -6,7 +6,7 @@ import type { PlatformError } from "@effect/platform/Error";
 import { Data, Effect, Either, Layer, Option } from "effect";
 
 import { claudeHost } from "./claude-host.js";
-import { envPairs, jsonPrior, noServerNamedClocktrace } from "./cli-host.js";
+import { envPairs, noServerNamedClocktrace } from "./cli-host.js";
 import { shellQuote } from "./format.js";
 import { removeRegistration, setRegistration } from "./hermes-config.js";
 import {
@@ -18,6 +18,7 @@ import {
   serverRegistration,
   type UnregisterOutcome,
 } from "./host.js";
+import { openclawHost } from "./openclaw-host.js";
 import { runCommand } from "./run-command.js";
 
 export { serverEntry, serverNode } from "./host.js";
@@ -50,32 +51,27 @@ export const hostTitle: Record<HostName, string> = {
   openclaw: "OpenClaw",
 };
 
-type CliHost = Exclude<HostName, "hermes" | "claude">;
+type CliHost = "codex";
+
+// The Hosts already in their own module; the rest still branch here.
+const moved = { claude: claudeHost, openclaw: openclawHost } as const;
+
+const isMoved = (host: HostName): host is keyof typeof moved => host in moved;
 
 const addArgvFor = (
-  host: CliHost,
+  _host: CliHost,
   { command, args, env }: Registration,
 ): ReadonlyArray<string> => {
   const pairs = envPairs(env);
-  return host === "codex"
-    ? [
-        "mcp",
-        "add",
-        "clocktrace",
-        ...pairs.flatMap((p) => ["--env", p]),
-        "--",
-        command,
-        ...args,
-      ]
-    : [
-        "mcp",
-        "add",
-        "clocktrace",
-        "--command",
-        command,
-        ...pairs.flatMap((p) => ["--env", p]),
-        ...args.flatMap((a) => ["--arg", a]),
-      ];
+  return [
+    "mcp",
+    "add",
+    "clocktrace",
+    ...pairs.flatMap((p) => ["--env", p]),
+    "--",
+    command,
+    ...args,
+  ];
 };
 
 // The same add argv as one shell line for a person to run by hand. Variable
@@ -84,28 +80,16 @@ const addCommandFor = (
   host: CliHost,
   { command, args, env }: Registration,
 ): string => {
-  const words =
-    host === "codex"
-      ? [
-          "codex",
-          "mcp",
-          "add",
-          "clocktrace",
-          ...envPairs(env).flatMap((p) => ["--env", shellQuote(p)]),
-          "--",
-          shellQuote(command),
-          ...args.map(shellQuote),
-        ]
-      : [
-          "openclaw",
-          "mcp",
-          "add",
-          "clocktrace",
-          "--command",
-          shellQuote(command),
-          ...envPairs(env).flatMap((p) => ["--env", shellQuote(p)]),
-          ...args.flatMap((a) => ["--arg", shellQuote(a)]),
-        ];
+  const words = [
+    host,
+    "mcp",
+    "add",
+    "clocktrace",
+    ...envPairs(env).flatMap((p) => ["--env", shellQuote(p)]),
+    "--",
+    shellQuote(command),
+    ...args.map(shellQuote),
+  ];
   return words.join(" ");
 };
 
@@ -113,14 +97,14 @@ export const manualCommand: Record<HostName, string> = {
   claude: claudeHost.manualAdd,
   codex: addCommandFor("codex", serverRegistration),
   hermes: `add mcp_servers.clocktrace with command "${serverNode}" and args ["${serverEntry}", "mcp"] to ~/.hermes/config.yaml`,
-  openclaw: addCommandFor("openclaw", serverRegistration),
+  openclaw: openclawHost.manualAdd,
 };
 
 export const manualRemoveCommand: Record<HostName, string> = {
   claude: claudeHost.manualRemove,
   codex: "codex mcp remove clocktrace",
   hermes: "remove mcp_servers.clocktrace from ~/.hermes/config.yaml",
-  openclaw: "openclaw mcp unset clocktrace",
+  openclaw: openclawHost.manualRemove,
 };
 
 export class HostRemoveError extends Data.TaggedError("HostRemoveError")<{
@@ -133,7 +117,6 @@ export class HostRemoveError extends Data.TaggedError("HostRemoveError")<{
 
 const removeArgv: Record<CliHost, ReadonlyArray<string>> = {
   codex: ["mcp", "remove", "clocktrace"],
-  openclaw: ["mcp", "unset", "clocktrace"],
 };
 
 const unescapeToml = (s: string): string =>
@@ -233,10 +216,6 @@ const priorConfig: Record<
     file: join(".codex", "config.toml"),
     read: codexPrior,
   },
-  openclaw: {
-    file: join(".openclaw", "openclaw.json"),
-    read: jsonPrior(["mcp", "servers", "clocktrace"]),
-  },
 };
 
 const readPrior = (
@@ -251,10 +230,9 @@ const readPrior = (
     return text === "" ? null : read(text);
   });
 
-const detectPath: Record<Exclude<HostName, "claude">, string> = {
+const detectPath: Record<"codex" | "hermes", string> = {
   codex: ".codex",
   hermes: ".hermes",
-  openclaw: ".openclaw",
 };
 
 const onPath = (
@@ -398,8 +376,7 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
         const claude = yield* claudeHost.detect;
         const codex =
           (yield* onPath("codex")) || (yield* has(detectPath.codex));
-        const openclaw =
-          (yield* onPath("openclaw")) || (yield* has(detectPath.openclaw));
+        const openclaw = yield* openclawHost.detect;
         const hermes = yield* has(detectPath.hermes);
         return { claude, codex, hermes, openclaw };
       }),
@@ -408,8 +385,8 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
     ): Effect.Effect<RegisterOutcome, never, Borders> =>
       host === "hermes"
         ? registerHermes
-        : host === "claude"
-          ? claudeHost.register
+        : isMoved(host)
+          ? moved[host].register
           : Effect.gen(function* () {
               const prior = yield* readPrior(host);
               yield* runCommand(host, removeArgv[host]);
@@ -434,8 +411,8 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
     ): Effect.Effect<UnregisterOutcome, HostRemoveError, Borders> =>
       host === "hermes"
         ? unregisterHermes
-        : host === "claude"
-          ? claudeHost.unregister.pipe(
+        : isMoved(host)
+          ? moved[host].unregister.pipe(
               Effect.flatMap((outcome) =>
                 outcome === "failed"
                   ? Effect.fail(new HostRemoveError({ host }))

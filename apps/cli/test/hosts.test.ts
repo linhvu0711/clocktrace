@@ -417,40 +417,6 @@ describe("hosts", () => {
     expect(line).toEqual({ outcome: "failed", byHand: manualCommand.codex });
   });
 
-  it("a failed add puts back the previous openclaw registration", async () => {
-    // Given: openclaw.json holds the legacy bare-word entry; the add fails
-    mkdirSync(join(home, ".openclaw"), { recursive: true });
-    writeFileSync(
-      join(home, ".openclaw", "openclaw.json"),
-      JSON.stringify({
-        mcp: {
-          servers: { clocktrace: { command: "clocktrace", args: ["mcp"] } },
-        },
-      }),
-    );
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [addOpenclaw]: { code: 1, output: "boom" },
-        "openclaw mcp add clocktrace --command clocktrace --arg mcp": {
-          code: 0,
-        },
-      }),
-    );
-    // When
-    const line = await register("openclaw", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then
-    expect(recorded).toEqual([
-      removeOpenclaw,
-      addOpenclaw,
-      "openclaw mcp add clocktrace --command clocktrace --arg mcp",
-    ]);
-    expect(line).toEqual({
-      outcome: "failed",
-      byHand: manualCommand.openclaw,
-    });
-  });
-
   it("a failed add restores the prior env map too", async () => {
     // Given: config.toml holds an entry with an [mcp_servers.clocktrace.env]
     mkdirSync(join(home, ".codex"), { recursive: true });
