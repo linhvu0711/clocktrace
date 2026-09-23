@@ -1,6 +1,7 @@
 import {
   App,
   AppMissingError,
+  appBundleId,
   appPath,
   browserName,
   type GrantState,
@@ -10,6 +11,7 @@ import {
   noAnswerNote,
   type PermissionItem,
   permissionItems,
+  tccService,
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
 import { Command } from "@effect/cli";
@@ -25,6 +27,7 @@ import type { ParseError } from "effect/ParseResult";
 
 import { type Cell, columns, line, mark, Style, span } from "./format.js";
 import { Prompt, type Stdin, type StoppedError } from "./prompt.js";
+import { runCommand } from "./run-command.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
 
 const itemLabel = (item: PermissionItem): string =>
@@ -39,6 +42,17 @@ const itemPane = (item: PermissionItem): string =>
 
 const deniedFix = (item: PermissionItem): string =>
   `denied · turn it on in System Settings › Privacy › ${itemPane(item)}`;
+
+// macOS asks once per grant. After a denial, or once an ad-hoc re-sign
+// orphans the stored grant (ADR 0007), only a reset makes it ask again.
+const resetArgs = (item: PermissionItem): ReadonlyArray<string> => [
+  "reset",
+  tccService(item.request),
+  appBundleId,
+];
+
+const resetLater = (item: PermissionItem): string =>
+  `later: tccutil ${resetArgs(item).join(" ")}, then run clocktrace permissions`;
 
 class BrowserNotRunning extends Data.TaggedError("BrowserNotRunning")<{
   readonly bundleId: string;
@@ -55,7 +69,7 @@ const joinNames = (names: ReadonlyArray<string>): string =>
 
 const askable = (item: PermissionItem, state: GrantState): boolean =>
   item.request.kind === "automation"
-    ? state === "notAsked"
+    ? state === "notAsked" || state === "denied"
     : state === "denied";
 
 export const walkPermissions = (
@@ -236,91 +250,139 @@ export const walkPermissions = (
         );
       }
     }
-    yield* Effect.forEach(
-      perms.filter((p) => askable(p.item, p.state)),
-      (perm) =>
-        Effect.gen(function* () {
-          const { item } = perm;
-          const allow = yield* prompt.confirm({
-            message: `Allow ${itemLabel(item)} (${item.gives})`,
+    type Perm = (typeof perms)[number];
+    // True when tccutil cleared the grant, so macOS can ask again.
+    const offerReset = (perm: Perm, message: string) =>
+      Effect.gen(function* () {
+        const { item } = perm;
+        const reset = yield* prompt.confirm({ message, initial: false });
+        if (!reset) {
+          perm.row = [lead("warn", item), span("warn", resetLater(item))];
+          yield* printRow(perm);
+          return false;
+        }
+        const { code } = yield* runCommand("tccutil", resetArgs(item));
+        return code === 0;
+      });
+    // True when macOS was asked and the grant is worth reading again.
+    const requestGrant = (perm: Perm) =>
+      Effect.gen(function* () {
+        const { item } = perm;
+        const request = yield* Effect.scoped(
+          helper.request(appPath, item.request),
+        ).pipe(
+          Effect.map((outcome) => ({ outcome }) as const),
+          Effect.catchTag("HelperExitedError", (e) =>
+            Effect.succeed({ error: e } as const),
+          ),
+        );
+        if ("error" in request) {
+          perm.row = [lead("bad", item), span("bad", request.error.message)];
+          yield* printRow(perm);
+          return false;
+        }
+        if (
+          request.outcome === "notRunning" &&
+          item.request.kind === "automation"
+        ) {
+          perm.state = "notRunning";
+          perm.row = [
+            lead("warn", item),
+            noteCell(item, `${browserName(item.request.bundleId)} is closed`),
+          ];
+          yield* printRow(perm);
+          return false;
+        }
+        if (item.request.kind !== "automation") {
+          yield* prompt.print(
+            item.request.kind === "fullDiskAccess"
+              ? "  → System Settings opened, turn it on for Clocktrace"
+              : "  → macOS dialog opened, turn it on for Clocktrace",
+          );
+          const turnedOn = yield* prompt.confirm({
+            message: "Turned on for Clocktrace?",
             initial: true,
           });
-          if (!allow) {
+          if (!turnedOn) {
             perm.row = [
               lead("warn", item),
-              span("warn", "later: run clocktrace permissions"),
+              span(
+                "warn",
+                "later: turn it on, then run clocktrace permissions",
+              ),
             ];
             yield* printRow(perm);
-            return;
+            return false;
           }
-          const request = yield* Effect.scoped(
-            helper.request(appPath, item.request),
-          ).pipe(
-            Effect.map((outcome) => ({ outcome }) as const),
-            Effect.catchTag("HelperExitedError", (e) =>
-              Effect.succeed({ error: e } as const),
-            ),
-          );
-          if ("error" in request) {
-            perm.row = [lead("bad", item), span("bad", request.error.message)];
-            yield* printRow(perm);
-            return;
-          }
-          if (
-            request.outcome === "notRunning" &&
-            item.request.kind === "automation"
-          ) {
-            perm.state = "notRunning";
-            perm.row = [
-              lead("warn", item),
-              noteCell(item, `${browserName(item.request.bundleId)} is closed`),
-            ];
-            yield* printRow(perm);
-            return;
-          }
-          if (item.request.kind !== "automation") {
-            yield* prompt.print(
-              item.request.kind === "fullDiskAccess"
-                ? "  → System Settings opened, turn it on for Clocktrace"
-                : "  → macOS dialog opened, turn it on for Clocktrace",
-            );
-            const turnedOn = yield* prompt.confirm({
-              message: "Turned on for Clocktrace?",
-              initial: true,
-            });
-            if (!turnedOn) {
-              perm.row = [
+        }
+        return true;
+      });
+    const recheck = (perm: Perm) =>
+      Effect.gen(function* () {
+        const { item } = perm;
+        const after = yield* Effect.scoped(helper.permissions(appPath));
+        perm.state =
+          item.request.kind === "automation"
+            ? (after.automation[item.request.bundleId] ?? perm.state)
+            : item.request.kind === "fullDiskAccess"
+              ? after.fullDiskAccess
+              : after.accessibility;
+      });
+    const printResult = (perm: Perm) => {
+      const { item } = perm;
+      perm.row =
+        perm.state === "granted"
+          ? [lead("ok", item), span("dim", "granted")]
+          : perm.state === "noAnswer" && item.request.kind === "automation"
+            ? [
                 lead("warn", item),
-                span(
-                  "warn",
-                  "later: turn it on, then run clocktrace permissions",
+                noteCell(
+                  item,
+                  noAnswerNote(browserName(item.request.bundleId)),
                 ),
-              ];
-              yield* printRow(perm);
-              return;
-            }
+              ]
+            : [lead("bad", item), span("bad", deniedFix(item))];
+      return printRow(perm);
+    };
+    const ask = (perm: Perm) =>
+      Effect.gen(function* () {
+        const { item } = perm;
+        if (item.request.kind === "automation" && perm.state === "denied") {
+          if (
+            !(yield* offerReset(
+              perm,
+              "macOS will not ask again — reset the grant for Clocktrace?",
+            ))
+          ) {
+            return;
           }
-          const after = yield* Effect.scoped(helper.permissions(appPath));
-          perm.state =
-            item.request.kind === "automation"
-              ? (after.automation[item.request.bundleId] ?? perm.state)
-              : item.request.kind === "fullDiskAccess"
-                ? after.fullDiskAccess
-                : after.accessibility;
-          perm.row =
-            perm.state === "granted"
-              ? [lead("ok", item), span("dim", "granted")]
-              : perm.state === "noAnswer" && item.request.kind === "automation"
-                ? [
-                    lead("warn", item),
-                    noteCell(
-                      item,
-                      noAnswerNote(browserName(item.request.bundleId)),
-                    ),
-                  ]
-                : [lead("bad", item), span("bad", deniedFix(item))];
+          if (yield* requestGrant(perm)) {
+            yield* recheck(perm);
+            yield* printResult(perm);
+          }
+          return;
+        }
+        const allow = yield* prompt.confirm({
+          message: `Allow ${itemLabel(item)} (${item.gives})`,
+          initial: true,
+        });
+        if (!allow) {
+          perm.row = [
+            lead("warn", item),
+            span("warn", "later: run clocktrace permissions"),
+          ];
           yield* printRow(perm);
-        }),
+          return;
+        }
+        if (!(yield* requestGrant(perm))) {
+          return;
+        }
+        yield* recheck(perm);
+        yield* printResult(perm);
+      });
+    yield* Effect.forEach(
+      perms.filter((p) => askable(p.item, p.state)),
+      ask,
     );
   });
 

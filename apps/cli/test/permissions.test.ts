@@ -255,25 +255,66 @@ describe("permissions", () => {
     expect(requests).toEqual([]);
   });
 
-  it("a browser denied earlier is never asked and shows the fix", async () => {
-    // Given: Chromium denied before the walk
+  it("a denied browser offers the reset and asks macOS again on y", async () => {
+    // Given: Chromium denied before the walk; tccutil succeeds; the re-read
+    // after the request says granted
     const p: Permissions = {
       accessibility: "granted",
       automation: { "org.chromium.Chromium": "denied" },
       fullDiskAccess: "granted",
     };
     // When
-    const { exit, output, shown, requests } = await run([p], [], true);
+    const { exit, output, shown, requests, commands } = await run(
+      [p, { ...p, automation: { "org.chromium.Chromium": "granted" } }],
+      ["y", { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "org.chromium.Chromium" },
+    ]);
+    expect(shown).toContain(
+      "macOS will not ask again — reset the grant for Clocktrace?",
+    );
+    expect(shown).not.toContain("Allow");
     expect(output).toEqual([
       "Permissions   2 of 3 granted",
       "  ✔ Accessibility          window titles",
       "  ✔ Full Disk Access       iPhone and iPad import",
-      "  ✘ Automation · Chromium  denied · turn it on in System Settings › Privacy › Automation",
+      "  ✔ Automation · Chromium  granted",
     ]);
-    expect(shown).not.toContain("Allow");
+  });
+
+  it("n at the reset offer prints the manual reset command", async () => {
+    // Given: Chromium denied before the walk, answered n at the offer
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p],
+      ["n", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
     expect(requests).toEqual([]);
+    expect(output).toEqual([
+      "Permissions   2 of 3 granted",
+      "  ✔ Accessibility          window titles",
+      "  ✔ Full Disk Access       iPhone and iPad import",
+      "  ○ Automation · Chromium  later: tccutil reset AppleEvents com.clocktrace.app, then run clocktrace permissions",
+    ]);
   });
 
   it("a browser that did not answer shows the fix and is not asked", async () => {
@@ -377,6 +418,33 @@ describe("permissions", () => {
     ]);
     expect(shown).toBe("");
     expect(requests).toEqual([]);
+  });
+
+  it("no terminal keeps a denied browser's fix row and resets nothing", async () => {
+    // Given: Chromium and full disk access denied, no TTY
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "denied",
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [p],
+      [],
+      false,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(shown).toBe("");
+    expect(output).toEqual([
+      "Permissions   1 of 3 granted",
+      "  ✔ Accessibility          window titles",
+      "  ✘ Automation · Chromium  denied · turn it on in System Settings › Privacy › Automation",
+      "  ✘ Full Disk Access       denied · turn it on in System Settings › Privacy › Full Disk Access",
+      "no terminal, skipping questions",
+    ]);
   });
 
   it("ctrl-c at a permission question stops the walk", async () => {

@@ -2,12 +2,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Command, CommandExecutor, FileSystem } from "@effect/platform";
+import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
-import { Chunk, Data, Effect, Layer, Stream } from "effect";
+import { Data, Effect, Layer } from "effect";
 import { type Document, isMap, parseDocument } from "yaml";
 
 import { shellQuote } from "./format.js";
+import { runCommand } from "./run-command.js";
 
 export const hostNames = ["claude", "codex", "hermes", "openclaw"] as const;
 
@@ -387,44 +388,6 @@ const detectPath: Record<HostName, string> = {
 
 type Borders = FileSystem.FileSystem | CommandExecutor.CommandExecutor;
 
-const collect = (
-  stream: Stream.Stream<Uint8Array, unknown>,
-): Effect.Effect<string> =>
-  stream.pipe(
-    Stream.decodeText(),
-    Stream.runCollect,
-    Effect.map((chunk) => Chunk.toReadonlyArray(chunk).join("")),
-    Effect.catchAll(() => Effect.succeed("")),
-  );
-
-const runHost = (
-  bin: string,
-  argv: ReadonlyArray<string>,
-): Effect.Effect<
-  { readonly code: number; readonly output: string },
-  never,
-  CommandExecutor.CommandExecutor
-> =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const executor = yield* CommandExecutor.CommandExecutor;
-      const process = yield* executor.start(Command.make(bin, ...argv));
-      const [stdout, stderr, code] = yield* Effect.all(
-        [
-          collect(process.stdout),
-          collect(process.stderr),
-          process.exitCode.pipe(
-            Effect.catchAll(() =>
-              Effect.succeed(1 as CommandExecutor.ExitCode),
-            ),
-          ),
-        ],
-        { concurrency: "unbounded" },
-      );
-      return { code, output: `${stdout}\n${stderr}` };
-    }),
-  ).pipe(Effect.catchAll(() => Effect.succeed({ code: 1, output: "" })));
-
 const onPath = (
   bin: string,
 ): Effect.Effect<boolean, never, CommandExecutor.CommandExecutor> =>
@@ -555,17 +518,17 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
         ? registerHermes
         : Effect.gen(function* () {
             const prior = yield* readPrior(host);
-            yield* runHost(host, removeArgv[host]);
+            yield* runCommand(host, removeArgv[host]);
             const next: Registration = {
               ...serverRegistration,
               env: prior?.env ?? {},
             };
-            const { code } = yield* runHost(host, addArgvFor(host, next));
+            const { code } = yield* runCommand(host, addArgvFor(host, next));
             if (code === 0) {
               return { outcome: "registered" } as const;
             }
             if (prior !== null) {
-              yield* runHost(host, addArgvFor(host, prior));
+              yield* runCommand(host, addArgvFor(host, prior));
             }
             return {
               outcome: "failed" as const,
@@ -583,7 +546,7 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
             if (!(yield* onPath(host))) {
               return "no cli" as const;
             }
-            const { code, output } = yield* runHost(host, removeArgv[host]);
+            const { code, output } = yield* runCommand(host, removeArgv[host]);
             if (notRegisteredPattern.test(output)) {
               return "not registered" as const;
             }
