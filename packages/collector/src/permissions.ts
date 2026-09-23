@@ -106,6 +106,19 @@ export const requestArgs = (r: GrantRequest): ReadonlyArray<string> => {
   }
 };
 
+export const tccService = (
+  r: GrantRequest,
+): "Accessibility" | "AppleEvents" | "SystemPolicyAllFiles" => {
+  switch (r.kind) {
+    case "accessibility":
+      return "Accessibility";
+    case "automation":
+      return "AppleEvents";
+    case "fullDiskAccess":
+      return "SystemPolicyAllFiles";
+  }
+};
+
 export const RequestOutcome = Schema.Literal("asked", "notRunning");
 
 export type RequestOutcome = Schema.Schema.Type<typeof RequestOutcome>;
