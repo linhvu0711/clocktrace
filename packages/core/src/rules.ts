@@ -11,7 +11,7 @@ import {
 import { decodeInput } from "./input.js";
 import { resolve } from "./matcher.js";
 import { exceedsBacktrackBudget } from "./regex-budget.js";
-import { NewRule, type Rule } from "./rule.js";
+import { NewRule, Rule } from "./rule.js";
 import { Store } from "./store.js";
 
 export const RuleInput = Schema.Struct({
@@ -20,6 +20,8 @@ export const RuleInput = Schema.Struct({
     default: () => null,
   }),
 });
+
+export const RulesReply = Schema.Struct({ rules: Schema.Array(Rule) });
 
 export const addRule = (
   encoded: Schema.Schema.Encoded<typeof RuleInput>,

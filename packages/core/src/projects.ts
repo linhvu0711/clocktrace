@@ -8,7 +8,7 @@ import {
   type StoreError,
 } from "./errors.js";
 import { decodeInput } from "./input.js";
-import { NewProject, type Project } from "./project.js";
+import { NewProject, Project } from "./project.js";
 import { Store } from "./store.js";
 
 export const ProjectInput = Schema.Struct({
@@ -16,6 +16,10 @@ export const ProjectInput = Schema.Struct({
     default: () => null,
   }),
   ...NewProject.fields,
+});
+
+export const ProjectsReply = Schema.Struct({
+  projects: Schema.Array(Project),
 });
 
 export const setProject = (

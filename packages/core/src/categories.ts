@@ -1,7 +1,7 @@
 import { Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { type Category, NewCategory } from "./category.js";
+import { Category, NewCategory } from "./category.js";
 import {
   CategoryInUseError,
   CategoryNotFoundError,
@@ -17,6 +17,10 @@ export const CategoryInput = Schema.Struct({
   }),
   ...NewCategory.fields,
   productive: Schema.optional(Schema.Boolean),
+});
+
+export const CategoriesReply = Schema.Struct({
+  categories: Schema.Array(Category),
 });
 
 export const setCategory = (
