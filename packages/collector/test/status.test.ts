@@ -18,6 +18,7 @@ import {
   type Launchd,
   type LaunchdState,
 } from "../src/launchd.js";
+import { CollectorPaths } from "../src/paths.js";
 import { readStatus, statusLines } from "../src/status.js";
 
 const dbPath = "/Users/me/Library/Application Support/clocktrace/clocktrace.db";
@@ -38,7 +39,7 @@ const runWith = <A>(
   inside: Effect.Effect<
     A,
     unknown,
-    Store | Helper | Launchd | App | DateTime.CurrentTimeZone
+    Store | Helper | Launchd | App | CollectorPaths | DateTime.CurrentTimeZone
   >,
   appLayer: Layer.Layer<App> = App.Test,
 ) =>
@@ -51,6 +52,7 @@ const runWith = <A>(
             fakeLaunchd(state),
             Store.Test,
             appLayer,
+            CollectorPaths.Test,
           ),
         ),
         Effect.withConfigProvider(config),
@@ -67,7 +69,7 @@ const runAt = <A>(
   inside: Effect.Effect<
     A,
     unknown,
-    Store | Helper | Launchd | App | DateTime.CurrentTimeZone
+    Store | Helper | Launchd | App | CollectorPaths | DateTime.CurrentTimeZone
   >,
 ) =>
   Effect.runPromise(
@@ -81,6 +83,7 @@ const runAt = <A>(
             fakeLaunchd(state),
             Store.Test,
             App.Test,
+            CollectorPaths.Test,
           ),
         ),
         Effect.withConfigProvider(config),

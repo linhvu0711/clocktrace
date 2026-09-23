@@ -1,30 +1,70 @@
+import { Schema } from "effect";
+
 export const collectorLabel = "com.clocktrace.collector";
 
 const escapeXml = (text: string): string =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
-const unescapeXml = (text: string): string =>
-  text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+// What the Collector's plist holds: how launchd starts it and the settings
+// it runs with.
+export const CollectorPlist = Schema.Struct({
+  app: Schema.String,
+  node: Schema.String,
+  entry: Schema.String,
+  databasePath: Schema.String,
+  helperPath: Schema.String,
+  logPath: Schema.String,
+});
 
-// The string value that follows `<key>name</key>` in a plist written by
-// collectorPlist, or null when the key is absent.
-export const plistEnv = (text: string, name: string): string | null => {
-  const key = name.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(
-    `<key>${key}</key>\\s*<string>([^<]*)</string>`,
-  ).exec(text);
-  const value = match?.[1];
-  return value === undefined ? null : unescapeXml(value);
-};
+export type CollectorPlist = Schema.Schema.Type<typeof CollectorPlist>;
 
-export const collectorPlist = (input: {
-  readonly app: string;
-  readonly node: string;
-  readonly entry: string;
-  readonly databasePath: string;
-  readonly helperPath: string;
-  readonly logPath: string;
-}): string => `<?xml version="1.0" encoding="UTF-8"?>
+// A key of plutil's JSON, read under a camelCase name.
+const plistKey = <S extends Schema.Schema.Any>(key: string, schema: S) =>
+  Schema.propertySignature(schema).pipe(Schema.fromKey(key));
+
+// The settings the Collector runs with, written into its plist.
+export const CollectorSettings = Schema.Struct({
+  databasePath: Schema.String,
+  helperPath: Schema.String,
+});
+
+export type CollectorSettings = Schema.Schema.Type<typeof CollectorSettings>;
+
+// The settings in the JSON `plutil -convert json` prints for a Collector
+// plist. Every layout setup has written holds them under the same keys, so
+// a plist from before the `spawn` verb still gives them.
+const PlutilSettings = Schema.Struct({
+  environment: plistKey(
+    "EnvironmentVariables",
+    Schema.Struct({
+      databasePath: plistKey("CLOCKTRACE_DB", Schema.String),
+      helperPath: plistKey("CLOCKTRACE_HELPER", Schema.String),
+    }),
+  ),
+});
+
+export const CollectorSettingsFromJson = Schema.transform(
+  Schema.parseJson(PlutilSettings),
+  CollectorSettings,
+  {
+    strict: true,
+    decode: ({ environment }) => environment,
+    encode: (settings) => ({ environment: settings }),
+  },
+);
+
+// A plist as it sits on disk: its text, to put back as it was, and the
+// settings it holds, or null when it holds none of ours.
+export const InstalledPlist = Schema.Struct({
+  text: Schema.String,
+  settings: Schema.NullOr(CollectorSettings),
+});
+
+export type InstalledPlist = Schema.Schema.Type<typeof InstalledPlist>;
+
+export const collectorPlist = (
+  input: CollectorPlist,
+): string => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -57,3 +97,9 @@ export const collectorPlist = (input: {
 </dict>
 </plist>
 `;
+
+// The plist install writes for these values, as readPlist gives it back.
+export const installedPlist = (plist: CollectorPlist): InstalledPlist => ({
+  text: collectorPlist(plist),
+  settings: { databasePath: plist.databasePath, helperPath: plist.helperPath },
+});

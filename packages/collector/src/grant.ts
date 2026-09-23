@@ -2,7 +2,7 @@ import { Store, type StoreError } from "@clocktrace/core";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { App, appPath } from "./app.js";
+import { App } from "./app.js";
 import {
   type GrantRequest,
   GrantState,
@@ -10,6 +10,7 @@ import {
   type HelperExitedError,
   type Permissions,
 } from "./helper.js";
+import { CollectorPaths } from "./paths.js";
 
 const browserNames: Record<string, string> = {
   "com.apple.Safari": "Safari",
@@ -291,10 +292,11 @@ export const saveLiveGrants = (
 export const grantPicture = (): Effect.Effect<
   GrantPicture,
   HelperExitedError | ParseError | StoreError,
-  App | Helper | Store
+  App | Helper | Store | CollectorPaths
 > =>
   Effect.gen(function* () {
     const app = yield* App;
+    const { appPath } = yield* CollectorPaths;
     if (!(yield* app.isInstalled())) {
       return {
         app: "missing",

@@ -14,12 +14,21 @@ import { type Command, CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import { Effect, Exit, Layer, Ref, Sink, Stream } from "effect";
 import { NodeInspectSymbol } from "effect/Inspectable";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-// `appPath` is fixed at import from `os.homedir()`, so the module is
-// imported after HOME is redirected to a temp dir — installs then write a
-// real bundle under that temp home, never the machine's ~/Applications.
+import {
+  App,
+  AppError,
+  hasDeveloperIdSignature,
+  infoPlist,
+  lsregisterPath,
+} from "../src/app.js";
+import { CollectorPaths, collectorPaths } from "../src/paths.js";
+
+// The paths are built from a temp home, so installs write a real bundle
+// there, never under the machine's ~/Applications.
 let home: string;
+let appPath: string;
 let buildDir: string;
 let helperPath: string;
 
@@ -28,15 +37,12 @@ beforeEach(() => {
   buildDir = mkdtempSync(join(tmpdir(), "clocktrace-build-"));
   helperPath = join(buildDir, "clocktrace-helper");
   writeFileSync(helperPath, "helper-bytes");
-  vi.stubEnv("HOME", home);
-  vi.resetModules();
+  appPath = collectorPaths(home).appPath;
 });
 
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
   rmSync(buildDir, { recursive: true, force: true });
-  vi.unstubAllEnvs();
-  vi.resetModules();
 });
 
 const fakeProcess = (stderrText: string): CommandExecutor.Process => ({
@@ -87,17 +93,17 @@ const DEVID =
 
 const runApp = async <A>(
   stderrText: string,
-  use: (app: import("../src/app.js").App) => Effect.Effect<A, unknown, never>,
+  use: (app: App) => Effect.Effect<A, unknown, never>,
   exitCodeFor?: (command: Command.Command) => number,
 ) => {
-  const mod = await import("../src/app.js");
   const recorded = await Effect.runPromise(
     Ref.make<ReadonlyArray<ReadonlyArray<string>>>([]),
   );
-  const layer = mod.App.DefaultWithoutDependencies.pipe(
+  const layer = App.DefaultWithoutDependencies.pipe(
     Layer.provide(
-      Layer.merge(
+      Layer.mergeAll(
         NodeFileSystem.layer,
+        CollectorPaths.Default(home),
         Layer.succeed(
           CommandExecutor.CommandExecutor,
           recordingExecutor(recorded, stderrText, exitCodeFor),
@@ -107,18 +113,17 @@ const runApp = async <A>(
   );
   const result = await Effect.runPromise(
     Effect.gen(function* () {
-      const app = yield* mod.App;
+      const app = yield* App;
       return yield* Effect.exit(use(app));
     }).pipe(Effect.provide(layer)),
   );
   const commands = await Effect.runPromise(Ref.get(recorded));
-  return { result, commands, mod };
+  return { result, commands };
 };
 
 describe("infoPlist", () => {
   it("infoPlist carries the bundle keys", async () => {
     // Given: nothing
-    const { infoPlist } = await import("../src/app.js");
     // When
     const plist = infoPlist();
     // Then
@@ -147,7 +152,6 @@ describe("infoPlist", () => {
 
   it("no CLI word is in the Info.plist", async () => {
     // Given: infoPlist()
-    const { infoPlist } = await import("../src/app.js");
     // When
     const has = /clocktrace (run|setup|start|stop|status|permissions|mcp)/.test(
       infoPlist(),
@@ -167,7 +171,6 @@ describe("hasDeveloperIdSignature", () => {
       "Authority=Developer ID Certification Authority",
       "Authority=Apple Root CA",
     ];
-    const { hasDeveloperIdSignature } = await import("../src/app.js");
     // When
     const has = hasDeveloperIdSignature(lines);
     // Then
@@ -178,7 +181,6 @@ describe("hasDeveloperIdSignature", () => {
     // Given: ad-hoc and unsigned codesign output
     const adhoc = ["Executable=/x/Clocktrace", "Signature=adhoc"];
     const unsigned = ["/x/Clocktrace: code object is not signed at all"];
-    const { hasDeveloperIdSignature } = await import("../src/app.js");
     // When
     const a = hasDeveloperIdSignature(adhoc);
     const u = hasDeveloperIdSignature(unsigned);
@@ -191,29 +193,29 @@ describe("hasDeveloperIdSignature", () => {
 describe("App.install", () => {
   it("install from a bare Helper writes the bundle, signs ad hoc, and registers", async () => {
     // Given: a temp HOME and a bare helper binary; codesign -dv reports adhoc
-    const { result, commands, mod } = await runApp(ADHOC, (app) =>
+    const { result, commands } = await runApp(ADHOC, (app) =>
       app.install(helperPath),
     );
     // Then
     expect(result).toEqual(Exit.succeed("written"));
     const appHome = join(home, "Applications", "Clocktrace.app");
     expect(readFileSync(join(appHome, "Contents", "Info.plist"), "utf8")).toBe(
-      mod.infoPlist(),
+      infoPlist(),
     );
     const mainFile = join(appHome, "Contents", "MacOS", "Clocktrace");
     expect(readFileSync(mainFile, "utf8")).toBe("helper-bytes");
     expect(statSync(mainFile).mode & 0o777).toBe(0o755);
-    const staging = `${mod.appPath}.new`;
+    const staging = `${appPath}.new`;
     expect(commands).toEqual([
       ["codesign", "-dv", join(staging, "Contents", "MacOS", "Clocktrace")],
       ["codesign", "--force", "--sign", "-", staging],
-      [mod.lsregisterPath, "-f", mod.appPath],
+      [lsregisterPath, "-f", appPath],
     ]);
   });
 
   it("install with a Developer ID Helper signs nothing and still registers", async () => {
     // Given: the same, with codesign -dv reporting a Developer ID authority
-    const { result, commands, mod } = await runApp(DEVID, (app) =>
+    const { result, commands } = await runApp(DEVID, (app) =>
       app.install(helperPath),
     );
     // Then
@@ -222,9 +224,9 @@ describe("App.install", () => {
       [
         "codesign",
         "-dv",
-        join(`${mod.appPath}.new`, "Contents", "MacOS", "Clocktrace"),
+        join(`${appPath}.new`, "Contents", "MacOS", "Clocktrace"),
       ],
-      [mod.lsregisterPath, "-f", mod.appPath],
+      [lsregisterPath, "-f", appPath],
     ]);
   });
 
@@ -235,23 +237,21 @@ describe("App.install", () => {
     const appHome = join(home, "Applications", "Clocktrace.app");
     writeFileSync(join(appHome, "Contents", "stale"), "x");
     // When
-    const { result, mod } = await runApp(ADHOC, (app) =>
-      app.install(helperPath),
-    );
+    const { result } = await runApp(ADHOC, (app) => app.install(helperPath));
     // Then: the new bundle is in place and the previous one waits in .old
     expect(result).toEqual(Exit.succeed("written"));
     expect(
       readFileSync(join(appHome, "Contents", "MacOS", "Clocktrace"), "utf8"),
     ).toBe("helper-bytes-2");
     expect(existsSync(join(appHome, "Contents", "stale"))).toBe(false);
-    expect(existsSync(join(mod.appPath, "Contents", "stale"))).toBe(false);
-    expect(existsSync(`${mod.appPath}.new`)).toBe(false);
-    expect(existsSync(`${mod.appPath}.old`)).toBe(true);
+    expect(existsSync(join(appPath, "Contents", "stale"))).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(true);
     // When: the install is committed
     const committed = await runApp(ADHOC, (app) => app.commit());
     // Then: the rollback copy is gone
     expect(committed.result).toEqual(Exit.succeed(undefined));
-    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
   });
 
   it("rollback puts the previous app back", async () => {
@@ -259,7 +259,7 @@ describe("App.install", () => {
     await runApp(ADHOC, (app) => app.install(helperPath));
     writeFileSync(helperPath, "helper-bytes-2");
     // When: a second install lands and is rolled back
-    const { result, commands, mod } = await runApp(ADHOC, (app) =>
+    const { result, commands } = await runApp(ADHOC, (app) =>
       Effect.gen(function* () {
         yield* app.install(helperPath);
         yield* app.rollback();
@@ -269,13 +269,10 @@ describe("App.install", () => {
     // app is registered again
     expect(result).toEqual(Exit.succeed(undefined));
     expect(
-      readFileSync(
-        join(mod.appPath, "Contents", "MacOS", "Clocktrace"),
-        "utf8",
-      ),
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
     ).toBe("helper-bytes");
-    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
-    expect(commands.at(-1)).toEqual([mod.lsregisterPath, "-f", mod.appPath]);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(commands.at(-1)).toEqual([lsregisterPath, "-f", appPath]);
   });
 
   it("rollback without .old is a no-op", async () => {
@@ -289,12 +286,12 @@ describe("App.install", () => {
 
   it("rollback restores .old when no app is live", async () => {
     // Given: a previous bundle parked in .old and nothing at the live path
-    const { mod } = await runApp(ADHOC, (app) => app.isInstalled());
-    mkdirSync(join(`${mod.appPath}.old`, "Contents", "MacOS"), {
+    await runApp(ADHOC, (app) => app.isInstalled());
+    mkdirSync(join(`${appPath}.old`, "Contents", "MacOS"), {
       recursive: true,
     });
     writeFileSync(
-      join(`${mod.appPath}.old`, "Contents", "MacOS", "Clocktrace"),
+      join(`${appPath}.old`, "Contents", "MacOS", "Clocktrace"),
       "old-bytes",
     );
     // When
@@ -302,13 +299,10 @@ describe("App.install", () => {
     // Then: the parked bundle is live and registered again
     expect(result).toEqual(Exit.succeed(undefined));
     expect(
-      readFileSync(
-        join(mod.appPath, "Contents", "MacOS", "Clocktrace"),
-        "utf8",
-      ),
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
     ).toBe("old-bytes");
-    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
-    expect(commands).toEqual([[mod.lsregisterPath, "-f", mod.appPath]]);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(commands).toEqual([[lsregisterPath, "-f", appPath]]);
   });
 
   it("a failed registration puts the previous app back", async () => {
@@ -316,7 +310,7 @@ describe("App.install", () => {
     await runApp(ADHOC, (app) => app.install(helperPath));
     writeFileSync(helperPath, "helper-bytes-2");
     // When: the second install's lsregister exits 1 after the swap
-    const { result, mod } = await runApp(
+    const { result } = await runApp(
       ADHOC,
       (app) => app.install(helperPath),
       (command) =>
@@ -327,17 +321,14 @@ describe("App.install", () => {
     );
     // Then: install fails, the previous bundle is back, and .old is gone
     expect(result).toEqual(
-      Exit.fail(new mod.AppError({ step: "lsregister", detail: "exit 1" })),
+      Exit.fail(new AppError({ step: "lsregister", detail: "exit 1" })),
     );
     expect(
-      readFileSync(
-        join(mod.appPath, "Contents", "MacOS", "Clocktrace"),
-        "utf8",
-      ),
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
     ).toBe("helper-bytes");
-    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
-    expect(existsSync(`${mod.appPath}.new`)).toBe(false);
-    expect(existsSync(`${mod.appPath}.reverting`)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(existsSync(`${appPath}.reverting`)).toBe(false);
   });
 
   it("install copies a built app next to the Helper whole and signs nothing", async () => {
@@ -357,7 +348,7 @@ describe("App.install", () => {
       "sig",
     );
     // When
-    const { result, commands, mod } = await runApp(ADHOC, (app) =>
+    const { result, commands } = await runApp(ADHOC, (app) =>
       app.install(helperPath),
     );
     // Then
@@ -375,7 +366,7 @@ describe("App.install", () => {
         "utf8",
       ),
     ).toBe("sig");
-    expect(commands).toEqual([[mod.lsregisterPath, "-f", mod.appPath]]);
+    expect(commands).toEqual([[lsregisterPath, "-f", appPath]]);
   });
 
   it("a failed codesign fails install with its step", async () => {
@@ -383,7 +374,7 @@ describe("App.install", () => {
     await runApp(ADHOC, (app) => app.install(helperPath));
     writeFileSync(helperPath, "helper-bytes-2");
     // When: the second install's codesign --force exits 1
-    const { result, mod } = await runApp(
+    const { result } = await runApp(
       ADHOC,
       (app) => app.install(helperPath),
       (command) =>
@@ -393,15 +384,12 @@ describe("App.install", () => {
     );
     // Then: install fails and the previous app is untouched
     expect(result).toEqual(
-      Exit.fail(new mod.AppError({ step: "codesign", detail: "exit 1" })),
+      Exit.fail(new AppError({ step: "codesign", detail: "exit 1" })),
     );
     expect(
-      readFileSync(
-        join(mod.appPath, "Contents", "MacOS", "Clocktrace"),
-        "utf8",
-      ),
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
     ).toBe("helper-bytes");
-    expect(existsSync(`${mod.appPath}.new`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
   });
 
   it("isInstalled is false before install and true after", async () => {
@@ -421,28 +409,26 @@ describe("App.install", () => {
   it("remove deletes the bundle, .old, and .new, and unregisters it", async () => {
     // Given: an installed app, a parked .old bundle, and a stale .new one
     await runApp(ADHOC, (app) => app.install(helperPath));
-    const { mod } = await runApp(ADHOC, (app) => app.isInstalled());
-    mkdirSync(join(`${mod.appPath}.old`, "Contents"), { recursive: true });
-    mkdirSync(join(`${mod.appPath}.new`, "Contents"), { recursive: true });
+    await runApp(ADHOC, (app) => app.isInstalled());
+    mkdirSync(join(`${appPath}.old`, "Contents"), { recursive: true });
+    mkdirSync(join(`${appPath}.new`, "Contents"), { recursive: true });
     // When
     const { result, commands } = await runApp(ADHOC, (app) => app.remove());
     // Then
     expect(result).toEqual(Exit.succeed("removed"));
-    expect(existsSync(mod.appPath)).toBe(false);
-    expect(existsSync(`${mod.appPath}.old`)).toBe(false);
-    expect(existsSync(`${mod.appPath}.new`)).toBe(false);
-    expect(commands).toEqual([[mod.lsregisterPath, "-u", mod.appPath]]);
+    expect(existsSync(appPath)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(commands).toEqual([[lsregisterPath, "-u", appPath]]);
   });
 
   it("remove without a bundle is absent and runs nothing", async () => {
     // Given: nothing at the app path
     // When
-    const { result, commands, mod } = await runApp(ADHOC, (app) =>
-      app.remove(),
-    );
+    const { result, commands } = await runApp(ADHOC, (app) => app.remove());
     // Then
     expect(result).toEqual(Exit.succeed("absent"));
-    expect(existsSync(mod.appPath)).toBe(false);
+    expect(existsSync(appPath)).toBe(false);
     expect(commands).toEqual([]);
   });
 });

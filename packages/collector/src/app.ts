@@ -1,12 +1,11 @@
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Chunk, Data, Effect, Layer, Stream } from "effect";
 
-export const appPath = join(homedir(), "Applications", "Clocktrace.app");
-export const appMainPath = join(appPath, "Contents", "MacOS", "Clocktrace");
+import { CollectorPaths } from "./paths.js";
+
 export const appBundleId = "com.clocktrace.app";
 export const lsregisterPath =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
@@ -59,6 +58,7 @@ export class App extends Effect.Service<App>()("App", {
   effect: Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const executor = yield* CommandExecutor.CommandExecutor;
+    const { appPath, appMainPath } = yield* CollectorPaths;
     const exit = (
       step: string,
       command: string,

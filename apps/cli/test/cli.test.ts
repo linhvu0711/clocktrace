@@ -4,9 +4,11 @@ import { join } from "node:path";
 
 import {
   App,
+  CollectorPaths,
   fakeLaunchd,
   Helper,
   type LaunchdState,
+  Lifecycle,
   type Permissions,
 } from "@clocktrace/collector";
 import { InvalidInputError, openStore } from "@clocktrace/core";
@@ -77,10 +79,12 @@ describe("cli", () => {
           Prompt.Default,
           Stdin.Test,
           fakeLaunchd(state),
+          Lifecycle.Test,
           helperStub(allGranted),
           App.Test,
           Hosts.Test(),
           Style.Test,
+          CollectorPaths.Test,
         );
         const exit = yield* Effect.exit(
           run([...argv]).pipe(Effect.provide(layers)),

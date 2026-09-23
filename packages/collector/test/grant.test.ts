@@ -19,6 +19,7 @@ import {
   tccService,
 } from "../src/grant.js";
 import { Helper, HelperExitedError, type Permissions } from "../src/helper.js";
+import { CollectorPaths } from "../src/paths.js";
 
 const NOW = Date.UTC(2026, 8, 19, 17, 30);
 
@@ -60,9 +61,10 @@ const failing = (method: "setSetting" | "deleteSetting") =>
     Store.Test,
   );
 
-// Runs at NOW with the given Helper and App layers over one Store.
+// Runs at NOW with the given Helper and App layers over one Store, with
+// the paths of a fixed home folder.
 const runAt = <A, E>(
-  inside: Effect.Effect<A, E, Store | Helper | App>,
+  inside: Effect.Effect<A, E, Store | Helper | App | CollectorPaths>,
   helper: Layer.Layer<Helper>,
   options: {
     readonly app?: Layer.Layer<App>;
@@ -79,6 +81,7 @@ const runAt = <A, E>(
             helper,
             options.store ?? Store.Test,
             options.app ?? App.Test,
+            CollectorPaths.Test,
             Logger.replace(
               Logger.defaultLogger,
               Logger.make(({ message }) => {

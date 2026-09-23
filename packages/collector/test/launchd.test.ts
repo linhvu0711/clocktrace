@@ -1,20 +1,50 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Cause, Effect, Exit, Layer, Option, Ref, Stream } from "effect";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  Cause,
+  Effect,
+  Exit,
+  Layer,
+  Option,
+  Ref,
+  Schema,
+  Stream,
+} from "effect";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   fakeLaunchd,
   Launchd,
   LaunchdError,
   type LaunchdState,
-  logPath,
   stateFromPrint,
 } from "../src/launchd.js";
+import { CollectorPaths, collectorPaths } from "../src/paths.js";
+import {
+  type CollectorPlist,
+  CollectorSettingsFromJson,
+  installedPlist,
+} from "../src/plist.js";
+
+const samplePlist: CollectorPlist = {
+  app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
+  node: "/usr/local/bin/node",
+  entry: "/repo/main.js",
+  databasePath: "/old/clocktrace.db",
+  helperPath: "/old-helper",
+  logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
+};
 
 describe("stateFromPrint", () => {
   it("state = running is running", () => {
@@ -60,11 +90,14 @@ describe("LaunchdError", () => {
     const error = new LaunchdError({
       step: "launchctl bootstrap",
       detail: "exit 1",
+      log: "/Users/me/Library/Logs/clocktrace/collector.log",
     });
     // When
     const message = error.message;
     // Then
-    expect(message).toBe(`launchctl bootstrap: exit 1 · see ${logPath}`);
+    expect(message).toBe(
+      "launchctl bootstrap: exit 1 · see /Users/me/Library/Logs/clocktrace/collector.log",
+    );
   });
 
   it("omits the log path for a filesystem failure", () => {
@@ -104,20 +137,25 @@ describe("fakeLaunchd failBootstrap", () => {
   it("fakeLaunchd can fail the bootstrap", async () => {
     // Given: a plist present but the Collector not loaded
     const { exit, state } = await withLaunchd(
-      { installed: true, running: false, plist: "<plist>", installs: 1 },
+      {
+        installed: true,
+        running: false,
+        plist: installedPlist(samplePlist),
+        installs: 1,
+      },
       (launchd) => launchd.bootstrap(),
     );
     // Then: bootstrap fails and the plist is left untouched
     expect(exit).toEqual(Exit.fail(bootstrapError));
     expect(state.running).toBe(false);
-    expect(state.plist).toBe("<plist>");
+    expect(state.plist).toEqual(installedPlist(samplePlist));
   });
 
   it("a failed fake install leaves no plist", async () => {
     // Given: no plist beforehand
     const { exit, state } = await withLaunchd(
       { installed: false, running: false, plist: null, installs: 0 },
-      (launchd) => launchd.install("<plist>"),
+      (launchd) => launchd.install(samplePlist),
     );
     // Then: the failed install leaves the state clean, no plist
     expect(exit).toEqual(Exit.fail(bootstrapError));
@@ -129,22 +167,24 @@ describe("fakeLaunchd failBootstrap", () => {
 
 describe("install cleanup (real service)", () => {
   let home: string;
+  let plistPath: string;
 
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "clocktrace-home-"));
-    vi.stubEnv("HOME", home);
-    vi.resetModules();
+    plistPath = collectorPaths(home).plistPath;
   });
 
   afterEach(() => {
     rmSync(home, { recursive: true, force: true });
-    vi.unstubAllEnvs();
-    vi.resetModules();
   });
 
   // A launchctl stub that reports a chosen exit code for every command,
   // except `print` which answers like launchd does when the job is gone.
-  const executor = (code: number): CommandExecutor.CommandExecutor => ({
+  // `string` answers what plutil prints.
+  const executor = (
+    code: number,
+    plutilOut = "",
+  ): CommandExecutor.CommandExecutor => ({
     [CommandExecutor.TypeId]: CommandExecutor.TypeId,
     exitCode: (command) =>
       Effect.succeed(
@@ -153,79 +193,59 @@ describe("install cleanup (real service)", () => {
           : code) as CommandExecutor.ExitCode,
       ),
     start: () => Effect.die("unused"),
-    string: () => Effect.succeed(""),
+    string: () => Effect.succeed(plutilOut),
     lines: () => Effect.succeed([]),
     stream: () => Stream.empty,
     streamLines: () => Stream.empty,
   });
 
-  // `plistPath` is fixed at import from `os.homedir()`, so the module is
-  // imported after HOME is redirected to a temp dir. install then writes and
-  // (on a failed load) removes a real plist under that temp home, never the
-  // machine's `~/Library/LaunchAgents`.
-  const runInstall = async (code: number) => {
-    const { Launchd: RealLaunchd, plistPath } = await import(
-      "../src/launchd.js"
-    );
-    const exit = await Effect.runPromise(
-      Effect.gen(function* () {
-        const launchd = yield* RealLaunchd;
-        return yield* Effect.exit(launchd.install("<plist>"));
-      }).pipe(
-        Effect.provide(
-          RealLaunchd.DefaultWithoutDependencies.pipe(
-            Layer.provide(
-              Layer.merge(
-                NodeFileSystem.layer,
-                Layer.succeed(CommandExecutor.CommandExecutor, executor(code)),
-              ),
-            ),
+  // The real service over a temp home: install writes and (on a failed
+  // load) removes a real plist there, never under the machine's
+  // `~/Library/LaunchAgents`.
+  const withExit = (code: number, plutilOut = "") =>
+    Launchd.DefaultWithoutDependencies.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          NodeFileSystem.layer,
+          CollectorPaths.Default(home),
+          Layer.succeed(
+            CommandExecutor.CommandExecutor,
+            executor(code, plutilOut),
           ),
         ),
       ),
     );
-    return { exit, plistPath };
-  };
 
-  const runReadPlist = async () => {
-    const { Launchd: RealLaunchd, plistPath } = await import(
-      "../src/launchd.js"
-    );
-    const exit = await Effect.runPromise(
+  const runInstall = (code: number) =>
+    Effect.runPromise(
       Effect.gen(function* () {
-        const launchd = yield* RealLaunchd;
-        return yield* Effect.exit(launchd.readPlist());
-      }).pipe(
-        Effect.provide(
-          RealLaunchd.DefaultWithoutDependencies.pipe(
-            Layer.provide(
-              Layer.merge(
-                NodeFileSystem.layer,
-                Layer.succeed(CommandExecutor.CommandExecutor, executor(0)),
-              ),
-            ),
-          ),
-        ),
-      ),
+        const launchd = yield* Launchd;
+        return yield* Effect.exit(launchd.install(samplePlist));
+      }).pipe(Effect.provide(withExit(code))),
     );
-    return { exit, plistPath };
-  };
+
+  const runReadPlist = (plutilOut = "") =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const launchd = yield* Launchd;
+        return yield* Effect.exit(launchd.readPlist());
+      }).pipe(Effect.provide(withExit(0, plutilOut))),
+    );
 
   it("readPlist is null when no plist exists", async () => {
     // Given: the temp home and no plist
     // When / Then
-    const { exit } = await runReadPlist();
+    const exit = await runReadPlist();
     expect(exit).toEqual(Exit.succeed(null));
   });
 
   it("readPlist fails when the plist cannot be read", async () => {
     // Given: a directory at the plist path so the read hits EISDIR, not
     // ENOENT
-    const { plistPath } = await import("../src/launchd.js");
     mkdirSync(plistPath, { recursive: true });
     // When / Then: a LaunchdError on the read step; the detail is the OS
     // message
-    const { exit } = await runReadPlist();
+    const exit = await runReadPlist();
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
       const failure = Cause.failureOption(exit.cause);
@@ -239,9 +259,47 @@ describe("install cleanup (real service)", () => {
     }
   });
 
+  it("readPlist gives the text and the settings plutil prints", async () => {
+    // Given: a plist file, and plutil printing its JSON
+    mkdirSync(dirname(plistPath), { recursive: true });
+    writeFileSync(plistPath, "<plist/>");
+    const settings = { databasePath: "/old/clocktrace.db", helperPath: "/h" };
+    const json = Schema.encodeSync(CollectorSettingsFromJson)(settings);
+    // When
+    const exit = await runReadPlist(json);
+    // Then
+    expect(exit).toEqual(Exit.succeed({ text: "<plist/>", settings }));
+  });
+
+  it("readPlist keeps the text of a plist without our settings", async () => {
+    // Given: a plist file whose JSON has none of our keys
+    mkdirSync(dirname(plistPath), { recursive: true });
+    writeFileSync(plistPath, "<plist/>");
+    // When
+    const exit = await runReadPlist("{}");
+    // Then
+    expect(exit).toEqual(Exit.succeed({ text: "<plist/>", settings: null }));
+  });
+
+  it("restore writes the old plist back as it was", async () => {
+    // Given: the text of a plist install would never write
+    const text = "<plist><!-- an older layout --></plist>\n";
+    // When
+    const exit = await Effect.runPromise(
+      Effect.exit(
+        Effect.flatMap(Launchd, (l) =>
+          l.restore({ text, settings: null }),
+        ).pipe(Effect.provide(withExit(0))),
+      ),
+    );
+    // Then: the file holds that text, byte for byte
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(readFileSync(plistPath, "utf8")).toBe(text);
+  });
+
   it("a failed real install removes the plist it wrote", async () => {
     // Given: launchctl bootstrap fails (exit 1) after the plist is written
-    const { exit, plistPath } = await runInstall(1);
+    const exit = await runInstall(1);
     // Then: install fails and the plist it wrote is gone
     expect(Exit.isFailure(exit)).toBe(true);
     expect(existsSync(plistPath)).toBe(false);
@@ -249,33 +307,38 @@ describe("install cleanup (real service)", () => {
 
   it("a successful real install writes the plist", async () => {
     // Given: launchctl bootstrap succeeds (exit 0)
-    const { exit, plistPath } = await runInstall(0);
+    const exit = await runInstall(0);
     // Then: install succeeds and the plist is present
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(existsSync(plistPath)).toBe(true);
   });
 
-  it("uninstall removes the plist", async () => {
-    // Given: a real install has written the plist
-    const { Launchd: RealLaunchd, plistPath } = await import(
-      "../src/launchd.js"
-    );
-    const layer = RealLaunchd.DefaultWithoutDependencies.pipe(
-      Layer.provide(
-        Layer.merge(
-          NodeFileSystem.layer,
-          Layer.succeed(CommandExecutor.CommandExecutor, executor(0)),
-        ),
+  it("a failed real bootstrap names the collector log", async () => {
+    // Given: launchctl bootstrap fails (exit 1) under the temp home
+    // When
+    const exit = await runInstall(1);
+    // Then: the error carries the collector log of that home
+    expect(exit).toEqual(
+      Exit.fail(
+        new LaunchdError({
+          step: "launchctl bootstrap",
+          detail: "exit 1",
+          log: collectorPaths(home).logPath,
+        }),
       ),
     );
+  });
+
+  it("uninstall removes the plist", async () => {
+    // Given: a real install has written the plist
     const seen = await Effect.runPromise(
       Effect.gen(function* () {
-        const launchd = yield* RealLaunchd;
-        yield* launchd.install("<plist>");
+        const launchd = yield* Launchd;
+        yield* launchd.install(samplePlist);
         const before = existsSync(plistPath);
         yield* launchd.uninstall();
         return { before, after: existsSync(plistPath) };
-      }).pipe(Effect.provide(layer)),
+      }).pipe(Effect.provide(withExit(0))),
     );
     // Then: uninstall removes it
     expect(seen.before).toBe(true);
@@ -284,20 +347,8 @@ describe("install cleanup (real service)", () => {
 
   it("uninstall keeps the plist when the unload fails", async () => {
     // Given: a plist written by a real install
-    const { Launchd: RealLaunchd, plistPath } = await import(
-      "../src/launchd.js"
-    );
-    const withExit = (code: number) =>
-      RealLaunchd.DefaultWithoutDependencies.pipe(
-        Layer.provide(
-          Layer.merge(
-            NodeFileSystem.layer,
-            Layer.succeed(CommandExecutor.CommandExecutor, executor(code)),
-          ),
-        ),
-      );
     await Effect.runPromise(
-      Effect.flatMap(RealLaunchd, (l) => l.install("<plist>")).pipe(
+      Effect.flatMap(Launchd, (l) => l.install(samplePlist)).pipe(
         Effect.provide(withExit(0)),
       ),
     );
@@ -305,7 +356,7 @@ describe("install cleanup (real service)", () => {
     // When: bootout fails (exit 1, e.g. the job is still loaded)
     const exit = await Effect.runPromise(
       Effect.exit(
-        Effect.flatMap(RealLaunchd, (l) => l.uninstall()).pipe(
+        Effect.flatMap(Launchd, (l) => l.uninstall()).pipe(
           Effect.provide(withExit(1)),
         ),
       ),

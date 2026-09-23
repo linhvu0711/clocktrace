@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 
-import { type LaunchdError, logPath } from "@clocktrace/collector";
+import { CollectorPaths, type LaunchdError } from "@clocktrace/collector";
 import { Options } from "@effect/cli";
 import { Data, Effect } from "effect";
 
@@ -46,11 +46,12 @@ export const reportStep = <A, E extends Error, R>(
 
 export const reportLaunchd = <A, R>(
   effect: Effect.Effect<A, LaunchdError, R>,
-): Effect.Effect<A, ReportedError, R | Prompt | Style> =>
+): Effect.Effect<A, ReportedError, R | Prompt | Style | CollectorPaths> =>
   Effect.catchTag(effect, "LaunchdError", (e) =>
     Effect.gen(function* () {
       const prompt = yield* Prompt;
       const look = yield* Style;
+      const { logPath } = yield* CollectorPaths;
       yield* prompt.printError(
         line([mark("bad", look), ` ${e.step}: ${e.detail}`], look),
       );

@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import {
   App,
+  CollectorPaths,
   fakeLaunchd,
   Helper,
   HelperExitedError,
@@ -89,6 +90,7 @@ describe("status", () => {
       | Launchd
       | Helper
       | App
+      | CollectorPaths
       | import("@effect/platform").FileSystem.FileSystem
       | DateTime.CurrentTimeZone
       | Style
@@ -109,6 +111,7 @@ describe("status", () => {
           helperStub(p),
           appLayer,
           Style.Test,
+          CollectorPaths.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
         const output = yield* console.getLines({ stripAnsi: true });
@@ -198,6 +201,7 @@ describe("status", () => {
           helperExits("boom"),
           App.Test,
           Style.Test,
+          CollectorPaths.Test,
         );
         return yield* Effect.exit(status().pipe(Effect.provide(layers)));
       }).pipe(
@@ -324,6 +328,7 @@ describe("status", () => {
           fakeLaunchd(state),
           helperStub(allGranted),
           App.Test,
+          CollectorPaths.Test,
           Layer.succeed(
             Style,
             new Style({ color: true, unicode: true, width: 0 }),

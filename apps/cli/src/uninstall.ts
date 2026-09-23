@@ -4,11 +4,9 @@ import { dirname } from "node:path";
 import {
   App,
   appBundleId,
-  appPath as defaultAppPath,
-  defaultDbPath,
-  logDir as defaultLogDir,
+  CollectorPaths,
   Launchd,
-  plistEnv,
+  Lifecycle,
 } from "@clocktrace/collector";
 import { Command, Options } from "@effect/cli";
 import {
@@ -18,7 +16,7 @@ import {
   Command as PlatformCommand,
   type Terminal,
 } from "@effect/platform";
-import { Config, Data, Effect, Either, Option } from "effect";
+import { Data, Effect, Either } from "effect";
 
 import { line, mark, Style, shellQuote, shortPath, span } from "./format.js";
 import {
@@ -46,7 +44,7 @@ export class PurgeError extends Data.TaggedError("PurgeError")<{
 // keeps other things in.
 export const purgeTargets = (
   dbPath: string,
-  defaultPath: string = defaultDbPath,
+  defaultPath: string,
 ): { readonly files: ReadonlyArray<string>; readonly dir: string | null } => ({
   files: [dbPath, `${dbPath}-wal`, `${dbPath}-shm`],
   dir: dbPath === defaultPath ? dirname(dbPath) : null,
@@ -54,16 +52,15 @@ export const purgeTargets = (
 
 export const uninstall = (options: {
   readonly purge: boolean;
-  /** Test seams: the real paths are fixed at import from the home dir. */
-  readonly logDir?: string;
-  readonly appPath?: string;
 }): Effect.Effect<
   void,
   ReportedError | StoppedError,
   | Prompt
   | Stdin
   | Launchd
+  | Lifecycle
   | App
+  | CollectorPaths
   | Hosts
   | FileSystem.FileSystem
   | CommandExecutor.CommandExecutor
@@ -73,14 +70,14 @@ export const uninstall = (options: {
 > =>
   Effect.gen(function* () {
     const launchd = yield* Launchd;
+    const lifecycle = yield* Lifecycle;
     const app = yield* App;
     const hosts = yield* Hosts;
     const prompt = yield* Prompt;
     const fs = yield* FileSystem.FileSystem;
     const look = yield* Style;
     const home = homedir();
-    const logDir = options.logDir ?? defaultLogDir;
-    const appPath = options.appPath ?? defaultAppPath;
+    const { appPath, logDir, defaultDbPath } = yield* CollectorPaths;
     const done = (text: string) =>
       prompt.print(line([mark("ok", look), ` ${text}`], look));
     const skipped = (text: string) =>
@@ -99,19 +96,10 @@ export const uninstall = (options: {
         );
 
     // setup bakes CLOCKTRACE_DB into the agent's plist, so a custom
-    // database is found there even when the env var is not set now; an
-    // env var set for this run still wins. Read it before the plist goes.
+    // database is found there even when the env var is not set now. Read
+    // it before the plist goes.
     const hadAgent = yield* launchd.isInstalled();
-    const plist = hadAgent ? yield* reportLaunchd(launchd.readPlist()) : null;
-    const envDb = yield* Effect.orDie(
-      Config.option(Config.string("CLOCKTRACE_DB")),
-    );
-    const dbPath = Option.getOrElse(
-      envDb,
-      () =>
-        (plist === null ? null : plistEnv(plist, "CLOCKTRACE_DB")) ??
-        defaultDbPath,
-    );
+    const dbPath = yield* reportLaunchd(lifecycle.databasePath());
     yield* reportLaunchd(launchd.uninstall());
     yield* done(
       hadAgent ? "launch agent removed" : "launch agent already removed",
@@ -187,7 +175,7 @@ export const uninstall = (options: {
         : true;
       if (consent) {
         const hadDb = yield* reportStep(exists(dbPath));
-        const { files, dir } = purgeTargets(dbPath);
+        const { files, dir } = purgeTargets(dbPath, defaultDbPath);
         for (const file of files) {
           yield* reportStep(remove(file));
         }

@@ -10,16 +10,26 @@ import { join } from "node:path";
 
 import {
   App,
-  collectorPlist,
-  defaultDbPath,
+  CollectorPaths,
+  type CollectorPlist,
+  collectorPaths,
   fakeLaunchd,
+  installedPlist,
   Launchd,
   LaunchdError,
   type LaunchdState,
-  logPath,
+  Lifecycle,
 } from "@clocktrace/collector";
 import { NodeContext } from "@effect/platform-node";
-import { ConfigProvider, Console, Effect, Exit, Layer, Ref } from "effect";
+import {
+  ConfigProvider,
+  Console,
+  Effect,
+  Exit,
+  Layer,
+  Ref,
+  Schedule,
+} from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Style } from "../src/format.js";
@@ -39,10 +49,19 @@ import * as MockTerminal from "./mock-terminal.js";
 
 type Key = { readonly key: string; readonly ctrl?: boolean } | string;
 
+const samplePlist: CollectorPlist = {
+  app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
+  node: "/usr/local/bin/node",
+  entry: "/repo/main.js",
+  databasePath: "/old/clocktrace.db",
+  helperPath: "/old-helper",
+  logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
+};
+
 const installedAgent: LaunchdState = {
   installed: true,
   running: true,
-  plist: "<plist>",
+  plist: installedPlist(samplePlist),
   installs: 1,
 };
 
@@ -124,20 +143,20 @@ describe("uninstall", () => {
     dir = mkdtempSync(join(tmpdir(), "clocktrace-"));
     home = mkdtempSync(join(tmpdir(), "clocktrace-home-"));
     dbPath = join(dir, "clocktrace.db");
-    logDir = join(dir, "logs");
-    appPath = join(home, "Applications", "Clocktrace.app");
+    logDir = collectorPaths(home).logDir;
+    appPath = collectorPaths(home).appPath;
     vi.stubEnv("HOME", home);
   });
 
   // The plist setup would write for a database at `databasePath`.
   const plistFor = (databasePath: string) =>
-    collectorPlist({
+    installedPlist({
       app: join(appPath, "Contents", "MacOS", "Clocktrace"),
       node: "/usr/local/bin/node",
       entry: "/repo/main.js",
       databasePath,
       helperPath: "/stub",
-      logPath: join(logDir, "collector.log"),
+      logPath: collectorPaths(home).logPath,
     });
 
   afterEach(() => {
@@ -197,14 +216,21 @@ describe("uninstall", () => {
           terminal.layer,
           Prompt.Default,
           Stdin.Test,
-          (opts.launchd ?? fakeLaunchd)(state),
-          fakeApp(appPresent, executor.recorded),
+          Lifecycle.Default(Schedule.stop).pipe(
+            Layer.provideMerge(
+              Layer.mergeAll(
+                (opts.launchd ?? fakeLaunchd)(state),
+                fakeApp(appPresent, executor.recorded),
+                CollectorPaths.Default(home),
+              ),
+            ),
+          ),
           opts.hostLayer ?? Hosts.Test(),
           executor.layer,
           Style.Test,
         );
         const exit = yield* Effect.exit(
-          uninstall({ purge: opts.purge ?? false, logDir, appPath }).pipe(
+          uninstall({ purge: opts.purge ?? false }).pipe(
             Effect.provide(layers),
           ),
         );
@@ -413,7 +439,7 @@ describe("uninstall", () => {
     // Given: the plist names a custom database; CLOCKTRACE_DB is not set
     const custom = join(dir, "custom.db");
     writeFileSync(custom, "db");
-    const hadDefault = existsSync(defaultDbPath);
+    const hadDefault = existsSync(collectorPaths(home).defaultDbPath);
     // When
     const { exit, output } = await run({
       purge: true,
@@ -423,7 +449,7 @@ describe("uninstall", () => {
     // Then: the plist's database is gone and the default one is untouched
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(existsSync(custom)).toBe(false);
-    expect(existsSync(defaultDbPath)).toBe(hadDefault);
+    expect(existsSync(collectorPaths(home).defaultDbPath)).toBe(hadDefault);
     expect(output).toContain("✔ database removed");
   });
 
@@ -501,7 +527,7 @@ describe("uninstall", () => {
     );
     expect(output).toEqual([
       "✘ launchctl bootout: exit 1",
-      `  log  ${logPath}`,
+      "  log  ~/Library/Logs/clocktrace/collector.log",
     ]);
     expect(appPresent).toBe(true);
   });

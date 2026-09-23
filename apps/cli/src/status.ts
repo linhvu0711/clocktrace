@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 
 import {
   type App,
+  type CollectorPaths,
   type DeviceStatus,
   grantCount,
   grantWords,
@@ -151,7 +152,14 @@ export const printStatus = (
 ): Effect.Effect<
   void,
   HelperExitedError | ParseError | StoreError | LaunchdError,
-  Prompt | Launchd | Helper | App | Store | DateTime.CurrentTimeZone | Style
+  | Prompt
+  | Launchd
+  | Helper
+  | App
+  | CollectorPaths
+  | Store
+  | DateTime.CurrentTimeZone
+  | Style
 > =>
   Effect.gen(function* () {
     const status = yield* readStatus();
@@ -179,6 +187,7 @@ export const status = (
   | Launchd
   | Helper
   | App
+  | CollectorPaths
   | FileSystem.FileSystem
   | DateTime.CurrentTimeZone
   | Style

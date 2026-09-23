@@ -1,17 +1,24 @@
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Data, Effect, Layer, Ref, Schedule, Schema } from "effect";
+import { Data, Effect, Layer, Option, Ref, Schedule, Schema } from "effect";
 
-import { collectorLabel } from "./plist.js";
+import { CollectorPaths } from "./paths.js";
+import {
+  type CollectorPlist,
+  CollectorSettingsFromJson,
+  collectorLabel,
+  collectorPlist,
+  InstalledPlist,
+  installedPlist,
+} from "./plist.js";
 
 export const LaunchdState = Schema.Struct({
   installed: Schema.Boolean,
   running: Schema.Boolean,
-  plist: Schema.NullOr(Schema.String),
+  plist: Schema.NullOr(InstalledPlist),
   installs: Schema.Number,
 });
 
@@ -30,20 +37,22 @@ export const fakeLaunchd = (
       new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
     );
   let samples = 0;
+  const load = (plist: InstalledPlist) =>
+    options?.failBootstrap
+      ? failed()
+      : Ref.update(state, (s) => ({
+          installed: true,
+          running: !options?.bootstrapStuck,
+          plist,
+          installs: s.installs + 1,
+        }));
   return Layer.succeed(
     Launchd,
     new Launchd({
       isInstalled: () => Ref.get(state).pipe(Effect.map((s) => s.installed)),
       readPlist: () => Ref.get(state).pipe(Effect.map((s) => s.plist)),
-      install: (plist) =>
-        options?.failBootstrap
-          ? failed()
-          : Ref.update(state, (s) => ({
-              installed: true,
-              running: !options?.bootstrapStuck,
-              plist,
-              installs: s.installs + 1,
-            })),
+      install: (plist) => load(installedPlist(plist)),
+      restore: load,
       bootstrap: () =>
         options?.failBootstrap
           ? failed()
@@ -79,15 +88,14 @@ export const fakeLaunchd = (
 export class LaunchdError extends Data.TaggedError("LaunchdError")<{
   readonly step: string;
   readonly detail: string;
+  // The collector log, set on launchctl failures only: a plist write or
+  // remove failure happens before the Collector runs, so its cause is in
+  // the step and detail, not the log.
+  readonly log?: string;
 }> {
   override get message(): string {
     const base = `${this.step}: ${this.detail}`;
-    // Only launchctl failures land in the collector log; a plist write or
-    // remove failure happens before the Collector runs, so its cause is in
-    // the step and detail, not the log.
-    return this.step.startsWith("launchctl")
-      ? `${base} · see ${logPath}`
-      : base;
+    return this.log === undefined ? base : `${base} · see ${this.log}`;
   }
 }
 
@@ -96,23 +104,13 @@ export type CollectorState = "running" | "stopped";
 export const stateFromPrint = (lines: ReadonlyArray<string>): CollectorState =>
   lines.some((l) => l.trim() === "state = running") ? "running" : "stopped";
 
-export const plistPath = join(
-  homedir(),
-  "Library",
-  "LaunchAgents",
-  `${collectorLabel}.plist`,
-);
-
-export const logDir = join(homedir(), "Library", "Logs", "clocktrace");
-
-export const logPath = join(logDir, "collector.log");
-
 export const entryPath = fileURLToPath(new URL("./main.js", import.meta.url));
 
 export class Launchd extends Effect.Service<Launchd>()("Launchd", {
   effect: Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const executor = yield* CommandExecutor.CommandExecutor;
+    const { plistPath, logDir, logPath } = yield* CollectorPaths;
     const getuid = process.getuid;
     if (getuid === undefined) {
       return yield* Effect.die(new Error("launchd needs a POSIX uid"));
@@ -123,7 +121,8 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
         Command.exitCode,
         Effect.provideService(CommandExecutor.CommandExecutor, executor),
         Effect.mapError(
-          (cause) => new LaunchdError({ step, detail: String(cause) }),
+          (cause) =>
+            new LaunchdError({ step, detail: String(cause), log: logPath }),
         ),
       );
     const state = () =>
@@ -136,6 +135,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
             new LaunchdError({
               step: "launchctl print",
               detail: String(cause),
+              log: logPath,
             }),
         ),
       );
@@ -148,6 +148,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 new LaunchdError({
                   step: "launchctl bootstrap",
                   detail: `exit ${code}`,
+                  log: logPath,
                 }),
               ),
         ),
@@ -165,6 +166,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 new LaunchdError({
                   step: "launchctl kickstart",
                   detail: `exit ${code}`,
+                  log: logPath,
                 }),
               ),
         ),
@@ -178,13 +180,77 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 new LaunchdError({
                   step: "launchctl bootout",
                   detail: `exit ${code}`,
+                  log: logPath,
                 }),
               ),
         ),
       );
+    // Writes the plist text, then loads the job from it.
+    const load = (text: string) =>
+      fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
+        Effect.andThen(fs.makeDirectory(logDir, { recursive: true })),
+        Effect.andThen(fs.writeFileString(plistPath, text)),
+        Effect.mapError(
+          (e) =>
+            new LaunchdError({
+              step: `write ${plistPath}`,
+              detail: e.message,
+            }),
+        ),
+        // Bootstrap while a previous bootout is still tearing down is
+        // accepted but queued behind it, which defers registration ~45 s;
+        // wait until launchd reports the job gone so the add lands clean.
+        Effect.andThen(
+          Effect.ignore(
+            exit(
+              "launchctl print",
+              "print",
+              `${domain}/${collectorLabel}`,
+            ).pipe(
+              Effect.flatMap((code) =>
+                code !== 0
+                  ? Effect.void
+                  : Effect.fail(
+                      new LaunchdError({
+                        step: "launchctl print",
+                        detail: "job still registered",
+                        log: logPath,
+                      }),
+                    ),
+              ),
+              Effect.retry(
+                Schedule.spaced("100 millis").pipe(Schedule.upTo("10 seconds")),
+              ),
+            ),
+          ),
+        ),
+        Effect.andThen(
+          bootstrap().pipe(
+            Effect.tapError(() =>
+              fs.remove(plistPath, { force: true }).pipe(Effect.ignore),
+            ),
+          ),
+        ),
+        // A KeepAlive job re-added after bootout waits ~45 s for launchd's
+        // spawn schedule; kickstart spawns it at once, but only once the
+        // job is registered, so retry it for a bounded window. Best-effort:
+        // a kick that never lands leaves the caller's state poll to catch it.
+        Effect.andThen(
+          Effect.ignore(
+            kickstart().pipe(
+              Effect.retry(
+                Schedule.spaced("500 millis").pipe(Schedule.upTo("15 seconds")),
+              ),
+            ),
+          ),
+        ),
+      );
     return {
       isInstalled: () => fs.exists(plistPath).pipe(Effect.orDie),
-      readPlist: () =>
+      // The file is read first so a read error keeps its own step; plutil
+      // then parses the text. The text is kept so restore can put the
+      // plist back as it was; a plist without our settings has none.
+      readPlist: (): Effect.Effect<InstalledPlist | null, LaunchdError> =>
         fs.readFileString(plistPath).pipe(
           Effect.catchIf(
             (e) => e._tag === "SystemError" && e.reason === "NotFound",
@@ -196,6 +262,33 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 step: `read ${plistPath}`,
                 detail: e.message,
               }),
+          ),
+          Effect.flatMap((text) =>
+            text === null
+              ? Effect.succeed(null)
+              : Command.make("plutil", "-convert", "json", "-o", "-", "-").pipe(
+                  Command.feed(text),
+                  Command.string,
+                  Effect.provideService(
+                    CommandExecutor.CommandExecutor,
+                    executor,
+                  ),
+                  Effect.mapError(
+                    (cause) =>
+                      new LaunchdError({
+                        step: "plutil",
+                        detail: String(cause),
+                      }),
+                  ),
+                  Effect.map((json) => ({
+                    text,
+                    settings: Option.getOrNull(
+                      Schema.decodeUnknownOption(CollectorSettingsFromJson)(
+                        json,
+                      ),
+                    ),
+                  })),
+                ),
           ),
         ),
       bootstrap,
@@ -218,68 +311,9 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
             ),
           ),
         ),
-      install: (plist: string) =>
-        fs.makeDirectory(dirname(plistPath), { recursive: true }).pipe(
-          Effect.andThen(fs.makeDirectory(logDir, { recursive: true })),
-          Effect.andThen(fs.writeFileString(plistPath, plist)),
-          Effect.mapError(
-            (e) =>
-              new LaunchdError({
-                step: `write ${plistPath}`,
-                detail: e.message,
-              }),
-          ),
-          // Bootstrap while a previous bootout is still tearing down is
-          // accepted but queued behind it, which defers registration ~45 s;
-          // wait until launchd reports the job gone so the add lands clean.
-          Effect.andThen(
-            Effect.ignore(
-              exit(
-                "launchctl print",
-                "print",
-                `${domain}/${collectorLabel}`,
-              ).pipe(
-                Effect.flatMap((code) =>
-                  code !== 0
-                    ? Effect.void
-                    : Effect.fail(
-                        new LaunchdError({
-                          step: "launchctl print",
-                          detail: "job still registered",
-                        }),
-                      ),
-                ),
-                Effect.retry(
-                  Schedule.spaced("100 millis").pipe(
-                    Schedule.upTo("10 seconds"),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Effect.andThen(
-            bootstrap().pipe(
-              Effect.tapError(() =>
-                fs.remove(plistPath, { force: true }).pipe(Effect.ignore),
-              ),
-            ),
-          ),
-          // A KeepAlive job re-added after bootout waits ~45 s for launchd's
-          // spawn schedule; kickstart spawns it at once, but only once the
-          // job is registered, so retry it for a bounded window. Best-effort:
-          // a kick that never lands leaves the caller's state poll to catch it.
-          Effect.andThen(
-            Effect.ignore(
-              kickstart().pipe(
-                Effect.retry(
-                  Schedule.spaced("500 millis").pipe(
-                    Schedule.upTo("15 seconds"),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+      install: (plist: CollectorPlist) => load(collectorPlist(plist)),
+      // Puts a plist readPlist gave back as it was, in any layout.
+      restore: (plist: InstalledPlist) => load(plist.text),
     };
   }),
   dependencies: [NodeContext.layer],

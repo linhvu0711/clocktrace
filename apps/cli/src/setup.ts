@@ -1,22 +1,17 @@
 import { homedir } from "node:os";
 
 import {
-  App,
+  type App,
   type AppError,
   type AppMissingError,
-  appMainPath,
-  appPath,
-  collectorPlist,
-  dbPathConfig,
-  entryPath,
+  CollectorPaths,
+  configuredDbPath,
   Helper,
   type HelperExitedError,
   type HelperNotFoundError,
   helperPathConfig,
-  Launchd,
-  LaunchdError,
-  logPath,
-  plistPath,
+  type LaunchdError,
+  Lifecycle,
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
@@ -26,7 +21,7 @@ import type {
   Path,
   Terminal,
 } from "@effect/platform";
-import { type DateTime, Effect, Option, Schedule } from "effect";
+import { type DateTime, Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { columns, line, mark, Style, shortPath, span } from "./format.js";
@@ -97,18 +92,8 @@ const pickHosts: Effect.Effect<
   return picked;
 });
 
-// launchctl bootstrap returns before a RunAtLoad agent has reached running,
-// so poll the state for a bounded window instead of trusting one sample.
-// A re-run boots the agent out first, and relaunching a KeepAlive job after
-// bootout takes much longer than the fresh-install path, so the window is
-// wall-clock bounded: a slow `launchctl print` must not eat the budget.
-const defaultLoadRetry = Schedule.spaced("100 millis").pipe(
-  Schedule.upTo("45 seconds"),
-);
-
 export const setup = (
   hosts?: ReadonlyArray<HostName>,
-  loadRetry: Schedule.Schedule<unknown, unknown> = defaultLoadRetry,
 ): Effect.Effect<
   void,
   | HelperNotFoundError
@@ -125,7 +110,8 @@ export const setup = (
   | Stdin
   | Helper
   | App
-  | Launchd
+  | Lifecycle
+  | CollectorPaths
   | Hosts
   | FileSystem.FileSystem
   | CommandExecutor.CommandExecutor
@@ -138,13 +124,13 @@ export const setup = (
     const helper = yield* Helper;
     const helperPath = yield* Effect.orDie(helperPathConfig);
     yield* helper.check(helperPath);
-    const databasePath = yield* Effect.orDie(dbPathConfig);
+    const databasePath = yield* Effect.orDie(configuredDbPath);
     yield* withStore(
       Effect.gen(function* () {
-        const launchd = yield* Launchd;
+        const lifecycle = yield* Lifecycle;
         const prompt = yield* Prompt;
-        const app = yield* App;
         const look = yield* Style;
+        const { appPath, plistPath, logPath } = yield* CollectorPaths;
         const home = homedir();
         yield* prompt.print(line([span("head", "Collector")], look));
         const collectorRows = columns(
@@ -161,84 +147,46 @@ export const setup = (
           ],
           look,
         );
-        yield* app.install(helperPath);
-        yield* prompt.print(collectorRows[0] ?? "");
-        const installed = yield* launchd.isInstalled();
-        const previous = installed ? yield* launchd.readPlist() : null;
-        if (installed) {
-          yield* launchd.bootout();
-        }
-        // A fresh install that fails is removed; a rewrite that fails
-        // puts the previous app and agent back, unloading the new one
-        // first so the old plist is the one launchd runs.
-        const restore = launchd
-          .uninstall()
+        yield* lifecycle
+          .install(
+            { helperPath, databasePath },
+            {
+              done: (step) =>
+                prompt.print(collectorRows[step === "app" ? 0 : 1] ?? ""),
+              starting: (wait) => prompt.wait("  starting collector…", wait),
+            },
+          )
           .pipe(
-            Effect.andThen(
-              app
-                .rollback()
-                .pipe(
-                  Effect.catchAll(() =>
-                    prompt.print("app: could not restore the previous install"),
+            Effect.catchTag("CollectorNotLoadedError", (e) =>
+              Effect.gen(function* () {
+                if (!e.appRestored) {
+                  yield* prompt.print(
+                    "app: could not restore the previous install",
+                  );
+                }
+                if (!e.agentRestored) {
+                  yield* prompt.print(
+                    "launch agent: could not restore the previous install",
+                  );
+                }
+                yield* prompt.printError(
+                  line(
+                    e.cause.step.startsWith("launchctl")
+                      ? [
+                          "  ",
+                          mark("bad", look),
+                          " collector did not start · see ",
+                          span("dim", shortPath(logPath, home)),
+                        ]
+                      : ["  ", mark("bad", look), ` ${e.cause.message}`],
+                    look,
                   ),
-                ),
-            ),
-            Effect.andThen(
-              previous === null ? Effect.void : launchd.install(previous),
-            ),
-          );
-        yield* Effect.gen(function* () {
-          yield* launchd.install(
-            collectorPlist({
-              app: appMainPath,
-              node: process.execPath,
-              entry: entryPath,
-              databasePath,
-              helperPath,
-              logPath,
-            }),
-          );
-          yield* prompt.print(collectorRows[1] ?? "");
-          yield* prompt.wait(
-            "  starting collector…",
-            launchd.state().pipe(
-              Effect.flatMap((collector) =>
-                collector === "running"
-                  ? Effect.void
-                  : new LaunchdError({
-                      step: "launchctl bootstrap",
-                      detail: "collector did not start",
-                    }),
-              ),
-              Effect.retry({ schedule: loadRetry }),
+                );
+                return yield* new ReportedError({ cause: e.cause });
+              }),
             ),
           );
-        }).pipe(
-          Effect.tapError(() => restore.pipe(Effect.ignore)),
-          Effect.catchTag("LaunchdError", (e) =>
-            prompt
-              .printError(
-                line(
-                  e.step.startsWith("launchctl")
-                    ? [
-                        "  ",
-                        mark("bad", look),
-                        " collector did not start · see ",
-                        span("dim", shortPath(logPath, home)),
-                      ]
-                    : ["  ", mark("bad", look), ` ${e.message}`],
-                  look,
-                ),
-              )
-              .pipe(
-                Effect.andThen(Effect.fail(new ReportedError({ cause: e }))),
-              ),
-          ),
-        );
         yield* prompt.print(collectorRows[2] ?? "");
-        // Outside the failure guard: a failed .old delete must not roll
-        // back a Collector that is already running.
-        yield* Effect.ignore(app.commit());
         const interactive = yield* prompt.interactive;
         yield* walkPermissions();
         const selected =

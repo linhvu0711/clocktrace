@@ -2,7 +2,7 @@ import { Store, type StoreError } from "@clocktrace/core";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 import type { App } from "./app.js";
-import { dbPathConfig } from "./config.js";
+import { configuredDbPath } from "./config.js";
 import {
   browserName,
   type GrantItem,
@@ -14,6 +14,7 @@ import type { Helper, HelperExitedError } from "./helper.js";
 import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
+import type { CollectorPaths } from "./paths.js";
 
 export const PermissionLine = Schema.Struct({
   name: Schema.String,
@@ -98,7 +99,7 @@ export const permissionLine = (item: GrantItem): PermissionLine => {
 export const readStatus = (): Effect.Effect<
   Status,
   HelperExitedError | ParseError | StoreError | LaunchdError,
-  Store | Launchd | Helper | App
+  Store | Launchd | Helper | App | CollectorPaths
 > =>
   Effect.gen(function* () {
     const picture = yield* grantPicture();
@@ -106,7 +107,7 @@ export const readStatus = (): Effect.Effect<
     const launchd = yield* Launchd;
     const collector = yield* launchd.state();
     const last = yield* store.latestActivityEnd();
-    const databasePath = yield* Effect.orDie(dbPathConfig);
+    const databasePath = yield* Effect.orDie(configuredDbPath);
     let iosImport: IosImport | null = null;
     const devices: Array<DeviceStatus> = [];
     if (
