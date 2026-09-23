@@ -10,6 +10,7 @@ import {
   Status,
 } from "@clocktrace/collector";
 import {
+  ActivitiesInput,
   ActivitiesReply,
   type AppStore,
   activities,
@@ -17,7 +18,6 @@ import {
   type CategoryInUseError,
   type CategoryNotFoundError,
   type DatabaseNewerError,
-  GroupBy,
   type InvalidInputError,
   type InvalidRangeError,
   type InvalidRuleError,
@@ -32,10 +32,12 @@ import {
   removeRule,
   Store,
   type StoreError,
+  SummaryInput,
   SummaryReply,
   setCategory,
   setProject,
   summary,
+  TimelineInput,
   TimelineReply,
   timeline,
 } from "@clocktrace/core";
@@ -46,6 +48,7 @@ import {
   type DateTime,
   Effect,
   Exit,
+  JSONSchema,
   type Layer,
   ManagedRuntime,
   Option,
@@ -96,35 +99,6 @@ const RuleOut = z.object({
   effect: z.enum(RuleEffect.literals),
   target: z.string().nullable(),
 });
-const RangeIn = z.object({ from: z.string(), to: z.string() });
-const RangeOut = z.object({
-  from: z.string(),
-  to: z.string(),
-  zone: z.string(),
-});
-const SummaryRowOut = z.object({
-  key: z.string(),
-  name: z.string(),
-  seconds: z.number().int(),
-  productive: z.boolean().optional(),
-});
-const TimelineBlockOut = z.object({
-  start: z.string(),
-  end: z.string(),
-  app: z.string(),
-  categoryName: z.string(),
-  projectName: z.string().nullable(),
-});
-const ActivityOut = z.object({
-  id: z.string(),
-  deviceId: z.string(),
-  bundleId: z.string(),
-  appName: z.string(),
-  title: z.string().nullable(),
-  url: z.string().nullable(),
-  startedAt: z.string(),
-  endedAt: z.string(),
-});
 const PermissionLineOut = z.object({
   name: z.string(),
   state: z.enum(["granted", "denied", "not checked"]),
@@ -145,6 +119,20 @@ const DeviceStatusOut = z.object({
   sync: z.enum(["synced", "stale", "never"]),
   lastActivity: z.string().nullable(),
 });
+
+// ADR 0013: the SDK takes zod, core holds Effect Schemas. zod 4.6 cannot
+// resolve the $defs of Effect's default draft-07 output, so use 2019-09.
+// Effect and zod each type JSON Schema their own way; the value is plain JSON.
+const toZod = <A, I>(schema: Schema.Schema<A, I>) =>
+  z.fromJSONSchema(
+    JSONSchema.make(schema, {
+      target: "jsonSchema2019-09",
+    }) as z.core.JSONSchema.JSONSchema,
+  );
+
+// Types and choice lists only; core checks every rule and words the error.
+const inputShape = <A, I>(schema: Schema.Schema<A, I>) =>
+  toZod(Schema.encodedSchema(schema));
 
 const instructions =
   "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, summary, timeline, activities, status. summary, timeline, and activities take range { from, to }: local dates YYYY-MM-DD or local date-times YYYY-MM-DDTHH:mm; compute words like today or this week yourself. Every reply starts with the exact window used and its zone.";
@@ -183,6 +171,32 @@ export const makeServer = async (
     { name: "clocktrace", version: version() },
     { instructions },
   );
+
+  const answer = <Reply, ReplyEncoded extends Record<string, unknown>>(
+    output: Schema.Schema<Reply, ReplyEncoded>,
+    effect: Effect.Effect<Reply, ToolError, Services>,
+  ) => run(Effect.flatMap(effect, Schema.encode(output)));
+
+  const tool = <A, I, Reply, ReplyEncoded extends Record<string, unknown>>(
+    name: string,
+    config: {
+      readonly description: string;
+      readonly input: Schema.Schema<A, I>;
+      readonly output: Schema.Schema<Reply, ReplyEncoded>;
+    },
+    handler: (input: I) => Effect.Effect<Reply, ToolError, Services>,
+  ): void => {
+    server.registerTool(
+      name,
+      {
+        description: config.description,
+        inputSchema: inputShape(config.input),
+        outputSchema: toZod(config.output),
+      },
+      // The SDK checked args against this schema's encoded side.
+      (args) => answer(config.output, handler(args as I)),
+    );
+  };
 
   server.registerTool(
     "list_categories",
@@ -315,90 +329,37 @@ export const makeServer = async (
     (input) => run(setProject({ id: input.id ?? null, name: input.name })),
   );
 
-  server.registerTool(
+  tool(
     "summary",
     {
       description:
         "Seconds per Category, Project, app, or Device in a range. range is { from, to }: each a local date YYYY-MM-DD or a local date-time YYYY-MM-DDTHH:mm in the user's zone; a bare from is midnight, a bare to is the whole of that day. Compute today, yesterday, or this week yourself and pass dates. device is a Device id, the key of groupBy device. The reply starts with range { from, to, zone }, the exact window used, then rows and total seconds.",
-      inputSchema: {
-        range: RangeIn,
-        groupBy: z.enum(GroupBy.literals),
-        device: z.string().optional(),
-      },
-      outputSchema: {
-        range: RangeOut,
-        rows: z.array(SummaryRowOut),
-        total: z.number().int(),
-        note: z.string().optional(),
-      },
+      input: SummaryInput,
+      output: SummaryReply,
     },
-    (input) =>
-      run(
-        Effect.flatMap(
-          summary({
-            range: input.range,
-            groupBy: input.groupBy,
-            device: input.device,
-          }),
-          Schema.encode(SummaryReply),
-        ),
-      ),
+    summary,
   );
 
-  server.registerTool(
+  tool(
     "timeline",
     {
       description:
         "Blocks of continuous time in one app and Category within a range, in time order, clipped to the window. Same range rules as summary. device is a Device id, the key of summary with groupBy device. The reply starts with range { from, to, zone }, then rows and total, the block count.",
-      inputSchema: { range: RangeIn, device: z.string().optional() },
-      outputSchema: {
-        range: RangeOut,
-        rows: z.array(TimelineBlockOut),
-        total: z.number().int(),
-        note: z.string().optional(),
-      },
+      input: TimelineInput,
+      output: TimelineReply,
     },
-    (input) =>
-      run(
-        Effect.flatMap(
-          timeline({ range: input.range, device: input.device }),
-          Schema.encode(TimelineReply),
-        ),
-      ),
+    timeline,
   );
 
-  server.registerTool(
+  tool(
     "activities",
     {
       description:
         "Raw Activities (app, window title, URL, start, end) in a range, in time order, at most 200 per call. hasMore true means more exist: narrow the range, or filter by app (bundle id or app name) or device (a Device id). Same range rules as summary. The reply starts with range { from, to, zone }, then rows, total, and hasMore; capped true means a limit over 200 was cut to 200.",
-      inputSchema: {
-        range: RangeIn,
-        device: z.string().optional(),
-        app: z.string().optional(),
-        limit: z.number().optional(),
-      },
-      outputSchema: {
-        range: RangeOut,
-        rows: z.array(ActivityOut),
-        total: z.number().int(),
-        hasMore: z.boolean(),
-        capped: z.literal(true).optional(),
-        note: z.string().optional(),
-      },
+      input: ActivitiesInput,
+      output: ActivitiesReply,
     },
-    (input) =>
-      run(
-        Effect.flatMap(
-          activities({
-            range: input.range,
-            device: input.device,
-            app: input.app,
-            limit: input.limit,
-          }),
-          Schema.encode(ActivitiesReply),
-        ),
-      ),
+    activities,
   );
 
   server.registerTool(

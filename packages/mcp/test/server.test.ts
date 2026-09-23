@@ -940,6 +940,54 @@ describe("server", () => {
     expect(text(result)).toMatch(/at groupBy$/);
   });
 
+  it("a from that is not a date gets core's text", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const result = await callTool(client, {
+      name: "summary",
+      arguments: { range: { from: "today", to: "2026-09-18" }, groupBy: "app" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      'range: from "today" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
+    );
+  });
+
+  it("a groupBy outside the list names the allowed values", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const result = await callTool(client, {
+      name: "summary",
+      arguments: { range: day, groupBy: "week" },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      'MCP error -32602: Input validation error: Invalid arguments for tool summary: Invalid option: expected one of "category"|"project"|"app"|"device" at groupBy',
+    );
+  });
+
+  it("a wrong type is stopped by the SDK", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const result = await callTool(client, {
+      name: "activities",
+      arguments: { range: { from: 1, to: "2026-09-18" } },
+    });
+    await close();
+    // Then
+    expect(result.isError).toBe(true);
+    expect(text(result)).toBe(
+      "MCP error -32602: Input validation error: Invalid arguments for tool activities: Invalid input: expected string, received number at range.from",
+    );
+  });
+
   it("timeline answers with the window first, then blocks in order", async () => {
     // Given: the same
     const { client, close } = await connect(withActivities(seedDay));

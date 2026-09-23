@@ -1,11 +1,4 @@
-import {
-  DateTime,
-  Effect,
-  Either,
-  Option,
-  Ref,
-  Schema,
-} from "effect";
+import { DateTime, Effect, Either, Option, Ref, Schema } from "effect";
 
 import { Activity } from "./activity.js";
 import {
