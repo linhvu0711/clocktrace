@@ -60,7 +60,7 @@ if [[ "$sign" == "1" ]]; then
   fi
 fi
 
-packages=(apps/cli apps/mcp packages/core packages/collector packages/helper)
+packages=(apps/cli packages/core packages/collector packages/mcp packages/helper)
 version_swift="packages/helper/Sources/HelperCore/Version.swift"
 version_files=("$version_swift")
 for package in "${packages[@]}"; do

@@ -23,8 +23,8 @@ Run the summary benchmark by hand with `pnpm --filter core bench`; the target is
 | `packages/core` | Activities, categories, projects, rules, queries, storage. Imported by every app. |
 | `packages/helper` | The Swift `clocktrace-helper` binary the Collector runs: `watch` prints app, title, URL, idle as JSON lines. |
 | `packages/collector` | The Collector: the loop, the Helper service, launchd control, permissions, status. The launchd agent runs its private `dist/main.js`. |
+| `packages/mcp` | The MCP server. A Host starts it through `clocktrace mcp`. |
 | `apps/cli` | The `clocktrace` command: setup, uninstall, start, stop, status, permissions, mcp. |
-| `apps/mcp` | The MCP server a Host starts. |
 
 Where code goes, and the rest of the rules, are in `CODING_STANDARDS.md`.
 
