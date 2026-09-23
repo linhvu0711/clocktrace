@@ -754,6 +754,20 @@ describe("store", () => {
     expect(after).toEqual(Option.some("2"));
   });
 
+  it("deleteSetting removes the key", async () => {
+    // Given: a store with a setting written
+    const after = await useStore((store) =>
+      Effect.gen(function* () {
+        yield* store.setSetting("a", "1");
+        // When
+        yield* store.deleteSetting("a");
+        return yield* store.getSetting("a");
+      }),
+    );
+    // Then
+    expect(after).toEqual(Option.none());
+  });
+
   it("Store.Test provides an in-memory store", async () => {
     // Given: nothing on disk
     // When

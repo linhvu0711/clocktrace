@@ -164,6 +164,9 @@ export const openStore = (
     const selectSetting = yield* prepare(() =>
       db.prepare("SELECT value FROM settings WHERE key = @key"),
     );
+    const deleteSettingStatement = yield* prepare(() =>
+      db.prepare("DELETE FROM settings WHERE key = @key"),
+    );
     const selectActivities = yield* prepare(() =>
       db.prepare(
         "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
@@ -486,6 +489,14 @@ export const openStore = (
         catch: (cause) => new StoreError({ cause }),
       });
 
+    const deleteSetting: StoreShape["deleteSetting"] = (key) =>
+      Effect.try({
+        try: () => {
+          deleteSettingStatement.run({ key });
+        },
+        catch: (cause) => new StoreError({ cause }),
+      });
+
     const seedStarterSet: StoreShape["seedStarterSet"] = () =>
       Effect.try({
         try: () =>
@@ -574,6 +585,7 @@ export const openStore = (
       upsertAppName,
       getSetting,
       setSetting,
+      deleteSetting,
       seedStarterSet,
       writeImportBatch,
     };
