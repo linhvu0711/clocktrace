@@ -1,17 +1,16 @@
 import {
   type ActivitiesInput,
-  ActivitiesPage,
+  ActivitiesReply,
   type Activity,
   type AppStore,
   activities,
-  emptyNote,
+  type InvalidInputError,
   type InvalidRangeError,
   type Store,
   type StoreError,
-  usedRange,
 } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
-import { Data, DateTime, Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import {
@@ -34,27 +33,6 @@ import {
   toOption,
   windowLine,
 } from "./window.js";
-
-// biome-ignore lint/complexity/noBannedTypes: the error has no fields
-export class BadLimitError extends Data.TaggedError("BadLimitError")<{}> {}
-
-// --limit is parsed as text so we own the error wording instead of the
-// library's "'x' is not a integer". Only a positive whole number is valid:
-// Number("") and Number("  ") are 0, so an empty flag would otherwise slip
-// through as a zero-row page. This matches the MCP tool's z.number().int()
-// .positive().
-export const parseLimit = (
-  limit: Option.Option<string>,
-): Effect.Effect<Option.Option<number>, BadLimitError> =>
-  Option.match(limit, {
-    onNone: () => Effect.succeed(Option.none()),
-    onSome: (text) => {
-      const n = Number(text);
-      return Number.isInteger(n) && n > 0
-        ? Effect.succeed(Option.some(n))
-        : Effect.fail(new BadLimitError());
-    },
-  });
 
 export const activitiesScreen = (
   rows: ReadonlyArray<Activity>,
@@ -81,22 +59,20 @@ export const activitiesScreen = (
 };
 
 export const printActivities = (
-  input: ActivitiesInput,
+  input: Schema.Schema.Encoded<typeof ActivitiesInput>,
   json: boolean,
 ): Effect.Effect<
   void,
-  InvalidRangeError | StoreError | ParseError,
+  InvalidInputError | InvalidRangeError | StoreError | ParseError,
   Store | AppStore | Prompt | DateTime.CurrentTimeZone | Style
 > =>
   Effect.gen(function* () {
     const look = yield* Style;
     const zone = yield* DateTime.CurrentTimeZone;
-    const range = yield* usedRange(input.range);
-    const page = yield* activities(input);
-    const encoded = yield* Schema.encode(ActivitiesPage)(page);
-    const lines = activitiesScreen(page.rows, zone, look);
-    const value = { range, ...encoded, ...emptyNote(encoded.rows) };
-    yield* report(json, value, (v) =>
+    const reply = yield* activities(input);
+    const encoded = yield* Schema.encode(ActivitiesReply)(reply);
+    const lines = activitiesScreen(reply.rows, zone, look);
+    yield* report(json, encoded, (v) =>
       v.note === undefined
         ? [
             windowLine(input.range, v.range.zone, look),
@@ -115,7 +91,7 @@ export const printActivities = (
                   ),
                 ]
               : []),
-            ...(input.limit !== undefined && input.limit > 200
+            ...(v.capped === true
               ? [line(["  ", span("dim", "--limit capped at 200")], look)]
               : []),
           ]
@@ -128,6 +104,8 @@ const appOption = Options.text("app").pipe(
   Options.withDescription("a bundle id or app name"),
 );
 
+// --limit is read as text and sent to core as Number(text), so core words
+// every bad value, "abc" (NaN) included, the same as for the MCP tool.
 const limitOption = Options.text("limit").pipe(
   Options.optional,
   Options.withDescription("rows to print, at most 200"),
@@ -145,15 +123,14 @@ export const activitiesCommand = Command.make(
   },
   ({ from, to, device, app, limit, json }) =>
     Effect.gen(function* () {
-      const rows = yield* parseLimit(limit);
       const range = yield* requireWindow("activities", from, to);
       return yield* whenSetUp(
         printActivities(
           {
             range,
-            deviceId: Option.getOrUndefined(device),
+            device: Option.getOrUndefined(device),
             app: Option.getOrUndefined(app),
-            limit: Option.getOrUndefined(rows),
+            limit: Option.getOrUndefined(Option.map(limit, Number)),
           },
           json,
         ),

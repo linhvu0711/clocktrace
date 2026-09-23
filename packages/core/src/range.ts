@@ -105,14 +105,5 @@ export const usedWindow = (
   zone: DateTime.zoneToString(zone),
 });
 
-export const usedRange = (
-  range: Range,
-): Effect.Effect<UsedRange, InvalidRangeError, DateTime.CurrentTimeZone> =>
-  Effect.gen(function* () {
-    const now = yield* DateTime.nowInCurrentZone;
-    const { from, to } = yield* resolveRange(range, now);
-    return usedWindow(from, to, now.zone);
-  });
-
 export type Range = Schema.Schema.Type<typeof Range>;
 export type UsedRange = Schema.Schema.Type<typeof UsedRange>;

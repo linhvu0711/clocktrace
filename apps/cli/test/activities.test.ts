@@ -1,12 +1,13 @@
 import {
+  ActivitiesReply,
   AppStore,
-  type InvalidRangeError,
+  activities,
   openStore,
   Store,
   type StoreShape,
 } from "@clocktrace/core";
 import { NodeContext } from "@effect/platform-node";
-import { Console, DateTime, Effect, Exit, Layer } from "effect";
+import { Console, DateTime, Effect, Exit, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { printActivities } from "../src/activities.js";
@@ -272,38 +273,33 @@ describe("activities", () => {
 
   it("activities --json prints the activities tool's JSON", async () => {
     // Given: seedDay
+    const input = { range: { from: "2026-09-18", to: "2026-09-18" } };
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
         const store = yield* Store;
         yield* seedDay(store);
         // When
-        yield* printActivities(
-          { range: { from: "2026-09-18", to: "2026-09-18" } },
-          true,
+        yield* printActivities(input, true);
+        return yield* Effect.flatMap(
+          activities(input),
+          Schema.encode(ActivitiesReply),
         );
       }),
     );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output.length).toBe(1);
-    const page = JSON.parse(output[0] ?? "");
-    expect(page.range).toEqual({
-      from: "2026-09-18T00:00",
-      to: "2026-09-19T00:00",
-      zone: "America/Los_Angeles",
+    // Then: the line is core's encoded reply, keys in order
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    const parsed = JSON.parse(output[0] ?? "");
+    expect({
+      lines: output.length,
+      parsed,
+      keys: Object.keys(parsed),
+    }).toEqual({
+      lines: 1,
+      parsed: exit.value,
+      keys: ["range", "rows", "total", "hasMore"],
     });
-    expect(page.rows.length).toBe(2);
-    expect(page.rows[0]).toMatchObject({
-      bundleId: "com.microsoft.VSCode",
-      appName: "Code",
-      title: "a",
-      url: null,
-      startedAt: "2026-09-18T08:00:00.000Z",
-      endedAt: "2026-09-18T09:30:00.000Z",
-    });
-    expect(page.total).toBe(2);
-    expect(page.hasMore).toBe(false);
-    expect(Object.keys(page)).toEqual(["range", "rows", "total", "hasMore"]);
   });
 
   it("activities of an empty window prints the window line and no activity", async () => {
@@ -325,29 +321,5 @@ describe("activities", () => {
       "2026-01-01 whole day · America/Los_Angeles",
       "no activity",
     ]);
-  });
-
-  it("to before from is an error naming range", async () => {
-    // Given: seedDay
-    const { exit, output } = await runPrint(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        yield* seedDay(store);
-        // When
-        yield* printActivities(
-          { range: { from: "2026-09-08", to: "2026-09-01" } },
-          false,
-        );
-      }),
-    );
-    // Then
-    expect(Exit.isFailure(exit)).toBe(true);
-    if (Exit.isFailure(exit) && exit.cause._tag === "Fail") {
-      const error = exit.cause.error as InvalidRangeError;
-      expect(error.message).toBe(
-        "range: from 2026-09-08 is after to 2026-09-01",
-      );
-    }
-    expect(output).toEqual([]);
   });
 });

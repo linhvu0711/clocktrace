@@ -1,7 +1,6 @@
 import {
   DateTime,
   Effect,
-  Either,
   Layer,
   Option,
   Schema,
@@ -12,11 +11,10 @@ import { describe, expect, it } from "vitest";
 
 import type { StoreShape, TimelineBlock } from "../src/index.js";
 import {
-  ActivitiesInput,
+  ActivitiesReply,
   AppStore,
   activities,
   addRule,
-  emptyNote,
   openStore,
   Store,
   SummaryReply,
@@ -1072,31 +1070,71 @@ describe("activities", () => {
     expect(large.rows).toHaveLength(200);
   });
 
-  it("activities clamps a limit under 1 and its Schema rejects it", async () => {
+  it("activities over a limit of 200 says capped", async () => {
     // Given: the 205-row seed
-    const result = await run(
+    const { over, at } = await run(
       Effect.gen(function* () {
         const store = yield* Store;
         yield* seedMany(store, 205);
         // When
-        return yield* activities({
-          range: { from: "2026-09-18", to: "2026-09-18" },
-          limit: -1,
-        });
+        const over = yield* Effect.flatMap(
+          activities({
+            range: { from: "2026-09-18", to: "2026-09-18" },
+            limit: 500,
+          }),
+          Schema.encode(ActivitiesReply),
+        );
+        const at = yield* Effect.flatMap(
+          activities({
+            range: { from: "2026-09-18", to: "2026-09-18" },
+            limit: 200,
+          }),
+          Schema.encode(ActivitiesReply),
+        );
+        return { over, at };
       }),
     );
-    // Then: no rows, never a slice from the end
-    expect(result.rows).toHaveLength(0);
-    expect(result.total).toBe(205);
-    expect(result.hasMore).toBe(true);
-    const decoded = Schema.decodeUnknownEither(ActivitiesInput)({
-      range: { from: "2026-09-18", to: "2026-09-18" },
-      limit: 0,
+    // Then: only the capped call carries the key
+    expect({
+      capped: over.capped,
+      rows: over.rows.length,
+      overKeys: Object.keys(over),
+      atKeys: Object.keys(at),
+    }).toEqual({
+      capped: true,
+      rows: 200,
+      overKeys: ["range", "rows", "total", "hasMore", "capped"],
+      atKeys: ["range", "rows", "total", "hasMore"],
     });
-    expect(Either.isLeft(decoded)).toBe(true);
-    if (Either.isLeft(decoded)) {
-      expect(decoded.left.message).toContain('["limit"]');
-    }
+  });
+
+  it("activities fails naming limit on a limit under 1 or not whole", async () => {
+    // Given: the 205-row seed
+    const messages = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedMany(store, 205);
+        // When
+        return yield* Effect.forEach([0, -1, Number.NaN, 1.5], (limit) =>
+          Effect.map(
+            Effect.flip(
+              activities({
+                range: { from: "2026-09-18", to: "2026-09-18" },
+                limit,
+              }),
+            ),
+            (error) => `${error._tag} ${error.message}`,
+          ),
+        );
+      }),
+    );
+    // Then
+    expect(messages).toEqual([
+      "InvalidInputError limit: must be a whole number above 0",
+      "InvalidInputError limit: must be a whole number above 0",
+      "InvalidInputError limit: must be a whole number above 0",
+      "InvalidInputError limit: must be a whole number above 0",
+    ]);
   });
 
   it("activities filters by app case folded", async () => {
@@ -1131,31 +1169,29 @@ describe("activities", () => {
     ]);
   });
 
-  it("activities of a range with no Activities gives no rows, total 0, hasMore false", async () => {
+  it("activities of an empty range ends with the note", async () => {
     // Given: seedDay
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
         yield* seedDay(store);
         // When
-        return yield* activities({
+        const reply = yield* activities({
           range: { from: "2026-09-01", to: "2026-09-01" },
         });
+        return yield* Schema.encode(ActivitiesReply)(reply);
       }),
     );
     // Then
-    expect(result).toEqual({ rows: [], total: 0, hasMore: false });
-  });
-});
-
-describe("emptyNote", () => {
-  it("names an empty window and stays silent otherwise", () => {
-    // Given: nothing
-    // When
-    const empty = emptyNote([]);
-    const nonEmpty = emptyNote([1]);
-    // Then
-    expect(empty).toEqual({ note: "no activity in this range" });
-    expect(nonEmpty).toEqual({});
+    expect({ reply: result, keys: Object.keys(result) }).toEqual({
+      reply: {
+        range: emptyWindow,
+        rows: [],
+        total: 0,
+        hasMore: false,
+        note: "no activity in this range",
+      },
+      keys: ["range", "rows", "total", "hasMore", "note"],
+    });
   });
 });

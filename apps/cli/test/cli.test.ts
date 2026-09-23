@@ -9,6 +9,7 @@ import {
   type LaunchdState,
   type Permissions,
 } from "@clocktrace/collector";
+import { InvalidInputError, openStore } from "@clocktrace/core";
 import * as HelpDoc from "@effect/cli/HelpDoc";
 import * as ValidationError from "@effect/cli/ValidationError";
 import { NodeContext } from "@effect/platform-node";
@@ -19,13 +20,11 @@ import {
   Effect,
   Exit,
   Layer,
-  Option,
   Ref,
   Stream,
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { BadLimitError, parseLimit } from "../src/activities.js";
 import { renderFriendly, run } from "../src/cli.js";
 import { Style } from "../src/format.js";
 import { Hosts } from "../src/hosts.js";
@@ -521,39 +520,38 @@ describe("cli", () => {
     expect(lines.join("\n")).toContain("activities needs --from and --to.");
   });
 
-  it("parseLimit reads a whole number", () => {
-    expect(Effect.runSync(parseLimit(Option.some("5")))).toEqual(
-      Option.some(5),
-    );
-  });
-
-  it("parseLimit rejects a non-number", () => {
-    expect(Effect.runSyncExit(parseLimit(Option.some("notanumber")))).toEqual(
-      Exit.fail(new BadLimitError()),
-    );
-  });
-
-  it("parseLimit passes none through", () => {
-    expect(Effect.runSync(parseLimit(Option.none()))).toEqual(Option.none());
-  });
-
-  it("parseLimit rejects an empty or non-positive limit", () => {
-    for (const bad of ["", "   ", "0", "-3"]) {
-      expect(Effect.runSyncExit(parseLimit(Option.some(bad)))).toEqual(
-        Exit.fail(new BadLimitError()),
-      );
-    }
-  });
-
-  it("a bad --limit is named", async () => {
-    // Given
-    const argv = ["node", "clocktrace", "activities", "--limit", "notanumber"];
+  it("a bad --limit gets core's text", async () => {
+    // Given: set up, the database on disk and the collector installed
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    const setUp: LaunchdState = {
+      installed: true,
+      running: false,
+      plist: null,
+      installs: 0,
+    };
     // When
-    const { exit, lines } = await runArgv(argv);
-    // Then
-    expect(exit).toEqual(Exit.fail(new BadLimitError()));
-    const text = lines.join("\n");
-    expect(text).toContain("--limit");
-    expect(text).toContain("a whole number");
+    const exits = [];
+    for (const bad of ["0", "-1", "abc"]) {
+      const argv = [
+        "node",
+        "clocktrace",
+        "activities",
+        "--from",
+        "2026-09-18",
+        "--to",
+        "2026-09-18",
+        "--limit",
+        bad,
+      ];
+      exits.push((await runArgv(argv, setUp)).exit);
+    }
+    // Then: core words it, "limit: must be a whole number above 0"
+    const limitError = Exit.fail(
+      new InvalidInputError({
+        field: "limit",
+        reason: "must be a whole number above 0",
+      }),
+    );
+    expect(exits).toEqual([limitError, limitError, limitError]);
   });
 });

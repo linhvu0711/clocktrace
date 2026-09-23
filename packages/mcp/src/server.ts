@@ -10,14 +10,13 @@ import {
   Status,
 } from "@clocktrace/collector";
 import {
-  ActivitiesPage,
+  ActivitiesReply,
   type AppStore,
   activities,
   addRule,
   type CategoryInUseError,
   type CategoryNotFoundError,
   type DatabaseNewerError,
-  emptyNote,
   GroupBy,
   type InvalidInputError,
   type InvalidRangeError,
@@ -39,7 +38,6 @@ import {
   summary,
   TimelineReply,
   timeline,
-  usedRange,
 } from "@clocktrace/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -371,34 +369,33 @@ export const makeServer = async (
     "activities",
     {
       description:
-        "Raw Activities (app, window title, URL, start, end) in a range, in time order, at most 200 per call. hasMore true means more exist: narrow the range, or filter by app (bundle id or app name) or device (a Device id). Same range rules as summary. The reply starts with range { from, to, zone }, then rows, total, and hasMore.",
+        "Raw Activities (app, window title, URL, start, end) in a range, in time order, at most 200 per call. hasMore true means more exist: narrow the range, or filter by app (bundle id or app name) or device (a Device id). Same range rules as summary. The reply starts with range { from, to, zone }, then rows, total, and hasMore; capped true means a limit over 200 was cut to 200.",
       inputSchema: {
         range: RangeIn,
         device: z.string().optional(),
         app: z.string().optional(),
-        limit: z.number().int().positive().optional(),
+        limit: z.number().optional(),
       },
       outputSchema: {
         range: RangeOut,
         rows: z.array(ActivityOut),
         total: z.number().int(),
         hasMore: z.boolean(),
+        capped: z.literal(true).optional(),
         note: z.string().optional(),
       },
     },
     (input) =>
       run(
-        Effect.gen(function* () {
-          const range = yield* usedRange(input.range);
-          const page = yield* activities({
+        Effect.flatMap(
+          activities({
             range: input.range,
-            deviceId: input.device,
+            device: input.device,
             app: input.app,
             limit: input.limit,
-          });
-          const encoded = yield* Schema.encode(ActivitiesPage)(page);
-          return { range, ...encoded, ...emptyNote(encoded.rows) };
-        }),
+          }),
+          Schema.encode(ActivitiesReply),
+        ),
       ),
   );
 

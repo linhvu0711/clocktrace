@@ -73,23 +73,31 @@ export const TimelineReply = Schema.Struct({
   note: Schema.optionalWith(Schema.String, { exact: true }),
 });
 
+// Both rules carry the message, or NaN and 1.5 would get Effect's own words.
+const limitRule = { message: () => "must be a whole number above 0" };
+const Limit = Schema.Number.pipe(
+  Schema.int(limitRule),
+  Schema.positive(limitRule),
+);
+
 export const ActivitiesInput = Schema.Struct({
   range: Range,
-  deviceId: Schema.optional(Schema.UUID),
+  device: Schema.optional(DeviceId),
   app: Schema.optional(Schema.String),
-  limit: Schema.optional(Schema.Int.pipe(Schema.positive())),
+  limit: Schema.optional(Limit),
 });
 
-export const ActivitiesPage = Schema.Struct({
+export const ActivitiesReply = Schema.Struct({
+  range: UsedRange,
   rows: Schema.Array(Activity),
   total: Schema.Int,
   hasMore: Schema.Boolean,
+  capped: Schema.optionalWith(Schema.Literal(true), { exact: true }),
+  note: Schema.optionalWith(Schema.String, { exact: true }),
 });
 
 /** The note a reply carries when the window holds nothing. */
-export const emptyNote = (
-  rows: ReadonlyArray<unknown>,
-): { readonly note?: string } =>
+const emptyNote = (rows: ReadonlyArray<unknown>): { readonly note?: string } =>
   rows.length === 0 ? { note: "no activity in this range" } : {};
 
 // Core checks every tool input itself, so the CLI Twin and the Host get the
@@ -378,18 +386,16 @@ export const timeline = (
   });
 
 export const activities = (
-  input: ActivitiesInput,
+  input: Schema.Schema.Encoded<typeof ActivitiesInput>,
 ): Effect.Effect<
-  ActivitiesPage,
-  InvalidRangeError | StoreError,
+  ActivitiesReply,
+  InvalidInputError | InvalidRangeError | StoreError,
   Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
-    const { rows } = yield* loadRange({
-      range: input.range,
-      device: input.deviceId,
-    });
-    const app = input.app?.toLowerCase();
+    const decoded = yield* decodeInput(ActivitiesInput)(input);
+    const { range, rows } = yield* loadRange(decoded);
+    const app = decoded.app?.toLowerCase();
     const filtered =
       app === undefined
         ? rows
@@ -398,12 +404,16 @@ export const activities = (
               row.activity.bundleId.toLowerCase() === app ||
               row.activity.appName.toLowerCase() === app,
           );
-    const limit = Math.max(0, Math.min(input.limit ?? 200, 200));
-    const page = filtered.slice(0, limit);
+    const page = filtered.slice(0, Math.min(decoded.limit ?? 200, 200));
     return {
+      range,
       rows: page.map((row) => row.activity),
       total: filtered.length,
       hasMore: filtered.length > page.length,
+      ...(decoded.limit !== undefined && decoded.limit > 200
+        ? { capped: true as const }
+        : {}),
+      ...emptyNote(page),
     };
   });
 
@@ -415,4 +425,4 @@ export type TimelineBlock = Schema.Schema.Type<typeof TimelineBlock>;
 export type TimelineInput = Schema.Schema.Type<typeof TimelineInput>;
 export type TimelineReply = Schema.Schema.Type<typeof TimelineReply>;
 export type ActivitiesInput = Schema.Schema.Type<typeof ActivitiesInput>;
-export type ActivitiesPage = Schema.Schema.Type<typeof ActivitiesPage>;
+export type ActivitiesReply = Schema.Schema.Type<typeof ActivitiesReply>;

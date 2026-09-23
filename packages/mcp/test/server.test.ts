@@ -1128,6 +1128,56 @@ describe("server", () => {
     expect(page.hasMore).toBe(true);
   });
 
+  it("activities with a limit over 200 says capped", async () => {
+    // Given: 205 one-minute Code Activities from 08:00Z
+    const { client, close } = await connect(
+      withActivities((store) => seedMany(store, 205)),
+    );
+    // When
+    const result = await callTool(client, {
+      name: "activities",
+      arguments: { range: day, limit: 500 },
+    });
+    await close();
+    // Then
+    const page = result.structuredContent ?? {};
+    expect({
+      isError: result.isError,
+      capped: page.capped,
+      keys: Object.keys(page),
+    }).toEqual({
+      isError: undefined,
+      capped: true,
+      keys: ["range", "rows", "total", "hasMore", "capped"],
+    });
+  });
+
+  it("a bad limit gets core's text", async () => {
+    // Given: the seeded day
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const results = [];
+    for (const limit of [0, -1]) {
+      results.push(
+        await callTool(client, {
+          name: "activities",
+          arguments: { range: day, limit },
+        }),
+      );
+    }
+    await close();
+    // Then
+    expect(
+      results.map((result) => ({
+        isError: result.isError,
+        text: text(result),
+      })),
+    ).toEqual([
+      { isError: true, text: "limit: must be a whole number above 0" },
+      { isError: true, text: "limit: must be a whole number above 0" },
+    ]);
+  });
+
   it("activities filters by app", async () => {
     // Given: the seeded day
     const { client, close } = await connect(withActivities(seedDay));

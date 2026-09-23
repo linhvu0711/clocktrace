@@ -1,12 +1,11 @@
-import { DateTime, Effect, Either, Exit, Schema } from "effect";
+import { DateTime, Effect, Either, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import {
-  InvalidRangeError,
+  type InvalidRangeError,
   isoMinute,
   Range,
   resolveRange,
-  usedRange,
   usedWindow,
 } from "../src/index.js";
 
@@ -172,26 +171,5 @@ describe("range", () => {
       to: "2026-09-19T00:00",
       zone: "America/Los_Angeles",
     });
-  });
-
-  it("usedRange fails to before from naming range", async () => {
-    // Given: the Los Angeles zone
-    // When
-    const exit = await Effect.runPromise(
-      Effect.exit(
-        usedRange({ from: "2026-09-08", to: "2026-09-01" }).pipe(
-          DateTime.withCurrentZoneNamed("America/Los_Angeles"),
-        ),
-      ),
-    );
-    // Then
-    expect(exit).toEqual(
-      Exit.fail(
-        new InvalidRangeError({
-          field: "range",
-          reason: "from 2026-09-08 is after to 2026-09-01",
-        }),
-      ),
-    );
   });
 });
