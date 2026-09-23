@@ -162,7 +162,10 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
     };
 
     // Runs the Helper as ~/Applications/Clocktrace.app and returns what it
-    // printed on stdout; a non-zero `open` exit means macOS never ran it.
+    // printed on stdout. A non-zero `open` exit with an empty stdout file
+    // means macOS never ran the Helper. A non-zero exit with a line in the
+    // file means `open -W` lost the race to wait on a Helper that already
+    // ended, so the line is still the answer.
     function viaOpen(
       app: string,
       args: ReadonlyArray<string>,
@@ -182,6 +185,12 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
           Effect.mapError((cause) => new HelperExitedError({ cause })),
         );
         if (code !== 0) {
+          const stdout = yield* fs
+            .readFileString(stdoutPath)
+            .pipe(Effect.orElseSucceed(() => ""));
+          if (stdout.trim() !== "") {
+            return stdout;
+          }
           const stderr = yield* fs
             .readFileString(stderrPath)
             .pipe(Effect.orElseSucceed(() => ""));

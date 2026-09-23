@@ -239,6 +239,19 @@ describe("Helper via open", () => {
     expect(Exit.isSuccess(exit) && exit.value).toBe("notRunning");
   });
 
+  it("request reads the outcome line when open exits non-zero", async () => {
+    // Given: open -W lost the race and exits 1, but the Helper wrote asked
+    // When
+    const { exit } = await runHelper(
+      (helper) =>
+        helper.request("/x/Clocktrace.app", { kind: "fullDiskAccess" }),
+      '{"outcome":"asked"}',
+      1,
+    );
+    // Then
+    expect(Exit.isSuccess(exit) && exit.value).toBe("asked");
+  });
+
   it("open exiting non-zero fails with HelperExitedError", async () => {
     // Given: open exits 5
     // When
