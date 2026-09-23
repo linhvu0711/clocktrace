@@ -792,6 +792,48 @@ describe("collector", () => {
     );
   });
 
+  it("a Grant that returns to notAsked is saved again on the next answer", async () => {
+    // Given: Chrome denied, then a reset gives notAsked, then denied again
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+      line({
+        ts: "2026-01-01T09:00:10Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "notAsked",
+      }),
+      line({
+        ts: "2026-01-01T09:00:20Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+    ];
+    // When
+    const saved = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then: the denial after the reset is written again, not deduped away
+    expect(saved).toEqual(
+      Option.some('{"state":"denied","checkedAt":"2026-01-01T09:00:20.000Z"}'),
+    );
+  });
+
+>>>>>>> 760025b (fix(cli,collector): keep reset siblings unasked, re-save Grants after a reset)
   it("a line with no grant key still records", async () => {
     // Given: a Chrome line without a grant key, then a Finder line
     const lines = [

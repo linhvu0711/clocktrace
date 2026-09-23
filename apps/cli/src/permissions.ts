@@ -307,6 +307,9 @@ export const walkPermissions = (): Effect.Effect<
       Effect.gen(function* () {
         const { item } = perm;
         if (item.request.kind === "automation") {
+          if (perm.state !== "denied") {
+            return;
+          }
           const browser = browserName(item.request.bundleId);
           const open = yield* prompt.confirm({
             message: `${browser} is denied. Open System Settings to turn it on?`,
@@ -365,19 +368,29 @@ export const walkPermissions = (): Effect.Effect<
             return;
           }
           for (const other of perms) {
-            if (other.item.request.kind === "automation") {
-              yield* store.deleteSetting(
-                savedGrantKey(other.item.request.bundleId),
-              );
+            if (other.item.request.kind !== "automation") {
+              continue;
+            }
+            yield* store.deleteSetting(
+              savedGrantKey(other.item.request.bundleId),
+            );
+            // The reset cleared every browser's grant, so a sibling still
+            // queued as denied is already back to notAsked — it must not be
+            // asked again in this walk.
+            if (other.state === "denied") {
+              other.state = "notAsked";
+              other.row = [
+                lead("warn", other.item),
+                span(
+                  "warn",
+                  `reset · macOS asks the next time ${browserName(other.item.request.bundleId)} comes to the front`,
+                ),
+              ];
+              if (other !== perm) {
+                yield* printRow(other);
+              }
             }
           }
-          perm.row = [
-            lead("warn", item),
-            span(
-              "warn",
-              `reset · macOS asks the next time ${browser} comes to the front`,
-            ),
-          ];
           yield* printRow(perm);
           return;
         }
