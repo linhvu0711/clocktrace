@@ -15,7 +15,7 @@ public struct FrontApp: Equatable {
 public enum UrlRead: Equatable {
   case notBrowser
   case granted(String?)
-  case missing
+  case missing(GrantState)
 }
 
 public struct Sample: Equatable {

@@ -136,7 +136,7 @@ final class TrackerTests: XCTestCase {
     var tracker = Tracker()
     let sample = Sample(
       front: FrontApp(name: "Safari", bundleId: "com.apple.Safari", pid: 3),
-      axTrusted: true, title: "Example Domain", url: .missing, idleSeconds: 0)
+      axTrusted: true, title: "Example Domain", url: .missing(.denied), idleSeconds: 0)
     // When
     let line = tracker.observe(sample, at: t0)
     // Then
@@ -144,6 +144,7 @@ final class TrackerTests: XCTestCase {
       line,
       Line(
         ts: ts0, app: "Safari", bundleId: "com.apple.Safari",
+        grant: "denied",
         title: "Example Domain", url: nil, idleSeconds: 0,
         missing: ["automation:com.apple.Safari"]))
   }
@@ -218,4 +219,62 @@ final class TrackerTests: XCTestCase {
         ts: ts0, app: nil, bundleId: nil, title: nil, url: nil, idleSeconds: 0,
         missing: []))
   }
+
+  func testGrantGrantedForABrowserWithAUrl() {
+    // Given: Safari front with a granted URL read
+    var tracker = Tracker()
+    let sample = Sample(
+      front: FrontApp(name: "Safari", bundleId: "com.apple.Safari", pid: 4),
+      axTrusted: true, title: "Example Domain",
+      url: .granted("https://example.com/"), idleSeconds: 0)
+    // When
+    let line = tracker.observe(sample, at: t0)
+    // Then
+    XCTAssertEqual(line?.grant, "granted")
+  }
+
+  func testGrantDeniedForADeniedBrowser() {
+    // Given: Safari front with a denied Grant
+    var tracker = Tracker()
+    let sample = Sample(
+      front: FrontApp(name: "Safari", bundleId: "com.apple.Safari", pid: 4),
+      axTrusted: true, title: "Example Domain",
+      url: .missing(.denied), idleSeconds: 0)
+    // When
+    let line = tracker.observe(sample, at: t0)
+    // Then
+    XCTAssertEqual(line?.grant, "denied")
+    XCTAssertEqual(line?.missing, ["automation:com.apple.Safari"])
+  }
+
+  func testGrantNullForANonBrowser() {
+    // Given: a non-browser front
+    var tracker = Tracker()
+    // When
+    let line = tracker.observe(finderSample, at: t0)
+    // Then
+    XCTAssertNil(line?.grant)
+  }
+
+  func testEmitsOnGrantChange() {
+    // Given: Safari denied observed at t0
+    var tracker = Tracker()
+    let safari = FrontApp(
+      name: "Safari", bundleId: "com.apple.Safari", pid: 4)
+    _ = tracker.observe(
+      Sample(
+        front: safari, axTrusted: true, title: "Inbox",
+        url: .missing(.denied), idleSeconds: 0),
+      at: t0)
+    // When: the same sample a second later with a new Grant state
+    let line = tracker.observe(
+      Sample(
+        front: safari, axTrusted: true, title: "Inbox",
+        url: .missing(.noAnswer), idleSeconds: 0),
+      at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(line?.grant, "noAnswer")
+    XCTAssertEqual(line?.ts, "2026-01-01T00:00:01.000Z")
+  }
 }
+

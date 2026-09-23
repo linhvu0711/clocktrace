@@ -20,18 +20,24 @@ public struct Tracker {
     let bundleId = noUsableFront ? nil : s.front?.bundleId
     let title = noUsableFront ? nil : (s.axTrusted ? s.title : nil)
     let url: String?
+    let grant: String?
     switch s.url {
     case .granted(let u):
       url = noUsableFront ? nil : u
-    case .notBrowser, .missing:
+      grant = noUsableFront ? nil : "granted"
+    case .missing(let state):
       url = nil
+      grant = noUsableFront ? nil : state.rawValue
+    case .notBrowser:
+      url = nil
+      grant = nil
     }
 
     var missing: [String] = []
     if !s.axTrusted {
       missing.append("accessibility")
     }
-    if s.url == .missing, let id = s.front?.bundleId, !noUsableFront {
+    if case .missing = s.url, let id = s.front?.bundleId, !noUsableFront {
       missing.append("automation:\(id)")
     }
 
@@ -39,6 +45,7 @@ public struct Tracker {
       ts: Self.isoFormatter.string(from: now),
       app: app,
       bundleId: bundleId,
+      grant: grant,
       title: title,
       url: url,
       idleSeconds: s.idleSeconds,
@@ -50,6 +57,7 @@ public struct Tracker {
       changed =
         last.app != candidate.app
         || last.bundleId != candidate.bundleId
+        || last.grant != candidate.grant
         || last.title != candidate.title
         || last.url != candidate.url
         || last.missing != candidate.missing

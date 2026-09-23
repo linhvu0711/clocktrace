@@ -132,6 +132,7 @@ const PermissionLineOut = z.object({
   name: z.string(),
   state: z.enum(["granted", "denied", "not checked"]),
   note: z.string().nullable(),
+  checkedAt: z.string().nullable(),
 });
 const IosImportOut = z.discriminatedUnion("state", [
   z.object({ state: z.literal("ok"), at: z.string() }),

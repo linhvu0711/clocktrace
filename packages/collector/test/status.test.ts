@@ -4,6 +4,7 @@ import {
   DateTime,
   Effect,
   Layer,
+  Option,
   Ref,
   Stream,
   TestClock,
@@ -179,8 +180,7 @@ describe("status", () => {
     expect(lines).toEqual([
       "collector: stopped, run clocktrace start",
       "accessibility: denied, window titles are not tracked",
-      "automation Safari: not checked, Safari is closed",
-      "automation Chrome: denied, URLs in Chrome are not tracked",
+      "automation: not checked, no browser used yet",
       "full disk access: denied, iPhone and iPad time is not imported",
       "last activity: none yet",
       `database: ${dbPath}`,
@@ -207,7 +207,6 @@ describe("status", () => {
     expect(lines).toEqual([
       "collector: stopped, run clocktrace start",
       "accessibility: denied, window titles are not tracked",
-      "automation Safari: not checked, Safari is closed",
       "automation Chrome: not checked, Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
       "full disk access: denied, iPhone and iPad time is not imported",
       "last activity: none yet",
@@ -305,8 +304,24 @@ describe("status", () => {
     // Then
     expect(status.app).toBe("present");
     expect(status.permissions).toEqual([
-      { name: "accessibility", state: "granted", note: null },
-      { name: "full disk access", state: "granted", note: null },
+      {
+        name: "accessibility",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
+      {
+        name: "automation",
+        state: "not checked",
+        note: "no browser used yet",
+        checkedAt: null,
+      },
+      {
+        name: "full disk access",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
     ]);
   });
 
@@ -328,6 +343,7 @@ describe("status", () => {
     expect(lines).toEqual([
       "collector: running",
       "accessibility: granted",
+      "automation: not checked, no browser used yet",
       "full disk access: granted",
       "iOS import: ok 2026-09-19 10:30",
       "Linh's iPad: not syncing since 2026-09-17 10:00",
@@ -358,6 +374,7 @@ describe("status", () => {
     expect(lines).toEqual([
       "collector: running",
       "accessibility: granted",
+      "automation: not checked, no browser used yet",
       "full disk access: granted",
       "iOS import: not tested on macOS 26.6.2",
       "last activity: 2026-09-19 09:06",
@@ -382,6 +399,7 @@ describe("status", () => {
     expect(lines).toEqual([
       "collector: running",
       "accessibility: granted",
+      "automation: not checked, no browser used yet",
       "full disk access: granted",
       "iOS import: broken: no App.InFocus remote folder",
       "last activity: none yet",
@@ -407,11 +425,91 @@ describe("status", () => {
     expect(lines).toEqual([
       "collector: running",
       "accessibility: granted",
+      "automation: not checked, no browser used yet",
       "full disk access: denied, iPhone and iPad time is not imported",
       "last activity: 2026-09-19 09:06",
       `database: ${dbPath}`,
     ]);
     expect(status.iosImport).toBeNull();
     expect(status.devices).toEqual([]);
+  });
+
+  it("a closed browser shows its Saved grant and when it was checked", async () => {
+    // Given: Safari closed, Chrome granted; a saved denied Grant for Safari
+    // When
+    const lines = await runWith(
+      {
+        accessibility: "granted",
+        automation: {
+          "com.apple.Safari": "notRunning",
+          "com.google.Chrome": "granted",
+        },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: false, plist: null, installs: 0 },
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* store.setSetting(
+          "grant.com.apple.Safari",
+          '{"state":"denied","checkedAt":"2026-09-19T18:00:00.000Z"}',
+        );
+        return yield* Effect.flatMap(readStatus(), statusLines);
+      }),
+    );
+    // Then
+    expect(lines).toEqual([
+      "collector: stopped, run clocktrace start",
+      "accessibility: granted",
+      "automation Safari: denied, URLs in Safari are not tracked, last checked 2026-09-19 11:00",
+      "automation Chrome: granted",
+      "full disk access: granted",
+      "last activity: none yet",
+      `database: ${dbPath}`,
+    ]);
+  });
+
+  it("a read with no browsers in front says so", async () => {
+    // Given: no automation states at all
+    // When
+    const lines = await runWith(
+      {
+        accessibility: "granted",
+        automation: {},
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: false, plist: null, installs: 0 },
+      Effect.flatMap(readStatus(), statusLines),
+    );
+    // Then
+    expect(lines).toEqual([
+      "collector: stopped, run clocktrace start",
+      "accessibility: granted",
+      "automation: not checked, no browser used yet",
+      "full disk access: granted",
+      "last activity: none yet",
+      `database: ${dbPath}`,
+    ]);
+  });
+
+  it("a live check updates the Saved grant", async () => {
+    // Given: Chrome answered granted at NOW
+    // When
+    const saved = await runAt(
+      {
+        accessibility: "granted",
+        automation: { "com.google.Chrome": "granted" },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      Effect.gen(function* () {
+        yield* readStatus();
+        const store = yield* Store;
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }),
+    );
+    // Then
+    expect(saved).toEqual(
+      Option.some('{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}'),
+    );
   });
 });

@@ -3,6 +3,7 @@ import { DateTime, Effect, Option, Ref, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { decodeHelperLine, type HelperLine } from "./helper-line.js";
+import { saveGrant } from "./saved-grant.js";
 
 export const idleAfterSeconds = 300;
 export const minActivityMillis = 1000;
@@ -47,6 +48,61 @@ export const collect = <E, R>(
             }).pipe(Effect.provideService(Store, store));
             yield* store.insertActivity(blanked);
           });
+
+    const remembered = yield* Ref.make<
+      ReadonlyMap<
+        string,
+        {
+          readonly state: "granted" | "denied";
+          readonly writtenAt: DateTime.Utc;
+        }
+      >
+    >(new Map());
+    const warned = yield* Ref.make<ReadonlySet<string>>(new Set());
+
+    const remember = (line: HelperLine): Effect.Effect<void, never, Store> =>
+      Effect.gen(function* () {
+        if (
+          line.bundleId === null ||
+          (line.grant !== "granted" && line.grant !== "denied")
+        ) {
+          return;
+        }
+        const bundleId = line.bundleId;
+        const last = yield* Ref.get(remembered);
+        const saved = last.get(bundleId);
+        if (
+          saved !== undefined &&
+          saved.state === line.grant &&
+          DateTime.distance(saved.writtenAt, line.ts) >= 0 &&
+          DateTime.distance(saved.writtenAt, line.ts) < 60_000
+        ) {
+          return;
+        }
+        yield* saveGrant(bundleId, line.grant, line.ts).pipe(
+          Effect.tap(() =>
+            Ref.set(
+              remembered,
+              new Map(last).set(bundleId, {
+                state: line.grant as "granted" | "denied",
+                writtenAt: line.ts,
+              }),
+            ),
+          ),
+          Effect.catchTag("StoreError", () =>
+            Effect.gen(function* () {
+              const seen = yield* Ref.get(warned);
+              if (seen.has(bundleId)) {
+                return;
+              }
+              yield* Ref.update(warned, (s) => new Set(s).add(bundleId));
+              yield* Effect.logWarning("saved grant not written").pipe(
+                Effect.annotateLogs({ bundleId }),
+              );
+            }),
+          ),
+        );
+      });
 
     const step = (
       line: HelperLine,
@@ -138,6 +194,7 @@ export const collect = <E, R>(
         ),
       ),
       Stream.filterMap((o) => o),
+      Stream.tap(remember),
       Stream.runForEach(step),
       Effect.ensuring(Effect.orDie(flush)),
     );

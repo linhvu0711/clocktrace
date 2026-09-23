@@ -5,6 +5,12 @@ export const HelperLine = Schema.parseJson(
     ts: Schema.DateTimeUtc,
     app: Schema.NullOr(Schema.String),
     bundleId: Schema.NullOr(Schema.String),
+    grant: Schema.optionalWith(
+      Schema.NullOr(
+        Schema.Literal("granted", "denied", "notAsked", "noAnswer"),
+      ),
+      { default: () => null },
+    ),
     title: Schema.NullOr(Schema.String),
     url: Schema.NullOr(Schema.String),
     idleSeconds: Schema.Number,

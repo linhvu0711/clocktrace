@@ -32,16 +32,22 @@ import { jsonOption, report } from "./output.js";
 import type { Prompt } from "./prompt.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
 
-const permissionRow = (p: PermissionLine, look: Look): ReadonlyArray<Cell> => {
+const permissionRow = (
+  p: PermissionLine,
+  look: Look,
+  now: DateTime.Zoned,
+): ReadonlyArray<Cell> => {
   const rest = p.name.startsWith("automation ")
     ? p.name.slice("automation ".length)
     : null;
   const label =
     rest !== null
       ? `Automation · ${rest}`
-      : p.name === "full disk access"
-        ? "Full Disk Access"
-        : "Accessibility";
+      : p.name === "automation"
+        ? "Automation"
+        : p.name === "full disk access"
+          ? "Full Disk Access"
+          : "Accessibility";
   const gives =
     rest !== null
       ? `URLs in ${rest}`
@@ -55,15 +61,20 @@ const permissionRow = (p: PermissionLine, look: Look): ReadonlyArray<Cell> => {
     " ",
     label,
   ];
+  const checked =
+    p.checkedAt === null ? "" : ` · last checked ${clock(p.checkedAt, now)}`;
   if (p.state === "granted") {
-    return [lead("ok"), span("dim", gives)];
+    return [lead("ok"), span("dim", `${gives}${checked}`)];
   }
   if (p.state === "not checked") {
     return [lead("warn"), span("warn", p.note ?? "")];
   }
   return [
     lead("bad"),
-    span("bad", `denied · turn it on in System Settings › Privacy › ${pane}`),
+    span(
+      "bad",
+      `denied · turn it on in System Settings › Privacy › ${pane}${checked}`,
+    ),
   ];
 };
 
@@ -139,7 +150,7 @@ const statusScreen = (
     g0 ?? "",
     g1 ?? "",
     ...columns(
-      [...granted, ...rest].map((p) => permissionRow(p, look)),
+      [...granted, ...rest].map((p) => permissionRow(p, look, now)),
       look,
     ),
     ...(ios !== null

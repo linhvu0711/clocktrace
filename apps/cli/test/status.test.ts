@@ -253,9 +253,10 @@ describe("status", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       "Collector      ✔ running",
-      "Permissions    2 of 2 granted",
+      "Permissions    2 of 3 granted",
       "  ✔ Accessibility     window titles",
       "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation        no browser used yet",
       "Last activity  none yet",
       `Database       ${path}`,
     ]);
@@ -282,10 +283,9 @@ describe("status", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       "Collector      ✔ running",
-      "Permissions    2 of 4 granted",
+      "Permissions    2 of 3 granted",
       "  ✔ Accessibility        window titles",
       "  ✔ Full Disk Access     iPhone and iPad import",
-      "  ○ Automation · Safari  Safari is closed",
       "  ✘ Automation · Chrome  denied · turn it on in System Settings › Privacy › Automation",
       "Last activity  2026-09-18 10:05",
       `Database       ${path}`,
@@ -313,10 +313,9 @@ describe("status", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       "Collector      ✔ running",
-      "Permissions    2 of 4 granted",
+      "Permissions    2 of 3 granted",
       "  ✔ Accessibility        window titles",
       "  ✔ Full Disk Access     iPhone and iPad import",
-      "  ○ Automation · Safari  Safari is closed",
       "  ○ Automation · Chrome  Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
       "Last activity  2026-09-18 10:05",
       `Database       ${path}`,
@@ -368,9 +367,10 @@ describe("status", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       "\u001b[0;1mCollector\u001b[0m      \u001b[0;32m✔\u001b[0m running",
-      "\u001b[0;1mPermissions\u001b[0m    \u001b[0;90m2 of 2 granted\u001b[0m",
+      "\u001b[0;1mPermissions\u001b[0m    \u001b[0;90m2 of 3 granted\u001b[0m",
       "  \u001b[0;32m✔\u001b[0m Accessibility     \u001b[0;90mwindow titles\u001b[0m",
       "  \u001b[0;32m✔\u001b[0m Full Disk Access  \u001b[0;90miPhone and iPad import\u001b[0m",
+      "  \u001b[0;33m○\u001b[0m Automation        \u001b[0;33mno browser used yet\u001b[0m",
       "\u001b[0;1mLast activity\u001b[0m  none yet",
       `\u001b[0;1mDatabase\u001b[0m       \u001b[0;90m${path}\u001b[0m`,
     ]);
@@ -392,8 +392,24 @@ describe("status", () => {
       collector: "running",
       app: "present",
       permissions: [
-        { name: "accessibility", state: "granted", note: null },
-        { name: "full disk access", state: "granted", note: null },
+        {
+          name: "accessibility",
+          state: "granted",
+          note: null,
+          checkedAt: null,
+        },
+        {
+          name: "automation",
+          state: "not checked",
+          note: "no browser used yet",
+          checkedAt: null,
+        },
+        {
+          name: "full disk access",
+          state: "granted",
+          note: null,
+          checkedAt: null,
+        },
       ],
       lastActivity: null,
       iosImport: null,
@@ -419,13 +435,19 @@ describe("status", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(JSON.parse(output[0] ?? "").permissions).toEqual([
-      { name: "accessibility", state: "granted", note: null },
+      { name: "accessibility", state: "granted", note: null, checkedAt: null },
       {
         name: "automation Chrome",
         state: "not checked",
         note: "Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
+        checkedAt: null,
       },
-      { name: "full disk access", state: "granted", note: null },
+      {
+        name: "full disk access",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
     ]);
   });
 
@@ -478,9 +500,10 @@ describe("status", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       "Collector      ✔ running",
-      "Permissions    2 of 2 granted",
+      "Permissions    2 of 3 granted",
       "  ✔ Accessibility     window titles",
       "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation        no browser used yet",
       "iOS import     ✔ ok · 2026-09-19 10:30",
       "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
       "  ○ iPhone       never synced · last activity 2026-09-19 09:06",
@@ -543,14 +566,97 @@ describe("status", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
       "Collector      ✔ running",
-      "Permissions    2 of 2 granted",
+      "Permissions    2 of 3 granted",
       "  ✔ Accessibility     window titles",
       "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation        no browser used yet",
       "iOS import     ✔ ok · 2026-09-19 10:30",
       "  ✘ Linh's iPad    not syncing since 2026-09-17 10:00 · last activity none yet",
       "  ○ Linh's iPhone  never synced · last activity 2026-09-19 09:06",
       "Last activity  2026-09-19 09:06",
       `Database       ${path}`,
+    ]);
+  });
+
+  it("status prints a closed browser's Saved grant with last checked", async () => {
+    // Given: Safari closed with a saved granted Grant checked 2026-09-19 18:00Z
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          yield* store.setSetting(
+            "grant.com.apple.Safari",
+            '{"state":"granted","checkedAt":"2026-09-19T18:00:00.000Z"}',
+          );
+        }),
+      ),
+    );
+    // When
+    const { exit, output } = await run(
+      {
+        accessibility: "granted",
+        automation: {
+          "com.apple.Safari": "notRunning",
+          "com.google.Chrome": "granted",
+        },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Collector      ✔ running",
+      "Permissions    4 of 4 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Automation · Safari  URLs in Safari · last checked 2026-09-19 11:00",
+      "  ✔ Automation · Chrome  URLs in Chrome",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "Last activity  none yet",
+      `Database       ${path}`,
+    ]);
+  });
+
+  it("status --json carries checkedAt", async () => {
+    // Given: Safari closed with a saved denied Grant
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          yield* store.setSetting(
+            "grant.com.apple.Safari",
+            '{"state":"denied","checkedAt":"2026-09-19T18:00:00.000Z"}',
+          );
+        }),
+      ),
+    );
+    // When
+    const { exit, output } = await run(
+      {
+        accessibility: "granted",
+        automation: { "com.apple.Safari": "notRunning" },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(true),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(JSON.parse(output[0] ?? "").permissions).toEqual([
+      { name: "accessibility", state: "granted", note: null, checkedAt: null },
+      {
+        name: "automation Safari",
+        state: "denied",
+        note: "URLs in Safari are not tracked",
+        checkedAt: "2026-09-19T18:00:00.000Z",
+      },
+      {
+        name: "full disk access",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
     ]);
   });
 });

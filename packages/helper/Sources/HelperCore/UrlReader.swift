@@ -32,10 +32,12 @@ public final class UrlReader {
   }
 
   public func read(bundleId: String, script: String, at now: Date) -> UrlRead {
-    guard let status = check(bundleId: bundleId, at: now),
-      grantState(status) == .granted
-    else {
-      return .missing
+    guard let status = check(bundleId: bundleId, at: now) else {
+      return .missing(.noAnswer)
+    }
+    let state = grantState(status)
+    guard state == .granted else {
+      return .missing(state)
     }
     return readUrl(bundleId: bundleId, script: script)
   }

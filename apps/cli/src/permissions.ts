@@ -11,21 +11,30 @@ import {
   noAnswerNote,
   type PermissionItem,
   permissionItems,
+  readSavedGrants,
+  saveLiveGrants,
   tccService,
 } from "@clocktrace/collector";
-import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
+import type { DatabaseNewerError, Store, StoreError } from "@clocktrace/core";
 import { Command } from "@effect/cli";
-import {
-  type CommandExecutor,
-  type FileSystem,
-  type Path,
-  Command as PlatformCommand,
-  type Terminal,
+import type {
+  CommandExecutor,
+  FileSystem,
+  Path,
+  Terminal,
 } from "@effect/platform";
-import { Data, Effect, Either, Schedule } from "effect";
+import { DateTime, Effect } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { type Cell, columns, line, mark, Style, span } from "./format.js";
+import {
+  type Cell,
+  clock,
+  columns,
+  line,
+  mark,
+  Style,
+  span,
+} from "./format.js";
 import { Prompt, type Stdin, type StoppedError } from "./prompt.js";
 import { runCommand } from "./run-command.js";
 import { type NotSetUpError, requireSetUp, withStore } from "./set-up.js";
@@ -54,40 +63,26 @@ const resetArgs = (item: PermissionItem): ReadonlyArray<string> => [
 const resetLater = (item: PermissionItem): string =>
   `later: tccutil ${resetArgs(item).join(" ")}, then run clocktrace permissions`;
 
-class BrowserNotRunning extends Data.TaggedError("BrowserNotRunning")<{
-  readonly bundleId: string;
-}> {}
-
-const defaultOpenRetry = Schedule.recurs(20).pipe(
-  Schedule.addDelay(() => "500 millis"),
-);
-
-const joinNames = (names: ReadonlyArray<string>): string =>
-  names.length <= 2
-    ? names.join(" and ")
-    : `${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}`;
-
 const askable = (item: PermissionItem, state: GrantState): boolean =>
-  item.request.kind === "automation"
+  item.checkedAt === null &&
+  (item.request.kind === "automation"
     ? state === "notAsked" || state === "denied"
-    : state === "denied";
+    : state === "denied");
 
-export const walkPermissions = (
-  options: {
-    readonly openRetry?: Schedule.Schedule<unknown, unknown> | undefined;
-  } = {},
-): Effect.Effect<
+export const walkPermissions = (): Effect.Effect<
   void,
-  AppMissingError | HelperExitedError | ParseError | StoppedError,
+  AppMissingError | HelperExitedError | ParseError | StoppedError | StoreError,
   | Prompt
   | Stdin
   | Helper
   | App
+  | Store
   | Terminal.Terminal
   | FileSystem.FileSystem
   | Path.Path
   | CommandExecutor.CommandExecutor
   | Style
+  | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
     const prompt = yield* Prompt;
@@ -100,7 +95,14 @@ export const walkPermissions = (
     }
     const interactive = yield* prompt.interactive;
     const p = yield* Effect.scoped(helper.permissions(appPath));
-    const items = permissionItems(p);
+    yield* saveLiveGrants(p, yield* DateTime.now);
+    const saved = yield* readSavedGrants();
+    const items = permissionItems(p, saved);
+    const now = yield* DateTime.nowInCurrentZone;
+    const checked = (item: PermissionItem): string =>
+      item.checkedAt === null
+        ? ""
+        : ` · last checked ${clock(item.checkedAt, now)}`;
     const lead = (tone: "ok" | "warn" | "bad", item: PermissionItem) => [
       "  ",
       mark(tone, look),
@@ -125,14 +127,7 @@ export const walkPermissions = (
     const initialRow = (item: PermissionItem): ReadonlyArray<Cell> => {
       const state = item.state;
       if (state === "granted") {
-        return [lead("ok", item), span("dim", item.gives)];
-      }
-      if (state === "notRunning") {
-        const browser =
-          item.request.kind === "automation"
-            ? browserName(item.request.bundleId)
-            : item.name;
-        return [lead("warn", item), noteCell(item, `${browser} is closed`)];
+        return [lead("ok", item), span("dim", `${item.gives}${checked(item)}`)];
       }
       if (state === "noAnswer") {
         const browser =
@@ -142,7 +137,10 @@ export const walkPermissions = (
         return [lead("warn", item), noteCell(item, noAnswerNote(browser))];
       }
       if (state === "denied") {
-        return [lead("bad", item), span("bad", deniedFix(item))];
+        return [
+          lead("bad", item),
+          span("bad", `${deniedFix(item)}${checked(item)}`),
+        ];
       }
       return [lead("warn", item), noteCell(item, "not asked")];
     };
@@ -159,12 +157,16 @@ export const walkPermissions = (
         )[perms.indexOf(perm)] ?? "",
       );
     const granted = perms.filter((p) => p.state === "granted");
+    const hasAutomation = items.some((i) => i.request.kind === "automation");
     yield* prompt.print(
       line(
         [
           span("head", "Permissions"),
           "   ",
-          span("dim", `${granted.length} of ${perms.length} granted`),
+          span(
+            "dim",
+            `${granted.length} of ${perms.length + (hasAutomation ? 0 : 1)} granted`,
+          ),
         ],
         look,
       ),
@@ -178,77 +180,22 @@ export const walkPermissions = (
       ),
     ];
     yield* Effect.forEach(listed, printRow);
+    if (!hasAutomation) {
+      yield* prompt.print(
+        line(
+          [
+            "  ",
+            mark("warn", look),
+            " Automation",
+            span("warn", "  no browser used yet"),
+          ],
+          look,
+        ),
+      );
+    }
     if (!interactive) {
       yield* prompt.print("no terminal, skipping questions");
       return;
-    }
-    const openRetry = options.openRetry ?? defaultOpenRetry;
-    const closed = perms.filter(
-      (p) => p.state === "notRunning" && p.item.request.kind === "automation",
-    );
-    if (closed.length > 0) {
-      const openThem = yield* prompt.confirm({
-        message: `Open ${joinNames(
-          closed.map((p) =>
-            p.item.request.kind === "automation"
-              ? browserName(p.item.request.bundleId)
-              : p.item.name,
-          ),
-        )} now and ask?`,
-        initial: false,
-      });
-      if (!openThem) {
-        yield* prompt.print(
-          "  later: open the browser, then run clocktrace permissions",
-        );
-      } else {
-        yield* Effect.forEach(closed, (perm) =>
-          Effect.gen(function* () {
-            const { item } = perm;
-            if (item.request.kind !== "automation") {
-              return;
-            }
-            const bundleId = item.request.bundleId;
-            const code = yield* PlatformCommand.exitCode(
-              PlatformCommand.make("open", "-b", bundleId),
-            ).pipe(Effect.orElseSucceed(() => 1));
-            const opened =
-              code === 0
-                ? yield* Effect.scoped(helper.permissions(appPath)).pipe(
-                    Effect.flatMap((after) =>
-                      after.automation[bundleId] === undefined ||
-                      after.automation[bundleId] === "notRunning"
-                        ? Effect.fail(new BrowserNotRunning({ bundleId }))
-                        : Effect.succeed(
-                            after.automation[bundleId] as GrantState,
-                          ),
-                    ),
-                    Effect.retry({
-                      schedule: openRetry,
-                      while: (e) => e._tag === "BrowserNotRunning",
-                    }),
-                    Effect.either,
-                  )
-                : Either.left(new BrowserNotRunning({ bundleId }));
-            if (Either.isLeft(opened)) {
-              const e = opened.left;
-              perm.row =
-                e._tag === "BrowserNotRunning"
-                  ? [
-                      lead("warn", item),
-                      span(
-                        "warn",
-                        `${browserName(bundleId)} did not open · open it, then run clocktrace permissions`,
-                      ),
-                    ]
-                  : [lead("bad", item), span("bad", e.message)];
-              yield* printRow(perm);
-              return;
-            }
-            perm.state = opened.right;
-          }),
-        );
-      }
     }
     type Perm = (typeof perms)[number];
     // True when tccutil cleared the grant, so macOS can ask again.
@@ -333,6 +280,7 @@ export const walkPermissions = (
       Effect.gen(function* () {
         const { item } = perm;
         const after = yield* Effect.scoped(helper.permissions(appPath));
+        yield* saveLiveGrants(after, yield* DateTime.now);
         perm.state =
           item.request.kind === "automation"
             ? (after.automation[item.request.bundleId] ?? perm.state)
@@ -430,9 +378,7 @@ export const walkPermissions = (
     );
   });
 
-export const permissions = (
-  openRetry?: Schedule.Schedule<unknown, unknown>,
-): Effect.Effect<
+export const permissions = (): Effect.Effect<
   void,
   | NotSetUpError
   | AppMissingError
@@ -450,9 +396,9 @@ export const permissions = (
   | Terminal.Terminal
   | Path.Path
   | CommandExecutor.CommandExecutor
+  | DateTime.CurrentTimeZone
   | Style
-> =>
-  requireSetUp.pipe(Effect.andThen(withStore(walkPermissions({ openRetry }))));
+> => requireSetUp.pipe(Effect.andThen(withStore(walkPermissions())));
 
 export const permissionsCommand = Command.make("permissions", {}, () =>
   permissions(),
