@@ -6,11 +6,10 @@ status: accepted
 
 Some Mac apps have a name but no bundle id. For a Windows game run through
 CrossOver (Wine), macOS reports `QSanguosha.exe` with no bundle id. The
-Collector drops every line with no bundle id, so that time is never tracked.
-The Collector will save such an Activity with a Stand-in id, `noid:` and the
+Collector dropped every line with no bundle id, so that time was never tracked.
+The Collector now saves such an Activity with a Stand-in id, `noid:` and the
 app name, as `noid:QSanguosha.exe`. The Helper still sends only what macOS
-reports; the Collector makes the Stand-in id before the write. Planned in
-#171, not built yet.
+reports; the Collector makes the Stand-in id before the write. Built in #171.
 
 Apple's rule for `CFBundleIdentifier` allows only letters, digits, `-` and `.`,
 so a Stand-in id, which holds a colon, never matches a real bundle id. Code
