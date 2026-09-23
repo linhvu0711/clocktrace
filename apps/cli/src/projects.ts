@@ -1,4 +1,5 @@
 import {
+  type InvalidInputError,
   type Project,
   type ProjectInput,
   type ProjectInUseError,
@@ -65,7 +66,7 @@ export const printSetProject = (
   json: boolean,
 ): Effect.Effect<
   void,
-  ProjectNotFoundError | ParseError | StoreError,
+  InvalidInputError | ProjectNotFoundError | ParseError | StoreError,
   Store | Prompt | Style
 > =>
   Effect.gen(function* () {
