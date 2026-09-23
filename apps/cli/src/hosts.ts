@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import { Command, type CommandExecutor, FileSystem } from "@effect/platform";
 import type { PlatformError } from "@effect/platform/Error";
-import { Data, Effect, Layer } from "effect";
-import { type Document, isMap, parseDocument } from "yaml";
+import { Data, Effect, Layer, Option } from "effect";
 
 import { shellQuote } from "./format.js";
+import { removeRegistration, setRegistration } from "./hermes-config.js";
 import { runCommand } from "./run-command.js";
 
 export const hostNames = ["claude", "codex", "hermes", "openclaw"] as const;
@@ -397,17 +397,11 @@ const onPath = (
     Effect.catchAll(() => Effect.succeed(false)),
   );
 
-class HermesConfigParseError extends Data.TaggedError(
-  "HermesConfigParseError",
-)<{
-  cause: unknown;
-}> {}
-
 const hermesConfigPath = () => join(homedir(), ".hermes", "config.yaml");
 
 const readHermes: Effect.Effect<
-  { readonly doc: Document; readonly exists: boolean },
-  HermesConfigParseError | PlatformError,
+  { readonly text: string; readonly exists: boolean },
+  PlatformError,
   FileSystem.FileSystem
 > = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -416,20 +410,13 @@ const readHermes: Effect.Effect<
     .exists(path)
     .pipe(Effect.catchAll(() => Effect.succeed(false)));
   const text = exists ? yield* fs.readFileString(path) : "";
-  const doc = yield* Effect.try({
-    try: () => parseDocument(text === "" ? "{}" : text),
-    catch: (cause) => new HermesConfigParseError({ cause }),
-  });
-  if (doc.errors.length > 0) {
-    return yield* new HermesConfigParseError({ cause: doc.errors });
-  }
-  return { doc, exists };
+  return { text, exists };
 });
 
 // Write beside the resolved target so a symlink keeps pointing at its
 // source, and keep the target's mode on the replacement file.
 const writeHermes = (
-  doc: Document,
+  text: string,
   exists: boolean,
 ): Effect.Effect<void, PlatformError, FileSystem.FileSystem> =>
   Effect.gen(function* () {
@@ -445,7 +432,7 @@ const writeHermes = (
       : null;
     yield* fs.makeDirectory(join(homedir(), ".hermes"), { recursive: true });
     const tmp = `${target}.tmp`;
-    yield* fs.writeFileString(tmp, doc.toString()).pipe(
+    yield* fs.writeFileString(tmp, text).pipe(
       Effect.andThen(info === null ? Effect.void : fs.chmod(tmp, info.mode)),
       Effect.andThen(fs.rename(tmp, target)),
       Effect.tapError(() => fs.remove(tmp).pipe(Effect.ignore)),
@@ -461,14 +448,12 @@ const registerHermes: Effect.Effect<
   never,
   FileSystem.FileSystem
 > = Effect.gen(function* () {
-  const { doc, exists } = yield* readHermes;
-  const env = doc.getIn(["mcp_servers", "clocktrace", "env"]);
-  doc.setIn(["mcp_servers", "clocktrace"], {
+  const { text, exists } = yield* readHermes;
+  const next = yield* setRegistration(text, {
     command: serverNode,
     args: [serverEntry, "mcp"],
-    ...(isMap(env) ? { env: env.toJSON() } : {}),
   });
-  yield* writeHermes(doc, exists);
+  yield* writeHermes(next, exists);
   return { outcome: "registered" } as const;
 }).pipe(
   Effect.catchAll(() =>
@@ -484,12 +469,12 @@ const unregisterHermes: Effect.Effect<
   HostRemoveError,
   FileSystem.FileSystem
 > = Effect.gen(function* () {
-  const { doc, exists } = yield* readHermes;
-  if (doc.getIn(["mcp_servers", "clocktrace"]) === undefined) {
+  const { text, exists } = yield* readHermes;
+  const next = yield* removeRegistration(text);
+  if (Option.isNone(next)) {
     return "not registered" as const;
   }
-  doc.deleteIn(["mcp_servers", "clocktrace"]);
-  yield* writeHermes(doc, exists);
+  yield* writeHermes(next.value, exists);
   return "unregistered" as const;
 }).pipe(Effect.mapError(() => new HostRemoveError({ host: "hermes" })));
 
