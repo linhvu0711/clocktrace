@@ -164,6 +164,11 @@ export const setup = (
                     "app: could not restore the previous install",
                   );
                 }
+                if (!e.agentRestored) {
+                  yield* prompt.print(
+                    "launch agent: could not restore the previous install",
+                  );
+                }
                 yield* prompt.printError(
                   line(
                     e.cause.step.startsWith("launchctl")

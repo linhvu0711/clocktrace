@@ -15,12 +15,14 @@ export const loadRetry = Schedule.spaced("100 millis").pipe(
 );
 
 // The Collector did not reach Loaded. The old App and plist were put back
-// first; `appRestored` is false when the App could not be.
+// first; `appRestored` is false when the App could not be, and
+// `agentRestored` when the old plist could not be.
 export class CollectorNotLoadedError extends Data.TaggedError(
   "CollectorNotLoadedError",
 )<{
   readonly cause: LaunchdError;
   readonly appRestored: boolean;
+  readonly agentRestored: boolean;
 }> {
   override get message(): string {
     return this.cause.message;
@@ -91,11 +93,19 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
                 Effect.as(true),
                 Effect.catchAll(() => Effect.succeed(false)),
               );
-              if (previous !== null) {
-                yield* Effect.ignore(launchd.restore(previous));
-              }
-              return appRestored;
-            }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+              const agentRestored =
+                previous === null
+                  ? true
+                  : yield* launchd.restore(previous).pipe(
+                      Effect.as(true),
+                      Effect.catchAll(() => Effect.succeed(false)),
+                    );
+              return { appRestored, agentRestored };
+            }).pipe(
+              Effect.catchAll(() =>
+                Effect.succeed({ appRestored: false, agentRestored: false }),
+              ),
+            );
             yield* Effect.gen(function* () {
               yield* launchd.install({
                 app: appMainPath,
@@ -111,8 +121,8 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
               Effect.catchTag("LaunchdError", (cause) =>
                 Effect.flatMap(
                   restore,
-                  (appRestored) =>
-                    new CollectorNotLoadedError({ cause, appRestored }),
+                  (restored) =>
+                    new CollectorNotLoadedError({ cause, ...restored }),
                 ),
               ),
             );

@@ -97,7 +97,11 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
 // while it waits for the start.
 type Outcome =
   | "loaded"
-  | { readonly failAt: "agent" | "start"; readonly appRestored: boolean };
+  | {
+      readonly failAt: "agent" | "start";
+      readonly appRestored: boolean;
+      readonly agentRestored: boolean;
+    };
 
 // Reports progress as the real install does and keeps the settings of
 // every call.
@@ -119,6 +123,7 @@ const fakeLifecycle = (
                 detail: "exit 1",
               }),
               appRestored: outcome.appRestored,
+              agentRestored: outcome.agentRestored,
             });
           }
           yield* progress.done("agent");
@@ -130,6 +135,7 @@ const fakeLifecycle = (
                 detail: "collector did not start",
               }),
               appRestored: outcome.appRestored,
+              agentRestored: outcome.agentRestored,
             });
           }
           return "loaded" as const;
@@ -324,6 +330,7 @@ describe("setup", () => {
     const { exit, output } = await run(helperStub(allGranted), {
       failAt: "agent",
       appRestored: true,
+      agentRestored: true,
     });
     // Then: the launchd error is reported with the collector log
     expect(exit).toEqual(
@@ -349,6 +356,7 @@ describe("setup", () => {
     const { exit, output } = await run(helperStub(allGranted), {
       failAt: "start",
       appRestored: true,
+      agentRestored: true,
     });
     // Then
     expect(exit).toEqual(
@@ -376,6 +384,7 @@ describe("setup", () => {
     const { output } = await run(helperStub(allGranted), {
       failAt: "start",
       appRestored: false,
+      agentRestored: true,
     });
     // Then: the restore line comes right before the failure line
     const failure = output.indexOf(
@@ -384,6 +393,24 @@ describe("setup", () => {
     expect(failure).toBeGreaterThan(0);
     expect(output[failure - 1]).toBe(
       "app: could not restore the previous install",
+    );
+  });
+
+  it("an agent that cannot be put back says so before the failure", async () => {
+    // Given: the Collector never reaches Loaded and the old agent stays gone
+    // When
+    const { output } = await run(helperStub(allGranted), {
+      failAt: "start",
+      appRestored: true,
+      agentRestored: false,
+    });
+    // Then: the restore line comes right before the failure line
+    const failure = output.indexOf(
+      "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
+    );
+    expect(failure).toBeGreaterThan(0);
+    expect(output[failure - 1]).toBe(
+      "launch agent: could not restore the previous install",
     );
   });
 

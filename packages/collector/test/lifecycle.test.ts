@@ -269,6 +269,7 @@ describe("Lifecycle.install restores", () => {
             detail: "exit 1",
           }),
           appRestored: true,
+          agentRestored: true,
         }),
       ),
     );
@@ -294,6 +295,7 @@ describe("Lifecycle.install restores", () => {
             detail: "exit 1",
           }),
           appRestored: true,
+          agentRestored: true,
         }),
       ),
     );
@@ -319,6 +321,7 @@ describe("Lifecycle.install restores", () => {
             log: "/Users/me/Library/Logs/clocktrace/collector.log",
           }),
           appRestored: true,
+          agentRestored: true,
         }),
       ),
     );
@@ -370,6 +373,7 @@ describe("Lifecycle.install restores", () => {
             log: "/Users/me/Library/Logs/clocktrace/collector.log",
           }),
           appRestored: false,
+          agentRestored: true,
         }),
       ),
     );
@@ -393,6 +397,29 @@ describe("Lifecycle.install restores", () => {
     // Then: the old plist is back, text and all
     expect(state.plist).toEqual(legacy);
     expect(state.installed).toBe(true);
+  });
+
+  it("an old plist that cannot be put back is named in the failure", async () => {
+    // Given: a running agent, and every bootstrap fails, the restore's too
+    // When
+    const { exit, state, appRollbacks } = await run(withAgent, install, {
+      launchd: { failBootstrap: true },
+    });
+    // Then: the App came back, the old agent did not
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+          appRestored: true,
+          agentRestored: false,
+        }),
+      ),
+    );
+    expect(appRollbacks).toBe(1);
+    expect(state.plist).toBe(null);
   });
 
   it("an unload that fails leaves the App not put back", async () => {
@@ -430,6 +457,7 @@ describe("Lifecycle.install restores", () => {
             log: "/Users/me/Library/Logs/clocktrace/collector.log",
           }),
           appRestored: false,
+          agentRestored: false,
         }),
       ),
     );
