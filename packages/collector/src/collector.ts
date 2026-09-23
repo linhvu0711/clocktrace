@@ -69,7 +69,10 @@ export const collect = <E, R>(
           Effect.tap(() =>
             Ref.set(
               remembered,
-              new Map(last).set(line.bundleId as string, line.grant as "granted" | "denied"),
+              new Map(last).set(
+                line.bundleId as string,
+                line.grant as "granted" | "denied",
+              ),
             ),
           ),
           Effect.catchTag("StoreError", () =>

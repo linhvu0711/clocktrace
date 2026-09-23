@@ -392,7 +392,12 @@ describe("status", () => {
       collector: "running",
       app: "present",
       permissions: [
-        { name: "accessibility", state: "granted", note: null, checkedAt: null },
+        {
+          name: "accessibility",
+          state: "granted",
+          note: null,
+          checkedAt: null,
+        },
         {
           name: "automation",
           state: "not checked",
@@ -437,7 +442,12 @@ describe("status", () => {
         note: "Chrome did not answer · quit Chrome, open it again, then run clocktrace permissions",
         checkedAt: null,
       },
-      { name: "full disk access", state: "granted", note: null, checkedAt: null },
+      {
+        name: "full disk access",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
     ]);
   });
 
@@ -641,7 +651,12 @@ describe("status", () => {
         note: "URLs in Safari are not tracked",
         checkedAt: "2026-09-19T18:00:00.000Z",
       },
-      { name: "full disk access", state: "granted", note: null, checkedAt: null },
+      {
+        name: "full disk access",
+        state: "granted",
+        note: null,
+        checkedAt: null,
+      },
     ]);
   });
 });

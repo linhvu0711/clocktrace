@@ -23,15 +23,15 @@ import {
   Effect,
   Exit,
   Layer,
+  Option,
   Ref,
-  Schedule,
   Stream,
 } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { Style } from "../src/format.js";
 import { permissions } from "../src/permissions.js";
-import { Prompt, Stdin, StoppedError } from "../src/prompt.js";
+import { Prompt, Stdin } from "../src/prompt.js";
 import { NotSetUpError } from "../src/set-up.js";
 import * as MockConsole from "./mock-console.js";
 import { type ExecResult, fakeExecutor } from "./mock-executor.js";
@@ -70,7 +70,6 @@ describe("permissions", () => {
       readonly requestError?: (grant: GrantRequest) => HelperExitedError | null;
       readonly appLayer?: Layer.Layer<App>;
       readonly commands?: Record<string, ExecResult>;
-      readonly openRetry?: Schedule.Schedule<unknown, unknown>;
       readonly permissionsErrorAt?: number;
       readonly permissionsError?: HelperExitedError;
     } = {},
@@ -138,7 +137,7 @@ describe("permissions", () => {
           exec.layer,
         );
         const exit = yield* Effect.exit(
-          permissions(options.openRetry).pipe(Effect.provide(layers)),
+          permissions().pipe(Effect.provide(layers)),
         );
         return {
           exit,
@@ -183,75 +182,6 @@ describe("permissions", () => {
       "  ✔ Full Disk Access    iPhone and iPad import",
     ]);
     expect(shown).not.toContain("Allow");
-    expect(requests).toEqual([]);
-  });
-
-  it("an askable browser is asked and turns granted", async () => {
-    // Given: Chromium notAsked; the re-read after the request says granted
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "notAsked" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, shown, requests } = await run(
-      [p, { ...p, automation: { "org.chromium.Chromium": "granted" } }],
-      [{ key: "enter" }],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toEqual([
-      "Permissions   2 of 3 granted",
-      "  ✔ Accessibility          window titles",
-      "  ✔ Full Disk Access       iPhone and iPad import",
-      "  ✔ Automation · Chromium  granted",
-    ]);
-    expect(shown).toContain("Allow Automation · Chromium (URLs in Chromium)");
-    expect(shown).toContain("(Y/n)");
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "org.chromium.Chromium" },
-    ]);
-  });
-
-  it("an askable browser that answered Don't Allow turns denied with the fix", async () => {
-    // Given: Chromium notAsked; the re-read after the request says denied
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "notAsked" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output } = await run(
-      [p, { ...p, automation: { "org.chromium.Chromium": "denied" } }],
-      [{ key: "enter" }],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output[output.length - 1]).toBe(
-      "  ✘ Automation · Chromium  denied · turn it on in System Settings › Privacy › Automation",
-    );
-  });
-
-  it("n at an askable item prints the later line and asks macOS nothing", async () => {
-    // Given: Chromium notAsked, answered n
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "notAsked" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, requests } = await run(
-      [p],
-      ["n", { key: "enter" }],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output[output.length - 1]).toBe(
-      "  ○ Automation · Chromium  later: run clocktrace permissions",
-    );
     expect(requests).toEqual([]);
   });
 
@@ -548,62 +478,6 @@ describe("permissions", () => {
     expect(requests).toEqual([]);
   });
 
-  it("an askable browser whose re-read never answered shows the fix", async () => {
-    // Given: Chromium notAsked; Enter asks; the re-read returns noAnswer
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "notAsked" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, requests } = await run(
-      [p, { ...p, automation: { "org.chromium.Chromium": "noAnswer" } }],
-      [{ key: "enter" }],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output).toEqual([
-      "Permissions   2 of 3 granted",
-      "  ✔ Accessibility          window titles",
-      "  ✔ Full Disk Access       iPhone and iPad import",
-      "  ○ Automation · Chromium  URLs in Chromium  Chromium did not answer · quit Chromium, open it again, then run clocktrace permissions",
-    ]);
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "org.chromium.Chromium" },
-    ]);
-  });
-
-  it("a helper failure during a request prints the cross and goes on", async () => {
-    // Given: Chromium notAsked and full disk access denied; the Chromium
-    // request dies in the helper, full disk access grants on re-read
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "notAsked" },
-      fullDiskAccess: "denied",
-    };
-    // When
-    const { exit, output } = await run(
-      [p, { ...p, fullDiskAccess: "granted" }],
-      [{ key: "enter" }, { key: "enter" }, { key: "enter" }],
-      true,
-      {
-        requestError: (grant) =>
-          grant.kind === "automation"
-            ? new HelperExitedError({ cause: "open exited 1" })
-            : null,
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    const cross = output.indexOf(
-      "  ✘ Automation · Chromium  helper exited: open exited 1",
-    );
-    const granted = output.indexOf("  ✔ Full Disk Access       granted");
-    expect(cross).toBeGreaterThanOrEqual(0);
-    expect(granted).toBeGreaterThan(cross);
-  });
-
   it("no terminal lists every item, says skipping once, asks nothing", async () => {
     // Given: every state at once, no TTY
     const p: Permissions = {
@@ -619,11 +493,10 @@ describe("permissions", () => {
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output).toEqual([
-      "Permissions   1 of 4 granted",
-      "  ✔ Accessibility          window titles",
-      "  ○ Automation · Safari    URLs in Safari    Safari is closed",
-      "  ○ Automation · Chromium  URLs in Chromium  not asked",
-      "  ✘ Full Disk Access       denied · turn it on in System Settings › Privacy › Full Disk Access",
+      "Permissions   1 of 2 granted",
+      "  ✔ Accessibility     window titles",
+      "  ✘ Full Disk Access  denied · turn it on in System Settings › Privacy › Full Disk Access",
+      "  ○ Automation  no browser used yet",
       "no terminal, skipping questions",
     ]);
     expect(shown).toBe("");
@@ -654,29 +527,6 @@ describe("permissions", () => {
       "  ✘ Automation · Chromium  denied · turn it on in System Settings › Privacy › Automation",
       "  ✘ Full Disk Access       denied · turn it on in System Settings › Privacy › Full Disk Access",
       "no terminal, skipping questions",
-    ]);
-  });
-
-  it("ctrl-c at a permission question stops the walk", async () => {
-    // Given: Chromium notAsked; ctrl-c at its question
-    const p: Permissions = {
-      accessibility: "granted",
-      automation: { "org.chromium.Chromium": "notAsked" },
-      fullDiskAccess: "granted",
-    };
-    // When
-    const { exit, output, requests } = await run(
-      [p],
-      [{ key: "c", ctrl: true }],
-      true,
-    );
-    // Then
-    expect(exit).toEqual(Exit.fail(new StoppedError()));
-    expect(requests).toEqual([]);
-    expect(output).toEqual([
-      "Permissions   2 of 3 granted",
-      "  ✔ Accessibility          window titles",
-      "  ✔ Full Disk Access       iPhone and iPad import",
     ]);
   });
 
@@ -742,84 +592,6 @@ describe("permissions", () => {
     expect(output).toEqual([]);
   });
 
-  it("a closed browser opens on y and is asked once running", async () => {
-    // Given
-    const p = {
-      accessibility: "granted" as const,
-      automation: { "com.apple.Safari": "notRunning" as const },
-      fullDiskAccess: "granted" as const,
-    };
-    // When
-    const { exit, output, commands, requests } = await run(
-      [
-        p,
-        { ...p, automation: { "com.apple.Safari": "notAsked" } },
-        { ...p, automation: { "com.apple.Safari": "granted" } },
-      ],
-      ["y", { key: "enter" }, { key: "enter" }],
-      true,
-      { commands: { "open -b com.apple.Safari": { code: 0 } } },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual(["open -b com.apple.Safari"]);
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "com.apple.Safari" },
-    ]);
-    expect(output).toEqual([
-      "Permissions   2 of 3 granted",
-      "  ✔ Accessibility        window titles",
-      "  ✔ Full Disk Access     iPhone and iPad import",
-      "  ○ Automation · Safari  URLs in Safari  Safari is closed",
-      "  ✔ Automation · Safari  granted",
-    ]);
-  });
-
-  it("n at the open offer prints the later line and opens nothing", async () => {
-    // Given
-    const p = {
-      accessibility: "granted" as const,
-      automation: { "com.apple.Safari": "notRunning" as const },
-      fullDiskAccess: "granted" as const,
-    };
-    // When
-    const { exit, output, commands, requests } = await run(
-      [p],
-      ["n", { key: "enter" }],
-      true,
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual([]);
-    expect(requests).toEqual([]);
-    expect(output[output.length - 1]).toBe(
-      "  later: open the browser, then run clocktrace permissions",
-    );
-  });
-
-  it("a browser that fails to open shows the warn line", async () => {
-    // Given
-    const p = {
-      accessibility: "granted" as const,
-      automation: { "com.apple.Safari": "notRunning" as const },
-      fullDiskAccess: "granted" as const,
-    };
-    // When
-    const { exit, output, commands, requests } = await run(
-      [p],
-      ["y", { key: "enter" }],
-      true,
-      { commands: { "open -b com.apple.Safari": { code: 1 } } },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(commands).toEqual(["open -b com.apple.Safari"]);
-    expect(requests).toEqual([]);
-    expect(output[output.length - 1]).toBe(
-      "  ○ Automation · Safari  Safari did not open · open it, then run clocktrace permissions",
-    );
-  });
-
   it("full disk access opens System Settings and re-checks on y", async () => {
     // Given
     const p = {
@@ -839,6 +611,7 @@ describe("permissions", () => {
     expect(output).toEqual([
       "Permissions   1 of 2 granted",
       "  ✔ Accessibility     window titles",
+      "  ○ Automation  no browser used yet",
       "  → System Settings opened, turn it on for Clocktrace",
       "  ✔ Full Disk Access  granted",
     ]);
@@ -862,6 +635,7 @@ describe("permissions", () => {
     expect(output).toEqual([
       "Permissions   1 of 2 granted",
       "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation  no browser used yet",
       "  → macOS dialog opened, turn it on for Clocktrace",
       "  ✔ Accessibility     granted",
     ]);
@@ -925,6 +699,7 @@ describe("permissions", () => {
     expect(output).toEqual([
       "Permissions   1 of 2 granted",
       "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation  no browser used yet",
       "  → macOS dialog opened, turn it on for Clocktrace",
       "  → macOS dialog opened, turn it on for Clocktrace",
       "  ✔ Accessibility     granted",
@@ -968,6 +743,7 @@ describe("permissions", () => {
     expect(output).toEqual([
       "Permissions   1 of 2 granted",
       "  ✔ Accessibility     window titles",
+      "  ○ Automation  no browser used yet",
       "  → System Settings opened, turn it on for Clocktrace",
       "  → System Settings opened, add Clocktrace with + and turn it on",
       "  ✔ Full Disk Access  granted",
@@ -996,84 +772,72 @@ describe("permissions", () => {
     );
   });
 
-  it("a browser that stays closed after polling shows the warn line", async () => {
-    // Given
-    const p = {
-      accessibility: "granted" as const,
-      automation: { "com.apple.Safari": "notRunning" as const },
-      fullDiskAccess: "granted" as const,
-    };
+  it("permissions shows a closed browser's Saved grant and asks nothing for it", async () => {
+    // Given: Safari closed with a saved denied Grant checked 2026-09-19 18:00Z
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          yield* store.setSetting(
+            "grant.com.apple.Safari",
+            '{"state":"denied","checkedAt":"2026-09-19T18:00:00.000Z"}',
+          );
+        }),
+      ),
+    );
     // When
-    const { exit, output, requests } = await run(
-      [p],
-      ["y", { key: "enter" }],
+    const { exit, output, shown, requests } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: {
+            "com.apple.Safari": "notRunning",
+            "com.brave.Browser": "granted",
+          },
+          fullDiskAccess: "granted",
+        },
+      ],
+      [],
       true,
-      {
-        commands: { "open -b com.apple.Safari": { code: 0 } },
-        openRetry: Schedule.recurs(2),
-      },
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(requests).toEqual([]);
-    expect(output[output.length - 1]).toBe(
-      "  ○ Automation · Safari  Safari did not open · open it, then run clocktrace permissions",
-    );
-  });
-
-  it("a helper failure while waiting for a browser to run prints the cross", async () => {
-    // Given
-    const p = {
-      accessibility: "granted" as const,
-      automation: { "com.apple.Safari": "notRunning" as const },
-      fullDiskAccess: "granted" as const,
-    };
-    // When: the browser is asked to open, then the helper errors on the poll
-    const { exit, output, requests } = await run(
-      [p],
-      ["y", { key: "enter" }],
-      true,
-      {
-        commands: { "open -b com.apple.Safari": { code: 0 } },
-        permissionsErrorAt: 1,
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(requests).toEqual([]);
-    expect(output[output.length - 1]).toBe(
-      "  ✘ Automation · Safari  helper exited: gone",
-    );
-  });
-
-  it("a browser that closes before the ask shows closed, not denied", async () => {
-    // Given: Safari opens, reads notAsked, then reports notRunning at request
-    const closed = {
-      accessibility: "granted" as const,
-      automation: { "com.apple.Safari": "notRunning" as const },
-      fullDiskAccess: "granted" as const,
-    };
-    const pending = {
-      ...closed,
-      automation: { "com.apple.Safari": "notAsked" as const },
-    };
-    // When
-    const { exit, output, requests } = await run(
-      [closed, pending, pending],
-      ["y", { key: "enter" }, { key: "enter" }],
-      true,
-      {
-        commands: { "open -b com.apple.Safari": { code: 0 } },
-        outcome: "notRunning",
-      },
-    );
-    // Then
-    expect(Exit.isSuccess(exit)).toBe(true);
-    expect(requests).toEqual([
-      { kind: "automation", bundleId: "com.apple.Safari" },
+    expect(shown).toBe("");
+    expect(output).toEqual([
+      "Permissions   3 of 4 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Automation · Brave   URLs in Brave",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "  ✘ Automation · Safari  denied · turn it on in System Settings › Privacy › Automation · last checked 2026-09-19 11:00",
     ]);
-    expect(output[output.length - 1]).toBe(
-      "  ○ Automation · Safari  URLs in Safari  Safari is closed",
+  });
+
+  it("a live check in permissions updates the Saved grant", async () => {
+    // Given: Brave answered granted
+    // When
+    const { exit } = await run(
+      [
+        {
+          accessibility: "granted",
+          automation: { "com.brave.Browser": "granted" },
+          fullDiskAccess: "granted",
+        },
+      ],
+      [],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    const raw = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flatMap(openStore(path), (store) =>
+          store.getSetting("grant.com.brave.Browser"),
+        ),
+      ),
+    );
+    expect(raw).toEqual(
+      Option.some(expect.stringContaining('"state":"granted"')),
     );
   });
 });

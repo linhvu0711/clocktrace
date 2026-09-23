@@ -1,5 +1,13 @@
 import { Store, StoreError } from "@clocktrace/core";
-import { DateTime, Deferred, Effect, Fiber, Layer, Option, Stream } from "effect";
+import {
+  DateTime,
+  Deferred,
+  Effect,
+  Fiber,
+  Layer,
+  Option,
+  Stream,
+} from "effect";
 import { describe, expect, it } from "vitest";
 
 import { collect } from "../src/collector.js";
@@ -632,9 +640,7 @@ describe("collector", () => {
     );
     // Then
     expect(saved).toEqual(
-      Option.some(
-        '{"state":"denied","checkedAt":"2026-01-01T09:00:00.000Z"}',
-      ),
+      Option.some('{"state":"denied","checkedAt":"2026-01-01T09:00:00.000Z"}'),
     );
   });
 
@@ -674,9 +680,7 @@ describe("collector", () => {
     );
     // Then
     expect(saved).toEqual(
-      Option.some(
-        '{"state":"denied","checkedAt":"2026-01-01T09:00:00.000Z"}',
-      ),
+      Option.some('{"state":"denied","checkedAt":"2026-01-01T09:00:00.000Z"}'),
     );
   });
 

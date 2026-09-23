@@ -509,9 +509,7 @@ describe("status", () => {
     );
     // Then
     expect(saved).toEqual(
-      Option.some(
-        '{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}',
-      ),
+      Option.some('{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}'),
     );
   });
 });

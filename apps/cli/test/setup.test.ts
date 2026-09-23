@@ -229,6 +229,7 @@ describe("setup", () => {
     "Permissions   2 of 2 granted",
     "  ✔ Accessibility     window titles",
     "  ✔ Full Disk Access  iPhone and iPad import",
+    "  ○ Automation  no browser used yet",
     "no terminal, skipping questions",
     ...manualLines,
     "",

@@ -1,5 +1,5 @@
 import { Store, type StoreError } from "@clocktrace/core";
-import { DateTime, Effect, Option, Schema } from "effect";
+import { type DateTime, Effect, Option, Schema } from "effect";
 
 import { knownBrowsers, type Permissions } from "./permissions.js";
 
@@ -15,8 +15,7 @@ export type SavedGrant = Schema.Schema.Type<typeof SavedGrant>;
 const encodeSavedGrant = Schema.encodeSync(SavedGrant);
 const decodeSavedGrant = Schema.decodeUnknown(SavedGrant);
 
-export const savedGrantKey = (bundleId: string): string =>
-  `grant.${bundleId}`;
+export const savedGrantKey = (bundleId: string): string => `grant.${bundleId}`;
 
 export const saveGrant = (
   bundleId: string,

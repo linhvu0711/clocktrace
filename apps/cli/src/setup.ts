@@ -109,7 +109,6 @@ const defaultLoadRetry = Schedule.spaced("100 millis").pipe(
 export const setup = (
   hosts?: ReadonlyArray<HostName>,
   loadRetry: Schedule.Schedule<unknown, unknown> = defaultLoadRetry,
-  openRetry?: Schedule.Schedule<unknown, unknown>,
 ): Effect.Effect<
   void,
   | HelperNotFoundError
@@ -241,7 +240,7 @@ export const setup = (
         // back a Collector that is already running.
         yield* Effect.ignore(app.commit());
         const interactive = yield* prompt.interactive;
-        yield* walkPermissions({ openRetry });
+        yield* walkPermissions();
         const selected =
           hosts !== undefined ? hosts : interactive ? yield* pickHosts : [];
         if (selected.length === 0) {

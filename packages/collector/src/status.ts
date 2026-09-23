@@ -7,13 +7,13 @@ import { Helper, type HelperExitedError } from "./helper.js";
 import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
-import { readSavedGrants, saveLiveGrants } from "./saved-grant.js";
 import {
   browserName,
   noAnswerNote,
   type PermissionItem,
   permissionItems,
 } from "./permissions.js";
+import { readSavedGrants, saveLiveGrants } from "./saved-grant.js";
 
 export const PermissionLine = Schema.Struct({
   name: Schema.String,
@@ -136,8 +136,7 @@ export const readStatus = (): Effect.Effect<
         ? notCheckedLines
         : permissionItems(grants, saved).map(permissionLine);
     const permissions =
-      grants !== null &&
-      !items.some((p) => p.name.startsWith("automation "))
+      grants !== null && !items.some((p) => p.name.startsWith("automation "))
         ? [
             ...items.slice(0, 1),
             {
