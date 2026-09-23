@@ -15,42 +15,42 @@ final class BrowserScriptTests: XCTestCase {
   func testMapsChrome() {
     XCTAssertEqual(
       browserScript(bundleId: "com.google.Chrome"),
-      "tell application id \"com.google.Chrome\" to get URL of active tab of front window"
+      "tell application id \"com.google.Chrome\" to tell front window to return mode & linefeed & URL of active tab"
     )
   }
 
   func testMapsChromium() {
     XCTAssertEqual(
       browserScript(bundleId: "org.chromium.Chromium"),
-      "tell application id \"org.chromium.Chromium\" to get URL of active tab of front window"
+      "tell application id \"org.chromium.Chromium\" to tell front window to return mode & linefeed & URL of active tab"
     )
   }
 
   func testMapsEdge() {
     XCTAssertEqual(
       browserScript(bundleId: "com.microsoft.edgemac"),
-      "tell application id \"com.microsoft.edgemac\" to get URL of active tab of front window"
+      "tell application id \"com.microsoft.edgemac\" to tell front window to return mode & linefeed & URL of active tab"
     )
   }
 
   func testMapsBrave() {
     XCTAssertEqual(
       browserScript(bundleId: "com.brave.Browser"),
-      "tell application id \"com.brave.Browser\" to get URL of active tab of front window"
+      "tell application id \"com.brave.Browser\" to tell front window to return mode & linefeed & URL of active tab"
     )
   }
 
   func testMapsVivaldi() {
     XCTAssertEqual(
       browserScript(bundleId: "com.vivaldi.Vivaldi"),
-      "tell application id \"com.vivaldi.Vivaldi\" to get URL of active tab of front window"
+      "tell application id \"com.vivaldi.Vivaldi\" to tell front window to return mode & linefeed & URL of active tab"
     )
   }
 
   func testMapsOpera() {
     XCTAssertEqual(
       browserScript(bundleId: "com.operasoftware.Opera"),
-      "tell application id \"com.operasoftware.Opera\" to get URL of active tab of front window"
+      "tell application id \"com.operasoftware.Opera\" to tell front window to return mode & linefeed & URL of active tab"
     )
   }
 

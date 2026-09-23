@@ -7,6 +7,195 @@ final class SamplerTests: XCTestCase {
     name: "Safari", bundleId: "com.apple.Safari", pid: 3)
   private let textEdit = FrontApp(
     name: "TextEdit", bundleId: "com.apple.TextEdit", pid: 2)
+  private let brave = FrontApp(
+    name: "Brave Browser", bundleId: "com.brave.Browser", pid: 4)
+  private let t0 = Date(timeIntervalSince1970: 1_767_225_600)
+  private let ts0 = "2026-01-01T00:00:00.000Z"
+
+  private func reads(
+    front: FrontApp,
+    axTrusted: Bool,
+    title: String?,
+    runScript: @escaping (String) -> String?,
+    safariPrivateFormats: [String] = []
+  ) -> Reads {
+    Reads(
+      frontmost: { front },
+      axTrusted: { axTrusted },
+      focusedTitle: { _ in title },
+      automationStatus: { _, _ in 0 },
+      runScript: runScript,
+      safariPrivateFormats: { safariPrivateFormats },
+      idleSeconds: { 1 }
+    )
+  }
+
+  private func line(_ reads: Reads, urls: UrlReader? = nil) -> Line? {
+    var tracker = Tracker()
+    return tracker.observe(
+      Sampler.sample(reads, urls: urls ?? UrlReader(reads: reads), at: t0), at: t0)
+  }
+
+  private func braveLine(title: String?, url: String?, missing: [String]) -> Line {
+    Line(
+      ts: ts0, app: "Brave Browser", bundleId: "com.brave.Browser", grant: "granted",
+      title: title, url: url, idleSeconds: 1, missing: missing)
+  }
+
+  func testAChromeIncognitoWindowHasNoTitleOrUrl() {
+    // Given: Brave front, Accessibility on, an incognito window
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave (Private)",
+      runScript: { _ in "incognito\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: []))
+  }
+
+  func testAChromeIncognitoWindowWithoutAccessibilityHasNoTitleOrUrl() {
+    // Given: Brave front, Accessibility off, an incognito window
+    let r = reads(
+      front: brave, axTrusted: false, title: "Example Domain - Brave (Private)",
+      runScript: { _ in "incognito\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: ["accessibility"]))
+  }
+
+  func testAChromeNormalWindowKeepsTheTitleAndUrl() {
+    // Given: Brave front, Accessibility on, a normal window
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in "normal\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      braveLine(title: "Example Domain - Brave", url: "https://example.com/", missing: []))
+  }
+
+  func testAChromeNormalWindowWithoutAccessibilityKeepsTheUrl() {
+    // Given: Brave front, Accessibility off, a normal window
+    let r = reads(
+      front: brave, axTrusted: false, title: "Example Domain - Brave",
+      runScript: { _ in "normal\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      braveLine(title: nil, url: "https://example.com/", missing: ["accessibility"]))
+  }
+
+  func testAFailedChromeScriptHasNoUrl() {
+    // Given: Brave front, Accessibility on, the script fails
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in nil })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result, braveLine(title: "Example Domain - Brave", url: nil, missing: []))
+  }
+
+  func testAChromeOutputWithoutAModeHasNoUrl() {
+    // Given: Brave front, Accessibility on, the script gives a URL with no mode
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in "https://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result, braveLine(title: "Example Domain - Brave", url: nil, missing: []))
+  }
+
+  func testASlowChromeReadHasNoUrl() {
+    // Given: Brave front, Accessibility on, the read sleeps past the limit
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in
+        Thread.sleep(forTimeInterval: 0.5)
+        return "normal\nhttps://example.com/"
+      })
+    let urls = UrlReader(reads: r, readLimit: .milliseconds(50))
+    // When
+    let result = line(r, urls: urls)
+    // Then
+    XCTAssertEqual(
+      result, braveLine(title: "Example Domain - Brave", url: nil, missing: []))
+  }
+
+  private let safariFormats = ["%@, Private Browsing", "%@, navigation privée"]
+
+  private func safariReads(
+    axTrusted: Bool, title: String?, safariPrivateFormats: [String]? = nil
+  ) -> Reads {
+    reads(
+      front: safari, axTrusted: axTrusted, title: title,
+      runScript: { _ in "https://example.com/" },
+      safariPrivateFormats: safariPrivateFormats ?? safariFormats)
+  }
+
+  private func safariLine(title: String?, url: String?, missing: [String]) -> Line {
+    Line(
+      ts: ts0, app: "Safari", bundleId: "com.apple.Safari", grant: "granted",
+      title: title, url: url, idleSeconds: 1, missing: missing)
+  }
+
+  func testASafariPrivateWindowHasNoTitleOrUrl() {
+    // Given: Safari front, Accessibility on, an English private window
+    let r = safariReads(axTrusted: true, title: "Example Domain, Private Browsing")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, safariLine(title: nil, url: nil, missing: []))
+  }
+
+  func testAFrenchSafariPrivateWindowHasNoTitleOrUrl() {
+    // Given: Safari front, Accessibility on, a French private window
+    let r = safariReads(axTrusted: true, title: "Example Domain, navigation privée")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, safariLine(title: nil, url: nil, missing: []))
+  }
+
+  func testASafariNormalWindowKeepsTheTitleAndUrl() {
+    // Given: Safari front, Accessibility on, a normal window
+    let r = safariReads(axTrusted: true, title: "Example Domain")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      safariLine(title: "Example Domain", url: "https://example.com/", missing: []))
+  }
+
+  func testSafariWithoutAccessibilityHasNoUrl() {
+    // Given: Safari front, Accessibility off
+    let r = safariReads(axTrusted: false, title: "Example Domain")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result, safariLine(title: nil, url: nil, missing: ["accessibility"]))
+  }
+
+  func testSafariWithNoPrivateFormatsHasNoUrl() {
+    // Given: Safari front, Accessibility on, no private text loaded
+    let r = safariReads(
+      axTrusted: true, title: "Example Domain", safariPrivateFormats: [])
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result, safariLine(title: "Example Domain", url: nil, missing: []))
+  }
 
   func testRunsTheScriptWhenAutomationIsGranted() {
     // Given: Reads for a Safari frontmost with Automation granted
@@ -20,6 +209,7 @@ final class SamplerTests: XCTestCase {
         scripts.append(script)
         return "https://example.com/"
       },
+      safariPrivateFormats: { ["%@, Private Browsing"] },
       idleSeconds: { 1 }
     )
     // When
@@ -47,6 +237,7 @@ final class SamplerTests: XCTestCase {
         scripts.append(script)
         return "https://example.com/"
       },
+      safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
     // When
@@ -72,6 +263,7 @@ final class SamplerTests: XCTestCase {
         scripts.append(script)
         return nil
       },
+      safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
     // When
@@ -95,6 +287,7 @@ final class SamplerTests: XCTestCase {
         return 0
       },
       runScript: { _ in nil },
+      safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
     let urls = UrlReader(reads: reads, checkLimit: .milliseconds(50))
@@ -125,6 +318,7 @@ final class SamplerTests: XCTestCase {
         return -1744
       },
       runScript: { _ in nil },
+      safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
     let t0 = Date(timeIntervalSince1970: 1_767_225_600)
@@ -151,6 +345,7 @@ final class SamplerTests: XCTestCase {
       },
       automationStatus: { _, _ in 0 },
       runScript: { _ in nil },
+      safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
     // When

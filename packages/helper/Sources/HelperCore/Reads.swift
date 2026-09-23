@@ -6,6 +6,7 @@ public struct Reads {
   public var focusedTitle: (pid_t) -> String?
   public var automationStatus: (String, Bool) -> OSStatus
   public var runScript: (String) -> String?
+  public var safariPrivateFormats: () -> [String]
   public var idleSeconds: () -> Double
 
   public init(
@@ -14,6 +15,7 @@ public struct Reads {
     focusedTitle: @escaping (pid_t) -> String?,
     automationStatus: @escaping (String, Bool) -> OSStatus,
     runScript: @escaping (String) -> String?,
+    safariPrivateFormats: @escaping () -> [String],
     idleSeconds: @escaping () -> Double
   ) {
     self.frontmost = frontmost
@@ -21,6 +23,7 @@ public struct Reads {
     self.focusedTitle = focusedTitle
     self.automationStatus = automationStatus
     self.runScript = runScript
+    self.safariPrivateFormats = safariPrivateFormats
     self.idleSeconds = idleSeconds
   }
 }
