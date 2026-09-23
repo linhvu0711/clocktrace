@@ -375,7 +375,7 @@ describe("permissions", () => {
 
   it("a browser reset re-asks the browsers it cleared when its own ask fails", async () => {
     // Given: Brave granted, Chromium denied; the reset clears both, then the
-    // Chromium ask dies in the helper
+    // Chromium ask dies in the helper, so nothing reads the states again
     const p: Permissions = {
       accessibility: "granted",
       automation: {
@@ -388,13 +388,6 @@ describe("permissions", () => {
     const { exit, output, requests } = await run(
       [
         p,
-        {
-          ...p,
-          automation: {
-            "com.brave.Browser": "notAsked",
-            "org.chromium.Chromium": "notAsked",
-          },
-        },
         {
           ...p,
           automation: {
@@ -427,38 +420,54 @@ describe("permissions", () => {
     ]);
   });
 
-  it("a helper that fails the browser ask and the re-read after a reset lets the walk go on", async () => {
-    // Given: Chromium and full disk access denied; after the reset the
-    // Chromium ask and the next permissions read both die in the helper;
-    // full disk access grants on its re-check
+  it("a second denied browser after a reset gets Allow, not a second reset", async () => {
+    // Given: Brave and Chromium both denied; one reset clears both
     const p: Permissions = {
       accessibility: "granted",
-      automation: { "org.chromium.Chromium": "denied" },
-      fullDiskAccess: "denied",
+      automation: {
+        "com.brave.Browser": "denied",
+        "org.chromium.Chromium": "denied",
+      },
+      fullDiskAccess: "granted",
     };
     // When
-    const { exit, output, requests } = await run(
-      [p, { ...p, fullDiskAccess: "granted" }],
-      ["y", { key: "enter" }, { key: "enter" }, { key: "enter" }],
+    const { exit, output, shown, requests, commands } = await run(
+      [
+        p,
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "notAsked",
+          },
+        },
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "granted",
+          },
+        },
+      ],
+      ["y", { key: "enter" }, { key: "enter" }],
       true,
       {
         commands: {
           "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
         },
-        requestError: (grant) =>
-          grant.kind === "automation"
-            ? new HelperExitedError({ cause: "open exited 1" })
-            : null,
-        permissionsErrorAt: 1,
       },
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
-    expect(output.slice(-3)).toEqual([
-      "  ✘ Automation · Chromium  helper exited: open exited 1",
-      "  → System Settings opened, turn it on for Clocktrace",
-      "  ✔ Full Disk Access       granted",
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "com.brave.Browser" },
+      { kind: "automation", bundleId: "org.chromium.Chromium" },
+    ]);
+    expect(shown).toContain("Allow Automation · Chromium (URLs in Chromium)");
+    expect(output.slice(-2)).toEqual([
+      "  ✔ Automation · Brave     granted",
+      "  ✔ Automation · Chromium  granted",
     ]);
   });
 
