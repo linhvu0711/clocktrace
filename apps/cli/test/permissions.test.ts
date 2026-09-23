@@ -665,6 +665,37 @@ describe("permissions", () => {
     expect(output[output.length - 1]).toBe("  ✔ Automation · Chrome  granted");
   });
 
+  it("a browser closed during the fix flow shows as granted next time", async () => {
+    // Given: Chrome denied before the walk, then closed (notRunning) on the
+    // re-read after Switched on
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "com.google.Chrome": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown, commands } = await run(
+      [p, { ...p, automation: { "com.google.Chrome": "notRunning" } }],
+      [{ key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "open x-apple.systempreferences:com.apple.preference.security?Privacy_Automation":
+            { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(shown).toContain("Switched on?");
+    expect(output).toContain(
+      "  Chrome shows as granted the next time you open it",
+    );
+    expect(output[output.length - 1]).toBe(
+      "  Chrome shows as granted the next time you open it",
+    );
+  });
+
   it("n at a denied browser opens nothing", async () => {
     // Given: Chrome denied, answered n at the offer
     // When

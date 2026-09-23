@@ -286,6 +286,7 @@ export const walkPermissions = (): Effect.Effect<
             : item.request.kind === "fullDiskAccess"
               ? after.fullDiskAccess
               : after.accessibility;
+        return perm.state;
       });
     const printResult = (perm: Perm) => {
       const { item } = perm;
@@ -349,8 +350,16 @@ export const walkPermissions = (): Effect.Effect<
             );
             return;
           }
-          yield* recheck(perm);
-          if (perm.state !== "denied") {
+          const state = yield* recheck(perm);
+          if (state === "notRunning") {
+            perm.row = initialRow(item);
+            yield* printRow(perm);
+            yield* prompt.print(
+              `  ${browser} shows as granted the next time you open it`,
+            );
+            return;
+          }
+          if (state !== "denied") {
             yield* printResult(perm);
             return;
           }
