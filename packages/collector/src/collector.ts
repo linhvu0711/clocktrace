@@ -3,6 +3,7 @@ import { DateTime, Effect, Option, Ref, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
 import { decodeHelperLine, type HelperLine } from "./helper-line.js";
+import { saveGrant } from "./saved-grant.js";
 
 export const idleAfterSeconds = 300;
 export const minActivityMillis = 1000;
@@ -47,6 +48,37 @@ export const collect = <E, R>(
             }).pipe(Effect.provideService(Store, store));
             yield* store.insertActivity(blanked);
           });
+
+    const remembered = yield* Ref.make<
+      ReadonlyMap<string, "granted" | "denied">
+    >(new Map());
+
+    const remember = (line: HelperLine): Effect.Effect<void, never, Store> =>
+      Effect.gen(function* () {
+        if (
+          line.bundleId === null ||
+          (line.grant !== "granted" && line.grant !== "denied")
+        ) {
+          return;
+        }
+        const last = yield* Ref.get(remembered);
+        if (last.get(line.bundleId) === line.grant) {
+          return;
+        }
+        yield* saveGrant(line.bundleId, line.grant, line.ts).pipe(
+          Effect.tap(() =>
+            Ref.set(
+              remembered,
+              new Map(last).set(line.bundleId as string, line.grant as "granted" | "denied"),
+            ),
+          ),
+          Effect.catchTag("StoreError", () =>
+            Effect.logWarning("saved grant not written").pipe(
+              Effect.annotateLogs({ bundleId: line.bundleId }),
+            ),
+          ),
+        );
+      });
 
     const step = (
       line: HelperLine,
@@ -138,6 +170,7 @@ export const collect = <E, R>(
         ),
       ),
       Stream.filterMap((o) => o),
+      Stream.tap(remember),
       Stream.runForEach(step),
       Effect.ensuring(Effect.orDie(flush)),
     );

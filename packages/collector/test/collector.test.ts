@@ -1,5 +1,5 @@
-import { Store } from "@clocktrace/core";
-import { DateTime, Deferred, Effect, Fiber, Stream } from "effect";
+import { Store, StoreError } from "@clocktrace/core";
+import { DateTime, Deferred, Effect, Fiber, Layer, Option, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { collect } from "../src/collector.js";
@@ -598,6 +598,170 @@ describe("collector", () => {
         url: null,
         startedAt: "2026-01-01T00:00:00.000Z",
         endedAt: "2026-01-01T00:00:10.000Z",
+      },
+    ]);
+  });
+
+  it("a browser line saves its Grant", async () => {
+    // Given: a Chrome line carrying a denied Grant, then a Finder line
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+      line({
+        ts: "2026-01-01T09:00:05Z",
+        app: "Finder",
+        bundleId: "com.apple.finder",
+      }),
+    ];
+    // When
+    const saved = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(saved).toEqual(
+      Option.some(
+        '{"state":"denied","checkedAt":"2026-01-01T09:00:00.000Z"}',
+      ),
+    );
+  });
+
+  it("the same Grant is saved once", async () => {
+    // Given: two Chrome lines with the same Grant ten seconds apart
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+      line({
+        ts: "2026-01-01T09:00:10Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+      line({
+        ts: "2026-01-01T09:00:15Z",
+        app: "Finder",
+        bundleId: "com.apple.finder",
+      }),
+    ];
+    // When
+    const saved = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(saved).toEqual(
+      Option.some(
+        '{"state":"denied","checkedAt":"2026-01-01T09:00:00.000Z"}',
+      ),
+    );
+  });
+
+  it("a line with no grant key still records", async () => {
+    // Given: a Chrome line without a grant key, then a Finder line
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+      }),
+      line({
+        ts: "2026-01-01T09:00:05Z",
+        app: "Finder",
+        bundleId: "com.apple.finder",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Google Chrome",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T09:00:00.000Z",
+        endedAt: "2026-01-01T09:00:05.000Z",
+      },
+    ]);
+  });
+
+  it("a failed Grant save logs and keeps recording", async () => {
+    // Given: a Store whose setSetting fails; Chrome denied, then Finder
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "denied",
+      }),
+      line({
+        ts: "2026-01-01T09:00:05Z",
+        app: "Finder",
+        bundleId: "com.apple.finder",
+      }),
+    ];
+    const failingSetSetting = Layer.effect(
+      Store,
+      Effect.map(
+        Store,
+        (s) =>
+          new Store({
+            ...s,
+            setSetting: () =>
+              Effect.fail(new StoreError({ cause: "disk full" })),
+          }),
+      ),
+    );
+    // When
+    const rows = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        const activities = yield* store.readActivities({
+          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
+          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
+        });
+        return activities.map((a) => ({
+          appName: a.appName,
+          startedAt: DateTime.formatIso(a.startedAt),
+          endedAt: DateTime.formatIso(a.endedAt),
+        }));
+      }).pipe(Effect.provide(Layer.provide(failingSetSetting, Store.Test))),
+    );
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Google Chrome",
+        startedAt: "2026-01-01T09:00:00.000Z",
+        endedAt: "2026-01-01T09:00:05.000Z",
       },
     ]);
   });

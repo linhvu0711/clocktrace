@@ -33,6 +33,8 @@ const browserNames: Record<string, string> = {
   "org.chromium.Chromium": "Chromium",
 };
 
+export const knownBrowsers: ReadonlyArray<string> = Object.keys(browserNames);
+
 export const browserName = (bundleId: string): string =>
   browserNames[bundleId] ?? bundleId;
 
