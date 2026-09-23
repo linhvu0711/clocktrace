@@ -674,7 +674,7 @@ describe("permissions", () => {
       fullDiskAccess: "granted",
     };
     // When
-    const { exit, output, shown, commands } = await run(
+    const { exit, output, shown } = await run(
       [p, { ...p, automation: { "com.google.Chrome": "notRunning" } }],
       [{ key: "enter" }, { key: "enter" }],
       true,
