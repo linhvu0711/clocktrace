@@ -1,4 +1,16 @@
 import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { NodeFileSystem } from "@effect/platform-node";
+import {
   ConfigProvider,
   Effect,
   Exit,
@@ -8,9 +20,9 @@ import {
   Schedule,
   Schema,
 } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { App, AppError } from "../src/app.js";
+import { App, AppError, type AppInstall, lsregisterPath } from "../src/app.js";
 import {
   entryPath,
   fakeLaunchd,
@@ -23,7 +35,7 @@ import {
   type InstallProgress,
   Lifecycle,
 } from "../src/lifecycle.js";
-import { CollectorPaths } from "../src/paths.js";
+import { CollectorPaths, collectorPaths } from "../src/paths.js";
 import {
   type CollectorPlist,
   CollectorSettingsFromJson,
@@ -31,6 +43,7 @@ import {
   type InstalledPlist,
   installedPlist,
 } from "../src/plist.js";
+import { fakeExecutor } from "./mock-executor.js";
 
 // The previous agent's plist, in every case that has one.
 const samplePlist: CollectorPlist = {
@@ -49,6 +62,13 @@ const fresh: LaunchdState = {
   installs: 0,
 };
 
+const withAgent: LaunchdState = {
+  installed: true,
+  running: true,
+  plist: installedPlist(samplePlist),
+  installs: 1,
+};
+
 const settings = { databasePath: "/data/clocktrace.db", helperPath: "/stub" };
 
 // Counts installs, commits, and rollbacks, like the real App on disk.
@@ -62,7 +82,9 @@ const fakeApp = (
     new App({
       isInstalled: () => Effect.map(Ref.get(installs), (n) => n > 0),
       install: () =>
-        Ref.update(installs, (n) => n + 1).pipe(Effect.as("written" as const)),
+        Ref.getAndUpdate(installs, (n) => n + 1).pipe(
+          Effect.map((n): AppInstall => (n > 0 ? "replaced" : "fresh")),
+        ),
       commit: () => Ref.update(committed, (n) => n + 1),
       rollback: () => Ref.update(rolledBack, (n) => n + 1),
       remove: () => Ref.set(installs, 0).pipe(Effect.as("removed" as const)),
@@ -115,6 +137,45 @@ const unloadFails = (state: Ref.Ref<LaunchdState>) =>
         }),
     ),
   ).pipe(Layer.provide(fakeLaunchd(state, { bootstrapStuck: true })));
+
+// The installed plist cannot be read.
+const readError = new LaunchdError({
+  step: "read /Users/me/Library/LaunchAgents/com.clocktrace.collector.plist",
+  detail: "EACCES: permission denied",
+});
+
+const readPlistFails = (state: Ref.Ref<LaunchdState>) =>
+  Layer.effect(
+    Launchd,
+    Effect.map(
+      Launchd,
+      (base) =>
+        new Launchd({
+          ...base,
+          readPlist: () => Effect.fail(readError),
+        }),
+    ),
+  ).pipe(Layer.provide(fakeLaunchd(state)));
+
+// The old job cannot be booted out; it keeps running as it was.
+const bootoutError = new LaunchdError({
+  step: "launchctl bootout",
+  detail: "exit 5",
+  log: "/Users/me/Library/Logs/clocktrace/collector.log",
+});
+
+const bootoutFails = (state: Ref.Ref<LaunchdState>) =>
+  Layer.effect(
+    Launchd,
+    Effect.map(
+      Launchd,
+      (base) =>
+        new Launchd({
+          ...base,
+          bootout: () => Effect.fail(bootoutError),
+        }),
+    ),
+  ).pipe(Layer.provide(fakeLaunchd(state)));
 
 const run = <A, E>(
   initial: LaunchdState,
@@ -266,13 +327,6 @@ describe("Lifecycle.install", () => {
 });
 
 describe("Lifecycle.install restores", () => {
-  const withAgent: LaunchdState = {
-    installed: true,
-    running: true,
-    plist: installedPlist(samplePlist),
-    installs: 1,
-  };
-
   it("a failed bootstrap puts the old App and plist back", async () => {
     // Given: a running agent; the new agent's bootstrap fails
     // When
@@ -372,7 +426,7 @@ describe("Lifecycle.install restores", () => {
       App,
       new App({
         isInstalled: () => Effect.succeed(true),
-        install: () => Effect.succeed("written" as const),
+        install: () => Effect.succeed("replaced" as const),
         commit: () => Effect.void,
         rollback: () =>
           Effect.fail(new AppError({ step: "rename", detail: "busy" })),
@@ -676,5 +730,160 @@ describe("the Collector plist", () => {
     );
     // Then
     expect(settings).toEqual(Option.none());
+  });
+});
+
+// The real App on a temp home, so a case can check what is left on disk.
+// codesign and lsregister answer 0; any other command exits 1.
+const diskApp = (home: string) => {
+  const appPath = collectorPaths(home).appPath;
+  return Layer.unwrapEffect(
+    Effect.map(
+      fakeExecutor({
+        [`codesign -dv ${appPath}.new/Contents/MacOS/Clocktrace`]: { code: 0 },
+        [`codesign --force --sign - ${appPath}.new`]: { code: 0 },
+        [`${lsregisterPath} -f ${appPath}`]: { code: 0 },
+        [`${lsregisterPath} -u ${appPath}`]: { code: 0 },
+      }),
+      ({ layer }) =>
+        App.DefaultWithoutDependencies.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              NodeFileSystem.layer,
+              CollectorPaths.Default(home),
+              layer,
+            ),
+          ),
+        ),
+    ),
+  );
+};
+
+describe("Lifecycle.install on disk", () => {
+  let home: string;
+  let buildDir: string;
+  let helperPath: string;
+  let appPath: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "clocktrace-home-"));
+    buildDir = mkdtempSync(join(tmpdir(), "clocktrace-build-"));
+    helperPath = join(buildDir, "clocktrace-helper");
+    writeFileSync(helperPath, "helper-bytes");
+    appPath = collectorPaths(home).appPath;
+  });
+
+  afterEach(() => {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(buildDir, { recursive: true, force: true });
+  });
+
+  const installHere = (l: Lifecycle, p: InstallProgress<never>) =>
+    l.install({ ...settings, helperPath }, p);
+
+  const writeOldApp = () => {
+    mkdirSync(join(appPath, "Contents", "MacOS"), { recursive: true });
+    writeFileSync(
+      join(appPath, "Contents", "MacOS", "Clocktrace"),
+      "old-bytes",
+    );
+  };
+
+  const liveApp = () =>
+    readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8");
+
+  it("a failed first setup leaves no App on disk", async () => {
+    // Given: no agent and no App; the bootstrap fails
+    // When
+    const { exit, state } = await run(fresh, installHere, {
+      launchd: { failBootstrap: true },
+      app: diskApp(home),
+    });
+    // Then: the App, its siblings, and the plist are all gone
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+          appRestored: true,
+          agentRestored: true,
+        }),
+      ),
+    );
+    expect(existsSync(appPath)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(state.plist).toBe(null);
+    expect(state.installed).toBe(false);
+  });
+
+  it("a failed re-run puts the old App back on disk", async () => {
+    // Given: an old App and a running agent; the new agent's bootstrap fails
+    writeOldApp();
+    // When
+    const { exit, state } = await run(withAgent, installHere, {
+      launchdLayer: failFirstInstall,
+      app: diskApp(home),
+    });
+    // Then: the old App and the old plist are back
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: new LaunchdError({
+            step: "launchctl bootstrap",
+            detail: "exit 1",
+          }),
+          appRestored: true,
+          agentRestored: true,
+        }),
+      ),
+    );
+    expect(liveApp()).toBe("old-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(state.plist).toEqual(installedPlist(samplePlist));
+  });
+
+  it("a plist that cannot be read changes nothing on disk", async () => {
+    // Given: an old App and a running agent whose plist cannot be read
+    writeOldApp();
+    // When
+    const { exit, steps, state } = await run(withAgent, installHere, {
+      launchdLayer: readPlistFails,
+      app: diskApp(home),
+    });
+    // Then: the read error, and the old App and agent as they were
+    expect(exit).toEqual(Exit.fail(readError));
+    expect(steps).toEqual([]);
+    expect(liveApp()).toBe("old-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(state).toEqual(withAgent);
+  });
+
+  it("a failed bootout puts the old App back and keeps the old Collector", async () => {
+    // Given: an old App and a running agent that cannot be booted out
+    writeOldApp();
+    // When
+    const { exit, steps, state } = await run(withAgent, installHere, {
+      launchdLayer: bootoutFails,
+      app: diskApp(home),
+    });
+    // Then: the old App is live again and the old agent still runs
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: bootoutError,
+          appRestored: true,
+          agentRestored: true,
+        }),
+      ),
+    );
+    expect(steps).toEqual(["app"]);
+    expect(liveApp()).toBe("old-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(state).toEqual(withAgent);
   });
 });

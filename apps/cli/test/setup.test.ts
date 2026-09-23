@@ -93,15 +93,28 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
   streamLines: () => Stream.empty,
 } satisfies CommandExecutor.CommandExecutor);
 
-// How the fake Lifecycle ends: loaded, or not loaded at the agent step or
-// while it waits for the start.
+// How the fake Lifecycle ends: loaded, failed reading the old plist
+// before the App step, or not loaded at the bootout of the old agent, at
+// the agent step, or while it waits for the start.
 type Outcome =
   | "loaded"
+  | { readonly failAt: "read" }
   | {
-      readonly failAt: "agent" | "start";
+      readonly failAt: "bootout" | "agent" | "start";
       readonly appRestored: boolean;
       readonly agentRestored: boolean;
     };
+
+const bootoutError = new LaunchdError({
+  step: "launchctl bootout",
+  detail: "exit 5",
+  log: "/Users/me/Library/Logs/clocktrace/collector.log",
+});
+
+const readError = new LaunchdError({
+  step: "read /Users/me/Library/LaunchAgents/com.clocktrace.collector.plist",
+  detail: "EACCES: permission denied",
+});
 
 // Reports progress as the real install does and keeps the settings of
 // every call.
@@ -115,7 +128,17 @@ const fakeLifecycle = (
       install: <R>(settings: CollectorSettings, progress: InstallProgress<R>) =>
         Effect.gen(function* () {
           yield* Ref.update(installs, (all) => [...all, settings]);
+          if (outcome !== "loaded" && outcome.failAt === "read") {
+            return yield* readError;
+          }
           yield* progress.done("app");
+          if (outcome !== "loaded" && outcome.failAt === "bootout") {
+            return yield* new CollectorNotLoadedError({
+              cause: bootoutError,
+              appRestored: outcome.appRestored,
+              agentRestored: outcome.agentRestored,
+            });
+          }
           if (outcome !== "loaded" && outcome.failAt === "agent") {
             return yield* new CollectorNotLoadedError({
               cause: new LaunchdError({
@@ -347,6 +370,34 @@ describe("setup", () => {
       "Collector",
       "  ✔ app           ~/Applications/Clocktrace.app",
       "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
+    ]);
+  });
+
+  it("a plist that cannot be read fails before the app row", async () => {
+    // Given: the old plist cannot be read
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      failAt: "read",
+    });
+    // Then: the read error goes out whole and no row is printed
+    expect(exit).toEqual(Exit.fail(readError));
+    expect(output).toEqual(["Collector"]);
+  });
+
+  it("a bootout that fails prints its cause", async () => {
+    // Given: the old agent cannot be booted out; the old App came back
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      failAt: "bootout",
+      appRestored: true,
+      agentRestored: true,
+    });
+    // Then: the bootout cause, not a start failure, and no restore line
+    expect(exit).toEqual(Exit.fail(new ReportedError({ cause: bootoutError })));
+    expect(output).toEqual([
+      "Collector",
+      "  ✔ app           ~/Applications/Clocktrace.app",
+      "  ✘ launchctl bootout: exit 5",
     ]);
   });
 

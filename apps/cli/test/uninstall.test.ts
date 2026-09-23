@@ -82,7 +82,8 @@ const fakeApp = (
     App,
     new App({
       isInstalled: () => Ref.get(present),
-      install: () => Ref.set(present, true).pipe(Effect.as("written" as const)),
+      install: () =>
+        Ref.set(present, true).pipe(Effect.as("replaced" as const)),
       commit: () => Effect.void,
       rollback: () => Effect.void,
       remove: () =>

@@ -197,7 +197,7 @@ describe("App.install", () => {
       app.install(helperPath),
     );
     // Then
-    expect(result).toEqual(Exit.succeed("written"));
+    expect(result).toEqual(Exit.succeed("fresh"));
     const appHome = join(home, "Applications", "Clocktrace.app");
     expect(readFileSync(join(appHome, "Contents", "Info.plist"), "utf8")).toBe(
       infoPlist(),
@@ -219,7 +219,7 @@ describe("App.install", () => {
       app.install(helperPath),
     );
     // Then
-    expect(result).toEqual(Exit.succeed("written"));
+    expect(result).toEqual(Exit.succeed("fresh"));
     expect(commands).toEqual([
       [
         "codesign",
@@ -239,7 +239,7 @@ describe("App.install", () => {
     // When
     const { result } = await runApp(ADHOC, (app) => app.install(helperPath));
     // Then: the new bundle is in place and the previous one waits in .old
-    expect(result).toEqual(Exit.succeed("written"));
+    expect(result).toEqual(Exit.succeed("replaced"));
     expect(
       readFileSync(join(appHome, "Contents", "MacOS", "Clocktrace"), "utf8"),
     ).toBe("helper-bytes-2");
@@ -261,8 +261,7 @@ describe("App.install", () => {
     // When: a second install lands and is rolled back
     const { result, commands } = await runApp(ADHOC, (app) =>
       Effect.gen(function* () {
-        yield* app.install(helperPath);
-        yield* app.rollback();
+        yield* app.rollback(yield* app.install(helperPath));
       }),
     );
     // Then: the previous bundle is back, .old is gone, and the restored
@@ -275,13 +274,20 @@ describe("App.install", () => {
     expect(commands.at(-1)).toEqual([lsregisterPath, "-f", appPath]);
   });
 
-  it("rollback without .old is a no-op", async () => {
-    // Given: nothing parked in .old
-    // When
-    const { result, commands } = await runApp(ADHOC, (app) => app.rollback());
-    // Then
+  it("rollback of a fresh install removes the bundle", async () => {
+    // Given: a temp HOME with no app; codesign -dv reports adhoc
+    // When: a first install lands and is rolled back
+    const { result, commands } = await runApp(ADHOC, (app) =>
+      Effect.flatMap(app.install(helperPath), (installed) =>
+        app.rollback(installed),
+      ),
+    );
+    // Then: no bundle and no sibling is left, and the app is unregistered
     expect(result).toEqual(Exit.succeed(undefined));
-    expect(commands).toEqual([]);
+    expect(existsSync(appPath)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(commands.at(-1)).toEqual([lsregisterPath, "-u", appPath]);
   });
 
   it("rollback restores .old when no app is live", async () => {
@@ -295,7 +301,9 @@ describe("App.install", () => {
       "old-bytes",
     );
     // When
-    const { result, commands } = await runApp(ADHOC, (app) => app.rollback());
+    const { result, commands } = await runApp(ADHOC, (app) =>
+      app.rollback("replaced"),
+    );
     // Then: the parked bundle is live and registered again
     expect(result).toEqual(Exit.succeed(undefined));
     expect(
@@ -331,6 +339,27 @@ describe("App.install", () => {
     expect(existsSync(`${appPath}.reverting`)).toBe(false);
   });
 
+  it("a failed registration on a first install leaves no app", async () => {
+    // Given: no app yet; lsregister exits 1, every other command 0
+    // When
+    const { result } = await runApp(
+      ADHOC,
+      (app) => app.install(helperPath),
+      (command) =>
+        command._tag === "StandardCommand" &&
+        command.command.includes("lsregister")
+          ? 1
+          : 0,
+    );
+    // Then: install fails and no bundle or sibling is left
+    expect(result).toEqual(
+      Exit.fail(new AppError({ step: "lsregister", detail: "exit 1" })),
+    );
+    expect(existsSync(appPath)).toBe(false);
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+  });
+
   it("install copies a built app next to the Helper whole and signs nothing", async () => {
     // Given: a built Clocktrace.app sitting next to the helper
     const built = join(buildDir, "Clocktrace.app");
@@ -352,7 +381,7 @@ describe("App.install", () => {
       app.install(helperPath),
     );
     // Then
-    expect(result).toEqual(Exit.succeed("copied"));
+    expect(result).toEqual(Exit.succeed("fresh"));
     const appHome = join(home, "Applications", "Clocktrace.app");
     expect(readFileSync(join(appHome, "Contents", "Info.plist"), "utf8")).toBe(
       "<built>",
