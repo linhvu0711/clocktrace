@@ -317,6 +317,62 @@ describe("permissions", () => {
     ]);
   });
 
+  it("a browser reset re-asks the browsers it cleared", async () => {
+    // Given: Brave granted, Chromium denied; the reset clears both, so the
+    // re-read after the Chromium ask reads Brave notAsked
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.brave.Browser": "granted",
+        "org.chromium.Chromium": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [
+        p,
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "notAsked",
+            "org.chromium.Chromium": "granted",
+          },
+        },
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "granted",
+          },
+        },
+      ],
+      ["y", { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "org.chromium.Chromium" },
+      { kind: "automation", bundleId: "com.brave.Browser" },
+    ]);
+    expect(shown).toContain("Allow Automation · Brave (URLs in Brave)");
+    expect(output).toEqual([
+      "Permissions   3 of 4 granted",
+      "  ✔ Accessibility          window titles",
+      "  ✔ Automation · Brave     URLs in Brave",
+      "  ✔ Full Disk Access       iPhone and iPad import",
+      "  ✔ Automation · Chromium  granted",
+      "  ✔ Automation · Brave     granted",
+    ]);
+  });
+
   it("a failed tccutil prints its error and the walk goes on", async () => {
     // Given: Chromium and full disk access denied; tccutil exits 64 with its
     // real stderr text; full disk access grants on re-read

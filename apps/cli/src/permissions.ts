@@ -327,7 +327,7 @@ export const walkPermissions = (
         }
         return true;
       });
-    const recheck = (perm: Perm) =>
+    const recheck = (perm: Perm, afterReset: boolean) =>
       Effect.gen(function* () {
         const { item } = perm;
         const after = yield* Effect.scoped(helper.permissions(appPath));
@@ -337,6 +337,14 @@ export const walkPermissions = (
             : item.request.kind === "fullDiskAccess"
               ? after.fullDiskAccess
               : after.accessibility;
+        // An AppleEvents reset clears every browser's grant, not only this one.
+        if (afterReset && item.request.kind === "automation") {
+          for (const p of perms) {
+            if (p !== perm && p.item.request.kind === "automation") {
+              p.state = after.automation[p.item.request.bundleId] ?? p.state;
+            }
+          }
+        }
       });
     const printResult = (perm: Perm) => {
       const { item } = perm;
@@ -367,7 +375,7 @@ export const walkPermissions = (
             return;
           }
           if (yield* requestGrant(perm)) {
-            yield* recheck(perm);
+            yield* recheck(perm, true);
             yield* printResult(perm);
           }
           return;
@@ -387,11 +395,15 @@ export const walkPermissions = (
         if (!(yield* requestGrant(perm))) {
           return;
         }
-        yield* recheck(perm);
+        yield* recheck(perm, false);
         yield* printResult(perm);
       });
     yield* Effect.forEach(
       perms.filter((p) => askable(p.item, p.state)),
+      ask,
+    );
+    yield* Effect.forEach(
+      perms.filter((p) => p.item.state === "granted" && p.state === "notAsked"),
       ask,
     );
   });
