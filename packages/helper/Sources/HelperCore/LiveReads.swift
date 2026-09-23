@@ -44,13 +44,16 @@ extension Reads {
         .executeAndReturnError(&error)
       return result?.stringValue
     },
-    safariPrivateFormats: { [] },
+    safariPrivateFormats: { liveSafariPrivateFormats },
     idleSeconds: {
       CGEventSource.secondsSinceLastEventType(
         .combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
     }
   )
 }
+
+// Loaded once, on first use; a Safari update takes effect on the next start.
+private let liveSafariPrivateFormats = safariPrivateFormats(resources: safariResourcesPath)
 
 func automationStatus(bundleId: String, askUser: Bool) -> OSStatus {
   var addr = AEAddressDesc()

@@ -3,6 +3,26 @@ import XCTest
 @testable import HelperCore
 
 final class SafariPrivateTitleTests: XCTestCase {
+  private var root = ""
+
+  override func setUpWithError() throws {
+    root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SafariPrivateTitleTests-\(UUID().uuidString)").path
+    try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
+  }
+
+  override func tearDownWithError() throws {
+    try FileManager.default.removeItem(atPath: root)
+  }
+
+  private func write(_ language: String, _ strings: [String: String]) throws {
+    let folder = root + "/" + language + ".lproj"
+    try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+    let data = try PropertyListSerialization.data(
+      fromPropertyList: strings, format: .binary, options: 0)
+    FileManager.default.createFile(atPath: folder + "/Localizable.strings", contents: data)
+  }
+
   func testMatchesTheEnglishSuffix() {
     // Given: the English format
     let formats = ["%@, Private Browsing"]
@@ -38,5 +58,34 @@ final class SafariPrivateTitleTests: XCTestCase {
     let result = isSafariPrivateTitle("Example Domain، التصفح الخاص", formats: formats)
     // Then
     XCTAssertTrue(result)
+  }
+
+  func testLoadsTheFormatOfEveryLanguage() throws {
+    // Given: English and French strings files with the key
+    try write("en", ["%@, Private Browsing": "%@, Private Browsing"])
+    try write("fr", ["%@, Private Browsing": "%@, navigation privée"])
+    // When
+    let formats = safariPrivateFormats(resources: root)
+    // Then
+    XCTAssertEqual(formats, ["%@, Private Browsing", "%@, navigation privée"])
+  }
+
+  func testSkipsALanguageWithoutTheKey() throws {
+    // Given: English with the key, Base without it
+    try write("en", ["%@, Private Browsing": "%@, Private Browsing"])
+    try write("Base", ["Other": "Other"])
+    // When
+    let formats = safariPrivateFormats(resources: root)
+    // Then
+    XCTAssertEqual(formats, ["%@, Private Browsing"])
+  }
+
+  func testLoadsNothingFromAMissingFolder() {
+    // Given: a folder that was never created
+    let missing = root + "/nope"
+    // When
+    let formats = safariPrivateFormats(resources: missing)
+    // Then
+    XCTAssertEqual(formats, [])
   }
 }
