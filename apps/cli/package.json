@@ -17,8 +17,8 @@
   },
   "dependencies": {
     "@clocktrace/collector": "workspace:^",
-    "@clocktrace/core": "workspace:*",
-    "@clocktrace/mcp": "workspace:*",
+    "@clocktrace/core": "workspace:^",
+    "@clocktrace/mcp": "workspace:^",
     "@effect/cli": "^0.77.2",
     "@effect/platform": "^0.97.2",
     "@effect/platform-node": "^0.108.2",

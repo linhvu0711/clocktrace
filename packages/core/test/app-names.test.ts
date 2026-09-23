@@ -16,6 +16,7 @@ import {
   AppStoreError,
   classifyAppName,
   iosAppNames,
+  lookupAndCache,
   openStore,
   resolveAppName,
   Store,
@@ -145,6 +146,61 @@ describe("classifyAppName", () => {
     );
     // Then
     expect(result).toEqual(Either.right("com.example.notanapp"));
+  });
+});
+
+describe("lookupAndCache", () => {
+  it("a found app is returned and stored", async () => {
+    // Given: an empty store and a lookup stub returning Bluesky
+    const calls = Ref.unsafeMake(0);
+    const lookup = countingLookup(
+      calls,
+      Effect.succeed(
+        Option.some({ name: "Bluesky", genre: "Social Networking" }),
+      ),
+    );
+    // When
+    const { result, row } = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const result = yield* lookupAndCache("xyz.blueskyweb.app");
+        const row = yield* store.getAppName("xyz.blueskyweb.app");
+        return { result, row };
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Option.some({ name: "Bluesky", genre: "Social Networking" }),
+    );
+    expect(Option.map(row, (r) => [r.name, r.genre])).toEqual(
+      Option.some(["Bluesky", "Social Networking"]),
+    );
+  });
+
+  it("a failed lookup keeps a name stored while it ran", async () => {
+    // Given: a stored Bluesky row and a lookup that fails
+    const calls = Ref.unsafeMake(0);
+    const lookup = countingLookup(
+      calls,
+      Effect.fail(new AppStoreError({ cause: "offline" })),
+    );
+    // When
+    const { result, row } = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seededName(store);
+        const result = yield* lookupAndCache("xyz.blueskyweb.app");
+        const row = yield* store.getAppName("xyz.blueskyweb.app");
+        return { result, row };
+      }),
+    );
+    // Then
+    expect(result).toEqual(
+      Option.some({ name: "Bluesky", genre: "Social Networking" }),
+    );
+    expect(Option.map(row, (r) => r.name)).toEqual(Option.some("Bluesky"));
   });
 });
 

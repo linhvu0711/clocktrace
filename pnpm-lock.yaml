@@ -12,7 +12,7 @@ importers:
         specifier: 2.5.14
         version: 2.5.14
       '@clocktrace/cli':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:apps/cli
       '@types/node':
         specifier: ^22.20.3
@@ -30,11 +30,11 @@ importers:
         specifier: workspace:^
         version: link:../../packages/collector
       '@clocktrace/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../packages/core
       '@clocktrace/mcp':
-        specifier: workspace:*
-        version: link:../mcp
+        specifier: workspace:^
+        version: link:../../packages/mcp
       '@effect/cli':
         specifier: ^0.77.2
         version: 0.77.2(@effect/platform@0.97.2(effect@3.22.2))(@effect/printer-ansi@0.51.0(@effect/typeclass@0.41.0(effect@3.22.2))(effect@3.22.2))(@effect/printer@0.51.0(@effect/typeclass@0.41.0(effect@3.22.2))(effect@3.22.2))(effect@3.22.2)
@@ -59,24 +59,6 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
-
-  apps/mcp:
-    dependencies:
-      '@clocktrace/collector':
-        specifier: workspace:^
-        version: link:../../packages/collector
-      '@clocktrace/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.30.0
-        version: 1.30.0(zod@4.6.5)
-      effect:
-        specifier: ^3.22.2
-        version: 3.22.2
-      zod:
-        specifier: ^4.6.5
-        version: 4.6.5
 
   packages/collector:
     dependencies:
@@ -110,6 +92,24 @@ importers:
         version: 9.6.0
 
   packages/helper: {}
+
+  packages/mcp:
+    dependencies:
+      '@clocktrace/collector':
+        specifier: workspace:^
+        version: link:../collector
+      '@clocktrace/core':
+        specifier: workspace:^
+        version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@4.6.5)
+      effect:
+        specifier: ^3.22.2
+        version: 3.22.2
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
 
 packages:
 

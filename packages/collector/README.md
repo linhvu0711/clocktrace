@@ -2,7 +2,7 @@
 
 The Collector: the loop that turns `clocktrace-helper watch` lines into
 Activities, the Helper service, launchd control, permissions, and status.
-`apps/cli` and `apps/mcp` import it.
+`apps/cli` and `packages/mcp` import it.
 
 ## Entry
 

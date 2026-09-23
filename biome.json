@@ -45,11 +45,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "apps/cli/src/main.ts",
-        "apps/cli/src/prompt.ts",
-        "apps/cli/src/mcp.ts"
-      ],
+      "includes": ["apps/cli/src/main.ts", "apps/cli/src/mcp.ts"],
       "linter": {
         "rules": {
           "suspicious": {
