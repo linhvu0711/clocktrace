@@ -109,6 +109,36 @@ final class SamplerTests: XCTestCase {
         idleSeconds: 1))
   }
 
+  func testTheTitleStaysWhileTheAskWaits() {
+    // Given: Chrome front, the check never asked, the ask waits on a semaphore
+    let chrome = FrontApp(
+      name: "Google Chrome", bundleId: "com.google.Chrome", pid: 3)
+    let askWaits = DispatchSemaphore(value: 0)
+    let reads = Reads(
+      frontmost: { chrome },
+      axTrusted: { true },
+      focusedTitle: { _ in "Inbox" },
+      automationStatus: { _, askUser in
+        if askUser {
+          askWaits.wait()
+        }
+        return -1744
+      },
+      runScript: { _ in nil },
+      idleSeconds: { 1 }
+    )
+    let t0 = Date(timeIntervalSince1970: 1_767_225_600)
+    // When
+    let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: t0)
+    askWaits.signal()
+    // Then
+    XCTAssertEqual(
+      sample,
+      Sample(
+        front: chrome, axTrusted: true, title: "Inbox",
+        url: .missing(.notAsked), idleSeconds: 1))
+  }
+
   func testTitleNilWhenNotTrusted() {
     // Given: the TextEdit Reads with Accessibility not granted
     var titleCalls: [pid_t] = []

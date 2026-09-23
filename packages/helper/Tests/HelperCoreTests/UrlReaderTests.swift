@@ -145,6 +145,126 @@ final class UrlReaderTests: XCTestCase {
     XCTAssertEqual(calls, 2)
   }
 
+  func testANeverAskedBrowserIsAskedOnce() {
+    // Given: a Grant check that was never asked; the ask waits on a semaphore
+    var askCount = 0
+    let askLock = NSLock()
+    let askWaits = DispatchSemaphore(value: 0)
+    let reader = UrlReader(
+      reads: reads(automationStatus: { _, askUser in
+        if askUser {
+          askLock.lock()
+          askCount += 1
+          askLock.unlock()
+          askWaits.wait()
+          return -1744
+        }
+        return -1744
+      }))
+    let script = browserScript(bundleId: "com.google.Chrome")!
+    // When
+    let results = [0, 1, 2].map { offset -> (UrlRead, TimeInterval) in
+      timed {
+        reader.read(
+          bundleId: "com.google.Chrome", script: script,
+          at: t0.addingTimeInterval(TimeInterval(offset)))
+      }
+    }
+    askWaits.signal()
+    // Then
+    for (result, elapsed) in results {
+      XCTAssertEqual(result, .missing(.notAsked))
+      XCTAssertLessThan(elapsed, 0.3)
+    }
+    XCTAssertEqual(askCount, 1)
+  }
+
+  func testAfterAllowTheNextReadingHasTheUrl() {
+    // Given: the check reads -1744 until the ask answers 0, then granted
+    let askDone = DispatchSemaphore(value: 0)
+    var answered = false
+    let answeredLock = NSLock()
+    let reader = UrlReader(
+      reads: reads(
+        automationStatus: { _, askUser in
+          if askUser {
+            askDone.wait()
+            answeredLock.lock()
+            answered = true
+            answeredLock.unlock()
+            return 0
+          }
+          answeredLock.lock()
+          let done = answered
+          answeredLock.unlock()
+          return done ? 0 : -1744
+        },
+        runScript: { _ in "https://example.com/" }))
+    let script = browserScript(bundleId: "com.google.Chrome")!
+    // When
+    let first = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    askDone.signal()
+    Thread.sleep(forTimeInterval: 0.1)
+    let second = reader.read(
+      bundleId: "com.google.Chrome", script: script,
+      at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(first, .missing(.notAsked))
+    XCTAssertEqual(second, .granted("https://example.com/"))
+  }
+
+  func testAnAnsweredBrowserIsNotAskedAgain() {
+    // Given: the check reads -1744 until the ask answers -1743, then denied
+    var askCount = 0
+    var asked = false
+    let stateLock = NSLock()
+    let reader = UrlReader(
+      reads: reads(automationStatus: { _, askUser in
+        if askUser {
+          stateLock.lock()
+          askCount += 1
+          asked = true
+          stateLock.unlock()
+          return -1743
+        }
+        stateLock.lock()
+        let done = asked
+        stateLock.unlock()
+        return done ? -1743 : -1744
+      }))
+    let script = browserScript(bundleId: "com.google.Chrome")!
+    // When
+    _ = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    Thread.sleep(forTimeInterval: 0.1)
+    let second = reader.read(
+      bundleId: "com.google.Chrome", script: script,
+      at: t0.addingTimeInterval(1))
+    let third = reader.read(
+      bundleId: "com.google.Chrome", script: script,
+      at: t0.addingTimeInterval(2))
+    // Then
+    XCTAssertEqual(second, .missing(.denied))
+    XCTAssertEqual(third, .missing(.denied))
+    XCTAssertEqual(askCount, 1)
+  }
+
+  func testADeniedBrowserIsNeverAsked() {
+    // Given: a Grant check that answers denied
+    var askCount = 0
+    let reader = UrlReader(
+      reads: reads(automationStatus: { _, askUser in
+        if askUser { askCount += 1 }
+        return -1743
+      }))
+    // When
+    let result = reader.read(
+      bundleId: "com.google.Chrome",
+      script: browserScript(bundleId: "com.google.Chrome")!, at: t0)
+    // Then
+    XCTAssertEqual(result, .missing(.denied))
+    XCTAssertEqual(askCount, 0)
+  }
+
   func testLogsOnceWhenTheCheckStopsAnswering() {
     // Given: every check sleeps past the limit; the log appends to an array
     var lines: [String] = []
