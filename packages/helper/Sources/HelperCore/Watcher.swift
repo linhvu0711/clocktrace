@@ -8,6 +8,7 @@ public final class Poller {
   private let emit: (String) -> Void
   private var tracker = Tracker()
   private var polling = false
+  private var pending = false
 
   public init(
     reads: Reads,
@@ -23,15 +24,19 @@ public final class Poller {
 
   public func poll() {
     if polling {
+      pending = true
       return
     }
     polling = true
     defer { polling = false }
-    let sample = Sampler.sample(reads, urls: urls, at: clock())
-    let now = clock()
-    if let line = tracker.observe(sample, at: now) {
-      emit(line.json())
-    }
+    repeat {
+      pending = false
+      let sample = Sampler.sample(reads, urls: urls, at: clock())
+      let now = clock()
+      if let line = tracker.observe(sample, at: now) {
+        emit(line.json())
+      }
+    } while pending
   }
 }
 
