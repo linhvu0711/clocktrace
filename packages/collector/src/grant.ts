@@ -181,6 +181,13 @@ export const grantRequest = (item: GrantItem): Option.Option<GrantRequest> => {
   }
 };
 
+// "N of M granted" for status and permissions. The "no browser used yet"
+// item counts as not granted.
+export const grantCount = (
+  items: ReadonlyArray<{ readonly state: string }>,
+): string =>
+  `${items.filter((i) => i.state === "granted").length} of ${items.length} granted`;
+
 export const tccService = (
   r: GrantRequest,
 ): "Accessibility" | "AppleEvents" | "SystemPolicyAllFiles" => {

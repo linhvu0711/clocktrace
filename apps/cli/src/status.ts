@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import {
   type App,
   type DeviceStatus,
+  grantCount,
   grantWords,
   type Helper,
   type HelperExitedError,
@@ -92,7 +93,7 @@ const statusScreen = (
   ];
   const permissions: ReadonlyArray<Cell> = [
     span("head", "Permissions"),
-    span("dim", `${granted.length} of ${s.permissions.length} granted`),
+    span("dim", grantCount(s.permissions)),
   ];
   const ios: ReadonlyArray<Cell> | null =
     s.iosImport === null

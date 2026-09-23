@@ -7,6 +7,7 @@ import {
   type GrantItem,
   type GrantItemState,
   type GrantRequest,
+  grantCount,
   grantPicture,
   grantRequest,
   Helper,
@@ -149,18 +150,9 @@ export const walkPermissions = (): Effect.Effect<
           look,
         )[perms.indexOf(perm)] ?? "",
       );
-    const granted = perms.filter((p) => p.state === "granted");
-    const hasAutomation = perms.some((p) => p.request.kind === "automation");
     yield* prompt.print(
       line(
-        [
-          span("head", "Permissions"),
-          "   ",
-          span(
-            "dim",
-            `${granted.length} of ${perms.length + (hasAutomation ? 0 : 1)} granted`,
-          ),
-        ],
+        [span("head", "Permissions"), "   ", span("dim", grantCount(items))],
         look,
       ),
     );
@@ -173,7 +165,7 @@ export const walkPermissions = (): Effect.Effect<
       ),
     ];
     yield* Effect.forEach(listed, printRow);
-    if (!hasAutomation) {
+    if (items.some((i) => i.state === "noBrowser")) {
       yield* prompt.print(
         line(
           [

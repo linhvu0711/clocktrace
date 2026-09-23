@@ -14,6 +14,7 @@ import { App } from "../src/app.js";
 import {
   type GrantItem,
   GrantPicture,
+  grantCount,
   grantPicture,
   tccService,
 } from "../src/grant.js";
@@ -430,6 +431,15 @@ describe("grant", () => {
       logs: ["saved grant not deleted"],
       safari: true,
     });
+  });
+
+  it("grantCount counts the no-browser item as not granted", async () => {
+    // Given: every grant granted and no browser used
+    const picture = await runAt(grantPicture(), stubHelper(allGranted));
+    // When
+    const count = grantCount(picture.items);
+    // Then
+    expect(count).toBe("2 of 3 granted");
   });
 
   it("tccService names tccutil's services", () => {
