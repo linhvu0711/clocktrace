@@ -312,3 +312,48 @@ export const grantPicture = (): Effect.Effect<
     const saved = yield* readSavedGrants();
     return { app: "present", items: pictureItems(grants, saved) };
   });
+
+const sameGrant = (item: GrantItem, request: GrantRequest): boolean =>
+  item.kind === request.kind &&
+  (request.kind !== "automation" || item.bundleId === request.bundleId);
+
+// The state the picture gives the requested Grant; notChecked when the
+// picture has no item for it.
+export const stateOf = (
+  picture: GrantPicture,
+  request: GrantRequest,
+): GrantItemState =>
+  picture.items.find((i) => sameGrant(i, request))?.state ?? "notChecked";
+
+// Checks one Grant again after an ask: a live check through the App, the
+// Saved grants it writes or removes, and the picture with that Grant's
+// live state. The other items keep the state they had. A closed browser
+// reads notRunning, not its Saved grant.
+export const checkAgain = (
+  picture: GrantPicture,
+  request: GrantRequest,
+): Effect.Effect<
+  GrantPicture,
+  HelperExitedError | ParseError,
+  Helper | Store | CollectorPaths
+> =>
+  Effect.gen(function* () {
+    const { appPath } = yield* CollectorPaths;
+    const helper = yield* Helper;
+    const after = yield* Effect.scoped(helper.permissions(appPath));
+    yield* saveLiveGrants(after, yield* DateTime.now);
+    // The Helper lists every browser it checks, so a missing one is not
+    // one of them.
+    const state =
+      request.kind === "automation"
+        ? (after.automation[request.bundleId] ?? "notInstalled")
+        : request.kind === "fullDiskAccess"
+          ? after.fullDiskAccess
+          : after.accessibility;
+    return {
+      ...picture,
+      items: picture.items.map((i) =>
+        sameGrant(i, request) ? { ...i, state, checkedAt: null } : i,
+      ),
+    };
+  });

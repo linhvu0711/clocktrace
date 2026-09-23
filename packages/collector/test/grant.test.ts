@@ -12,10 +12,12 @@ import { describe, expect, it } from "vitest";
 
 import { App } from "../src/app.js";
 import {
+  checkAgain,
   type GrantItem,
   GrantPicture,
   grantCount,
   grantPicture,
+  stateOf,
   tccService,
 } from "../src/grant.js";
 import { Helper, HelperExitedError, type Permissions } from "../src/helper.js";
@@ -33,6 +35,17 @@ const allGranted: Permissions = {
 
 const stubHelper = (p: Permissions) =>
   Helper.Test({ permissions: () => Effect.succeed(p) });
+
+// A Helper that gives each answer in turn and repeats the last one.
+const answering = (...answers: ReadonlyArray<Permissions>) => {
+  let calls = 0;
+  return Helper.Test({
+    permissions: () =>
+      Effect.sync(
+        () => answers[Math.min(calls++, answers.length - 1)] as Permissions,
+      ),
+  });
+};
 
 const appMissing = Layer.succeed(
   App,
@@ -459,5 +472,91 @@ describe("grant", () => {
       "AppleEvents",
       "SystemPolicyAllFiles",
     ]);
+  });
+
+  it("check again after an ask gives the asked browser its live state", async () => {
+    // Given: Safari and Chrome denied, then both granted on the next check
+    // When
+    const result = await runAt(
+      Effect.gen(function* () {
+        const picture = yield* grantPicture();
+        const after = yield* checkAgain(picture, {
+          kind: "automation",
+          bundleId: "com.google.Chrome",
+        });
+        const store = yield* Store;
+        return {
+          states: after.items.map((i) => [i.name, i.state]),
+          saved: yield* store.getSetting("grant.com.google.Chrome"),
+        };
+      }),
+      answering(
+        {
+          ...allGranted,
+          automation: {
+            "com.apple.Safari": "denied",
+            "com.google.Chrome": "denied",
+          },
+        },
+        {
+          ...allGranted,
+          automation: {
+            "com.apple.Safari": "granted",
+            "com.google.Chrome": "granted",
+          },
+        },
+      ),
+    );
+    // Then
+    expect(result).toEqual({
+      states: [
+        ["accessibility", "granted"],
+        ["automation Safari", "denied"],
+        ["automation Chrome", "granted"],
+        ["full disk access", "granted"],
+      ],
+      saved: Option.some(
+        '{"state":"granted","checkedAt":"2026-09-19T17:30:00.000Z"}',
+      ),
+    });
+  });
+
+  it("check again keeps a closed browser's notRunning", async () => {
+    // Given: Chrome denied, then closed on the next check
+    const chrome = {
+      kind: "automation",
+      bundleId: "com.google.Chrome",
+    } as const;
+    // When
+    const state = await runAt(
+      Effect.gen(function* () {
+        const picture = yield* grantPicture();
+        return stateOf(yield* checkAgain(picture, chrome), chrome);
+      }),
+      answering(
+        { ...allGranted, automation: { "com.google.Chrome": "denied" } },
+        { ...allGranted, automation: { "com.google.Chrome": "notRunning" } },
+      ),
+    );
+    // Then
+    expect(state).toBe("notRunning");
+  });
+
+  it("check again after an Accessibility ask reads Accessibility", async () => {
+    // Given: Accessibility denied, then granted on the next check
+    const accessibility = { kind: "accessibility" } as const;
+    // When
+    const state = await runAt(
+      Effect.gen(function* () {
+        const picture = yield* grantPicture();
+        return stateOf(
+          yield* checkAgain(picture, accessibility),
+          accessibility,
+        );
+      }),
+      answering({ ...allGranted, accessibility: "denied" }, allGranted),
+    );
+    // Then
+    expect(state).toBe("granted");
   });
 });
