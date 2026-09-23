@@ -1,4 +1,9 @@
-import { type NewActivity, Store, type StoreError } from "@clocktrace/core";
+import {
+  type NewActivity,
+  readPrivate,
+  Store,
+  type StoreError,
+} from "@clocktrace/core";
 import {
   Cause,
   DateTime,
@@ -10,8 +15,8 @@ import {
 } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
+import { type ActivityWriter, makeActivityWriter } from "./activity-writer.js";
 import type { BiomeLine } from "./biome-line.js";
-import { minActivityMillis } from "./collector.js";
 import {
   Helper,
   type HelperExitedError,
@@ -70,12 +75,6 @@ export type ImportProgress = Schema.Schema.Type<typeof ImportProgress>;
 export const importStatusKey = "importer.status";
 export const importProgressKey = (externalId: string): string =>
   `importer.progress.${externalId}`;
-
-interface Open {
-  readonly deviceId: string;
-  readonly bundleId: string;
-  readonly startedAt: DateTime.Utc;
-}
 
 const encodeResult = Schema.encodeSync(ImportResult);
 const encodeProgress = Schema.encodeSync(ImportProgress);
@@ -237,34 +236,18 @@ export const importOnce = (
       records = recordLines.right;
     }
 
-    const open = new Map<string, Open>();
+    // The Rules are read once per Import batch, after the Device upserts so a
+    // Device rule sees this batch's Devices.
+    const blank = yield* readPrivate;
+    const writers = new Map<string, ActivityWriter<never>>();
+    for (const externalId of devices.keys()) {
+      writers.set(externalId, yield* makeActivityWriter(Effect.succeed(blank)));
+    }
     const next = new Map<
       string,
       { segment: string; offset: number; ts: number }
     >();
     const activities: Array<NewActivity> = [];
-
-    const close = (externalId: string, endedAt: DateTime.Utc): void => {
-      const o = open.get(externalId);
-      if (o === undefined) {
-        return;
-      }
-      open.delete(externalId);
-      if (
-        !isDroppedBundleId(o.bundleId) &&
-        DateTime.distance(o.startedAt, endedAt) >= minActivityMillis
-      ) {
-        activities.push({
-          deviceId: o.deviceId,
-          bundleId: o.bundleId,
-          appName: o.bundleId,
-          title: null,
-          url: null,
-          startedAt: o.startedAt,
-          endedAt,
-        });
-      }
-    };
 
     for (const line of records) {
       if ("error" in line) {
@@ -274,7 +257,8 @@ export const importOnce = (
         continue;
       }
       const entry = devices.get(line.device);
-      if (entry === undefined) {
+      const writer = writers.get(line.device);
+      if (entry === undefined || writer === undefined) {
         continue;
       }
       const p = progress.get(line.device);
@@ -286,17 +270,21 @@ export const importOnce = (
         continue;
       }
       const ts = DateTime.unsafeMake(line.ts * 1000);
-      if (line.focus === "start") {
-        close(line.device, ts);
-        open.set(line.device, {
-          deviceId: entry.deviceId,
-          bundleId: line.bundleId,
-          startedAt: ts,
-        });
-      } else {
-        close(line.device, ts);
+      const closed =
+        line.focus === "start"
+          ? yield* writer.start({
+              deviceId: entry.deviceId,
+              bundleId: line.bundleId,
+              appName: line.bundleId,
+              title: null,
+              url: null,
+              startedAt: ts,
+            })
+          : yield* writer.stop(ts);
+      if (Option.isSome(closed) && !isDroppedBundleId(closed.value.bundleId)) {
+        activities.push(closed.value);
       }
-      if (open.get(line.device) === undefined) {
+      if (Option.isNone(yield* writer.open)) {
         next.set(line.device, {
           segment: line.segment,
           offset: line.offset,

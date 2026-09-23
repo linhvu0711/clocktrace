@@ -71,17 +71,20 @@ export const removeRule = (
     }
   });
 
-export const applyPrivate = <A extends NewActivity>(
-  activity: A,
-): Effect.Effect<A, StoreError, Store> =>
-  Effect.gen(function* () {
-    const store = yield* Store;
-    const rules = yield* store.listRules();
-    const devices = yield* store.listDevices();
+export const readPrivate: Effect.Effect<
+  (activity: NewActivity) => NewActivity,
+  StoreError,
+  Store
+> = Effect.gen(function* () {
+  const store = yield* Store;
+  const rules = yield* store.listRules();
+  const devices = yield* store.listDevices();
+  return (activity) => {
     const device = devices.find((d) => d.id === activity.deviceId) ?? null;
     return resolve(activity, rules, device).private
       ? { ...activity, title: null, url: null }
       : activity;
-  });
+  };
+});
 
 export type RuleInput = Schema.Schema.Type<typeof RuleInput>;

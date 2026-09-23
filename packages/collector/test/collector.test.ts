@@ -1,4 +1,4 @@
-import { Store, StoreError } from "@clocktrace/core";
+import { addRule, Store, StoreError } from "@clocktrace/core";
 import {
   DateTime,
   Deferred,
@@ -489,156 +489,85 @@ describe("collector", () => {
     ]);
   });
 
-  it("a Private rule blanks title and url before the write", async () => {
-    // Given: the Starter set's `(Incognito)` rule is Private
-    const lines = [
-      line({
-        ts: "2026-01-01T00:00:00.000Z",
-        app: "Google Chrome",
-        bundleId: "com.google.Chrome",
-        title: "Example Domain - Google Chrome (Incognito)",
-        url: "https://example.com/",
-      }),
-      line({
-        ts: "2026-01-01T00:00:10.000Z",
-        app: "Google Chrome",
-        bundleId: "com.google.Chrome",
-        title: "Example Domain - Google Chrome (Incognito)",
-        url: "https://example.com/",
-      }),
-    ];
-    // When
-    const rows = await Effect.runPromise(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        const device = yield* store.upsertDevice({
-          kind: "mac",
-          name: "Studio",
-          externalId: "mac-1",
-        });
-        yield* collect(Stream.fromIterable(lines), device.id);
-        const result = yield* store.readActivities({
-          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
-          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
-        });
-        return result.map((a) => ({
-          appName: a.appName,
-          bundleId: a.bundleId,
-          title: a.title,
-          url: a.url,
-          startedAt: DateTime.formatIso(a.startedAt),
-          endedAt: DateTime.formatIso(a.endedAt),
-        }));
-      }).pipe(Effect.provide(Store.Test)),
-    );
-    // Then
-    expect(rows).toEqual([
-      {
-        appName: "Google Chrome",
-        bundleId: "com.google.Chrome",
-        title: null,
-        url: null,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        endedAt: "2026-01-01T00:00:10.000Z",
-      },
-    ]);
-  });
-
-  it("blanks a Brave private window title", async () => {
-    // Given: the Starter set's `(Private)` rule matches Brave's private suffix
-    const lines = [
-      line({
-        ts: "2026-01-01T00:00:00.000Z",
-        app: "Brave Browser",
-        bundleId: "com.brave.Browser",
-        title: "Example - Brave (Private)",
-        url: "https://example.com/",
-      }),
-      line({
-        ts: "2026-01-01T00:00:10.000Z",
-        app: "Brave Browser",
-        bundleId: "com.brave.Browser",
-        title: "Example - Brave (Private)",
-        url: "https://example.com/",
-      }),
-    ];
-    // When
-    const rows = await Effect.runPromise(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        const device = yield* store.upsertDevice({
-          kind: "mac",
-          name: "Studio",
-          externalId: "mac-1",
-        });
-        yield* collect(Stream.fromIterable(lines), device.id);
-        const result = yield* store.readActivities({
-          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
-          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
-        });
-        return result.map((a) => ({
-          appName: a.appName,
-          bundleId: a.bundleId,
-          title: a.title,
-          url: a.url,
-          startedAt: DateTime.formatIso(a.startedAt),
-          endedAt: DateTime.formatIso(a.endedAt),
-        }));
-      }).pipe(Effect.provide(Store.Test)),
-    );
-    // Then
-    expect(rows).toEqual([
-      {
-        appName: "Brave Browser",
-        bundleId: "com.brave.Browser",
-        title: null,
-        url: null,
-        startedAt: "2026-01-01T00:00:00.000Z",
-        endedAt: "2026-01-01T00:00:10.000Z",
-      },
-    ]);
-  });
-
-  it("an Activity under 1 second is dropped", async () => {
-    // Given: a 400ms TextEdit blip inside a Safari stretch
-    const lines = [
+  it("a Private rule added between two Activities blanks the second", async () => {
+    // Given: two Safari titles, a Private rule added after the first closes
+    const lines = Stream.fromIterable([
       line({
         ts: "2026-01-01T00:00:00.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
+        title: "Secret plan",
+        url: "https://example.com/a",
       }),
       line({
         ts: "2026-01-01T00:00:05.000Z",
-        app: "TextEdit",
-        bundleId: "com.apple.TextEdit",
-      }),
-      line({
-        ts: "2026-01-01T00:00:05.400Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
+        title: "Secret notes",
+        url: "https://example.com/b",
       }),
-      line({
-        ts: "2026-01-01T00:00:10.000Z",
-        app: "Safari",
-        bundleId: "com.apple.Safari",
-      }),
-    ];
+    ]).pipe(
+      Stream.concat(
+        Stream.fromEffect(
+          addRule({
+            field: "title",
+            compare: "contains",
+            value: "Secret",
+            effect: "private",
+            target: null,
+          }),
+        ).pipe(Stream.drain),
+      ),
+      Stream.concat(
+        Stream.fromIterable([
+          line({
+            ts: "2026-01-01T00:00:10.000Z",
+            app: "Finder",
+            bundleId: "com.apple.finder",
+          }),
+        ]),
+      ),
+    );
     // When
-    const rows = await run(lines);
+    const rows = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(lines, device.id);
+        const result = yield* store.readActivities({
+          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
+          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
+        });
+        return result.map((a) => ({
+          appName: a.appName,
+          bundleId: a.bundleId,
+          title: a.title,
+          url: a.url,
+          startedAt: DateTime.formatIso(a.startedAt),
+          endedAt: DateTime.formatIso(a.endedAt),
+        }));
+      }).pipe(Effect.provide(Store.Test)),
+    );
     // Then
     expect(rows).toEqual([
       {
         appName: "Safari",
-        title: null,
-        url: null,
+        bundleId: "com.apple.Safari",
+        title: "Secret plan",
+        url: "https://example.com/a",
         startedAt: "2026-01-01T00:00:00.000Z",
         endedAt: "2026-01-01T00:00:05.000Z",
       },
       {
         appName: "Safari",
+        bundleId: "com.apple.Safari",
         title: null,
         url: null,
-        startedAt: "2026-01-01T00:00:05.400Z",
+        startedAt: "2026-01-01T00:00:05.000Z",
         endedAt: "2026-01-01T00:00:10.000Z",
       },
     ]);

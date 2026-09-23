@@ -8,8 +8,8 @@ import type {
 } from "../src/index.js";
 import {
   addRule,
-  applyPrivate,
   openStore,
+  readPrivate,
   removeRule,
   Store,
 } from "../src/index.js";
@@ -350,7 +350,7 @@ describe("rules", () => {
     }
   });
 
-  it("applyPrivate blanks title and url on a Private match", async () => {
+  it("readPrivate blanks title and url on a Private match", async () => {
     // Given: Store.Test seeded with the Starter set, a device, an incognito title
     const result = await useTest(
       Effect.gen(function* () {
@@ -367,7 +367,8 @@ describe("rules", () => {
           url: "https://example.com/",
         };
         // When
-        const blanked = yield* applyPrivate(activity);
+        const blank = yield* readPrivate;
+        const blanked = blank(activity);
         return { activity, blanked };
       }),
     );
@@ -379,7 +380,7 @@ describe("rules", () => {
     });
   });
 
-  it("applyPrivate returns the activity unchanged when no Private rule matches", async () => {
+  it("readPrivate returns the activity unchanged when no Private rule matches", async () => {
     // Given: Store.Test, the same device, a normal title
     const result = await useTest(
       Effect.gen(function* () {
@@ -391,7 +392,8 @@ describe("rules", () => {
         });
         const activity = { ...chrome, deviceId: d.id };
         // When
-        const unchanged = yield* applyPrivate(activity);
+        const blank = yield* readPrivate;
+        const unchanged = blank(activity);
         return { activity, unchanged };
       }),
     );

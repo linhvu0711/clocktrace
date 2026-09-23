@@ -308,6 +308,20 @@ const spyStore = (
     ),
   );
 
+const countRules = (calls: Ref.Ref<number>): Layer.Layer<Store, never, Store> =>
+  Layer.effect(
+    Store,
+    Effect.map(
+      Store,
+      (s) =>
+        new Store({
+          ...s,
+          listRules: () =>
+            Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(s.listRules())),
+        }),
+    ),
+  );
+
 const t = (s: string) => DateTime.unsafeMake(s);
 
 const rows = Effect.gen(function* () {
@@ -512,35 +526,21 @@ describe("importer", () => {
     ]);
   });
 
-  it("a span under one second is not written", async () => {
-    // Given: a start and its end half a second apart
-    const records = [
-      record({
-        bundleId: "com.apple.mobilesafari",
-        device: P2,
-        focus: "start",
-        offset: 32,
-        segment: S,
-        ts: 1789833600,
-      }),
-      record({
-        bundleId: "com.apple.mobilesafari",
-        device: P2,
-        focus: "end",
-        offset: 108,
-        segment: S,
-        ts: 1789833600.5,
-      }),
-    ];
+  it("an Import batch reads the Rules once", async () => {
+    // Given: a Store that counts Rule reads, three Activities from two Devices
+    const calls = await Effect.runPromise(Ref.make(0));
     // When
-    const activities = await run({ devices: [D_PHONE], records }, "27.0", () =>
-      Effect.gen(function* () {
-        yield* importOnce("/stub");
-        return yield* rows;
-      }),
+    await run(
+      {
+        devices: [D_MAC, D_PHONE, D_PAD],
+        records: ALL,
+        store: countRules(calls),
+      },
+      "27.0",
+      () => importOnce("/stub"),
     );
     // Then
-    expect(activities).toEqual([]);
+    expect(await Effect.runPromise(Ref.get(calls))).toBe(1);
   });
 
   it("another macOS version does not run and records not tested", async () => {
