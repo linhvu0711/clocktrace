@@ -1,18 +1,14 @@
 import Foundation
 
 public enum Sampler {
-  public static func sample(_ r: Reads) -> Sample {
+  public static func sample(_ r: Reads, urls: UrlReader, at now: Date) -> Sample {
     let front = r.frontmost()
     let ax = r.axTrusted()
     let title = (ax && front != nil) ? r.focusedTitle(front!.pid) : nil
 
     let url: UrlRead
     if let front, let script = browserScript(bundleId: front.bundleId ?? "") {
-      if r.automationGranted(front.bundleId ?? "") {
-        url = .granted(r.runScript(script))
-      } else {
-        url = .missing
-      }
+      url = urls.read(bundleId: front.bundleId ?? "", script: script, at: now)
     } else {
       url = .notBrowser
     }

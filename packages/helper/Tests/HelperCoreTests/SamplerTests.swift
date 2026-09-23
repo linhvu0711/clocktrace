@@ -15,7 +15,7 @@ final class SamplerTests: XCTestCase {
       frontmost: { self.safari },
       axTrusted: { true },
       focusedTitle: { _ in "Example Domain" },
-      automationGranted: { _ in true },
+      automationStatus: { _, _ in 0 },
       runScript: { script in
         scripts.append(script)
         return "https://example.com/"
@@ -23,7 +23,7 @@ final class SamplerTests: XCTestCase {
       idleSeconds: { 1 }
     )
     // When
-    let sample = Sampler.sample(reads)
+    let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
     XCTAssertEqual(
       sample,
@@ -42,7 +42,7 @@ final class SamplerTests: XCTestCase {
       frontmost: { self.safari },
       axTrusted: { true },
       focusedTitle: { _ in "Example Domain" },
-      automationGranted: { _ in false },
+      automationStatus: { _, _ in -1743 },
       runScript: { script in
         scripts.append(script)
         return "https://example.com/"
@@ -50,7 +50,7 @@ final class SamplerTests: XCTestCase {
       idleSeconds: { 1 }
     )
     // When
-    let sample = Sampler.sample(reads)
+    let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
     XCTAssertEqual(sample.url, .missing)
     XCTAssertEqual(scripts, [])
@@ -64,9 +64,9 @@ final class SamplerTests: XCTestCase {
       frontmost: { self.textEdit },
       axTrusted: { true },
       focusedTitle: { _ in "Untitled" },
-      automationGranted: { id in
+      automationStatus: { id, _ in
         automationCalls.append(id)
-        return true
+        return 0
       },
       runScript: { script in
         scripts.append(script)
@@ -75,11 +75,38 @@ final class SamplerTests: XCTestCase {
       idleSeconds: { 1 }
     )
     // When
-    let sample = Sampler.sample(reads)
+    let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
     XCTAssertEqual(sample.url, .notBrowser)
     XCTAssertEqual(automationCalls, [])
     XCTAssertEqual(scripts, [])
+  }
+
+  func testAStuckCheckKeepsTheTitle() {
+    // Given: Chrome front with a Grant check that sleeps past the limit
+    let chrome = FrontApp(
+      name: "Google Chrome", bundleId: "com.google.Chrome", pid: 3)
+    let reads = Reads(
+      frontmost: { chrome },
+      axTrusted: { true },
+      focusedTitle: { _ in "Inbox" },
+      automationStatus: { _, _ in
+        Thread.sleep(forTimeInterval: 0.5)
+        return 0
+      },
+      runScript: { _ in nil },
+      idleSeconds: { 1 }
+    )
+    let urls = UrlReader(reads: reads, checkLimit: .milliseconds(50))
+    let t0 = Date(timeIntervalSince1970: 1_767_225_600)
+    // When
+    let sample = Sampler.sample(reads, urls: urls, at: t0)
+    // Then
+    XCTAssertEqual(
+      sample,
+      Sample(
+        front: chrome, axTrusted: true, title: "Inbox", url: .missing,
+        idleSeconds: 1))
   }
 
   func testTitleNilWhenNotTrusted() {
@@ -92,12 +119,12 @@ final class SamplerTests: XCTestCase {
         titleCalls.append(pid)
         return "Untitled"
       },
-      automationGranted: { _ in true },
+      automationStatus: { _, _ in 0 },
       runScript: { _ in nil },
       idleSeconds: { 1 }
     )
     // When
-    let sample = Sampler.sample(reads)
+    let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
     XCTAssertNil(sample.title)
     XCTAssertFalse(sample.axTrusted)

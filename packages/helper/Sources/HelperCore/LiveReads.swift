@@ -34,12 +34,14 @@ extension Reads {
       else { return nil }
       return titleRef as? String
     },
-    automationGranted: { bundleId in
-      automationStatus(bundleId: bundleId, askUser: false) == noErr
+    automationStatus: { bundleId, ask in
+      HelperCore.automationStatus(bundleId: bundleId, askUser: ask)
     },
     runScript: { source in
       var error: NSDictionary?
-      let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+      let result = NSAppleScript(
+        source: "with timeout of 2 seconds\n\(source)\nend timeout")?
+        .executeAndReturnError(&error)
       return result?.stringValue
     },
     idleSeconds: {

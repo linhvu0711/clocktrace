@@ -9,6 +9,19 @@ public enum GrantState: String, Encodable, Equatable {
   case notInstalled
 }
 
+public func grantState(_ status: OSStatus) -> GrantState {
+  switch status {
+  case 0:
+    return .granted
+  case -1744:
+    return .notAsked
+  case -600:
+    return .notRunning
+  default:
+    return .denied
+  }
+}
+
 public struct Permissions: Equatable, Encodable {
   public var accessibility: GrantState
   public var automation: [String: GrantState]
