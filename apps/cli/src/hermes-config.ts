@@ -127,24 +127,36 @@ const indentStep = (text: string, root: YAMLMap): number => {
   return defaultStep;
 };
 
-const registrationEntry = (
-  server: HermesServer,
-  old: unknown,
-): Record<string, unknown> => {
-  const env = isMap(old) ? old.get("env", true) : undefined;
-  return {
-    command: server.command,
-    args: [...server.args],
-    ...(isMap(env) ? { env: env.toJSON() } : {}),
-  };
-};
-
 const refuse = (reason: string) =>
   Either.left(new HermesConfigEditError({ reason }));
 
+// Plain data from the parse. It throws on an alias whose anchor is gone,
+// which the check meets when an edit takes an anchor with it.
+const toData = (
+  convert: () => unknown,
+): Either.Either<unknown, HermesConfigEditError> =>
+  Either.try({
+    try: convert,
+    catch: () =>
+      new HermesConfigEditError({ reason: "an alias has no anchor" }),
+  });
+
 // The parsed file as plain data, an empty file read as an empty map.
-const plain = (doc: Document): unknown =>
-  doc.contents === null ? {} : doc.toJSON();
+const plain = (doc: Document): Either.Either<unknown, HermesConfigEditError> =>
+  toData(() => (doc.contents === null ? {} : doc.toJSON()));
+
+const registrationEntry = (
+  server: HermesServer,
+  old: unknown,
+): Either.Either<Record<string, unknown>, HermesConfigEditError> => {
+  const env = isMap(old) ? old.get("env", true) : undefined;
+  const base = { command: server.command, args: [...server.args] };
+  return isMap(env)
+    ? toData(() => env.toJSON()).pipe(
+        Either.map((data) => ({ ...base, env: data })),
+      )
+    : Either.right(base);
+};
 
 // The data minus the Registration, and minus `mcp_servers` when that
 // leaves it empty, so a file before and after an edit compare equal.
@@ -184,14 +196,17 @@ const checkEdit = (
   if (doc.errors.length > 0) {
     return refuse("the edited file does not parse");
   }
-  const data = plain(doc);
-  return isDeepStrictEqual(registrationOf(data), registration) &&
-    isDeepStrictEqual(
-      withoutRegistration(data),
-      withoutRegistration(plain(before)),
-    )
-    ? Either.right(after)
-    : refuse("the edited file does not hold what it should");
+  return Either.all([plain(doc), plain(before)]).pipe(
+    Either.flatMap(([data, original]) =>
+      isDeepStrictEqual(registrationOf(data), registration) &&
+      isDeepStrictEqual(
+        withoutRegistration(data),
+        withoutRegistration(original),
+      )
+        ? Either.right(after)
+        : refuse("the edited file does not hold what it should"),
+    ),
+  );
 };
 
 const placeRegistration = (
@@ -290,9 +305,12 @@ export const setRegistration = (
     return refuse(doc.errors[0]?.message ?? "the file does not parse");
   }
   const old = doc.getIn([serversKey, registrationKey], true);
-  const entry = registrationEntry(server, old);
-  return placeRegistration(text, doc, entry).pipe(
-    Either.flatMap((after) => checkEdit(doc, after, entry)),
+  return registrationEntry(server, old).pipe(
+    Either.flatMap((entry) =>
+      placeRegistration(text, doc, entry).pipe(
+        Either.flatMap((after) => checkEdit(doc, after, entry)),
+      ),
+    ),
   );
 };
 

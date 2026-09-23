@@ -158,6 +158,16 @@ describe("setRegistration", () => {
     );
   });
 
+  it("set stops when another key aliases the Registration", () => {
+    // Given: backup points at the Registration through an anchor
+    const text =
+      "mcp_servers:\n  clocktrace: &server {command: old}\nbackup: *server\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
+  });
+
   it("a result that fails the check stops", () => {
     // Given: a document end marker, so added lines would form a second document
     const text = "a: 1\n...\n";
@@ -213,6 +223,16 @@ describe("removeRegistration", () => {
     expect(result).toEqual(
       Either.right(Option.some("mcp_servers:\n  foo: {command: foo}\n")),
     );
+  });
+
+  it("remove stops when another key aliases the Registration", () => {
+    // Given: backup points at the Registration through an anchor
+    const text =
+      "mcp_servers:\n  clocktrace: &server {command: old}\nbackup: *server\n";
+    // When
+    const result = removeRegistration(text);
+    // Then
+    expect(Either.isLeft(result)).toBe(true);
   });
 
   it.each([
