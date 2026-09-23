@@ -2,8 +2,18 @@ import { join } from "node:path";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import { Chunk, Data, Effect, Either, Layer, type Scope, Stream } from "effect";
+import {
+  Chunk,
+  Data,
+  Effect,
+  Either,
+  Layer,
+  Option,
+  type Scope,
+  Stream,
+} from "effect";
 
+import { decodeHelperLine, type HelperLine } from "./helper-line.js";
 import {
   decodePermissions,
   decodeRequestOutcome,
@@ -134,12 +144,23 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
               : Effect.fail(new HelperNotFoundError({ path })),
           ),
         ),
-      lines: (path: string) =>
+      lines: (path: string): Stream.Stream<HelperLine, HelperExitedError> =>
         Command.make(path, "watch").pipe(
           Command.stderr("inherit"),
           Command.streamLines,
           Stream.provideService(CommandExecutor.CommandExecutor, executor),
           Stream.mapError((cause) => new HelperExitedError({ cause })),
+          Stream.mapEffect((text) =>
+            decodeHelperLine(text).pipe(
+              Effect.map(Option.some),
+              Effect.catchTag("ParseError", () =>
+                Effect.logWarning("helper line rejected").pipe(
+                  Effect.as(Option.none()),
+                ),
+              ),
+            ),
+          ),
+          Stream.filterMap((o) => o),
           Stream.concat(
             Stream.fail(
               new HelperExitedError({ cause: "helper stdout closed" }),

@@ -1,8 +1,8 @@
 import { applyPrivate, Store, type StoreError } from "@clocktrace/core";
-import { DateTime, Effect, Option, Ref, Stream } from "effect";
+import { DateTime, Effect, Ref, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { decodeHelperLine, type HelperLine } from "./helper-line.js";
+import type { HelperLine } from "./helper-line.js";
 import { deleteSavedGrant, saveGrant } from "./saved-grant.js";
 
 export const idleAfterSeconds = 300;
@@ -23,7 +23,7 @@ interface State {
 }
 
 export const collect = <E, R>(
-  lines: Stream.Stream<string, E, R>,
+  lines: Stream.Stream<HelperLine, E, R>,
   deviceId: string,
 ): Effect.Effect<void, E | ParseError | StoreError, Store | R> =>
   Effect.gen(function* () {
@@ -212,17 +212,6 @@ export const collect = <E, R>(
     );
 
     yield* lines.pipe(
-      Stream.mapEffect((text) =>
-        decodeHelperLine(text).pipe(
-          Effect.map(Option.some),
-          Effect.catchTag("ParseError", () =>
-            Effect.logWarning("helper line rejected").pipe(
-              Effect.as(Option.none()),
-            ),
-          ),
-        ),
-      ),
-      Stream.filterMap((o) => o),
       Stream.tap(remember),
       Stream.runForEach(step),
       Effect.ensuring(Effect.orDie(flush)),

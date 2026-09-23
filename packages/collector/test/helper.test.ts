@@ -4,12 +4,16 @@ import { CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
 import {
   Chunk,
+  DateTime,
   Effect,
   Either,
   Exit,
+  Inspectable,
   Layer,
+  Logger,
   Ref,
   type Scope,
+  Sink,
   Stream,
 } from "effect";
 import { describe, expect, it } from "vitest";
@@ -156,6 +160,96 @@ const runHelper = <A>(
       return { exit, commands };
     }),
   );
+
+// Answers every started command as one finished process: the given stdout,
+// stderr, and exit code. `runBiome` and `Command.streamLines` both start one.
+const processExecutor = (
+  stdoutText: string,
+  code: number = 0,
+  stderrText: string = "",
+): CommandExecutor.CommandExecutor =>
+  CommandExecutor.makeExecutor(() =>
+    Effect.succeed({
+      ...Inspectable.BaseProto,
+      [CommandExecutor.ProcessTypeId]: CommandExecutor.ProcessTypeId,
+      pid: CommandExecutor.ProcessId(1),
+      exitCode: Effect.succeed(CommandExecutor.ExitCode(code)),
+      isRunning: Effect.succeed(false),
+      kill: () => Effect.void,
+      stdout: Stream.make(new TextEncoder().encode(stdoutText)),
+      stderr: Stream.make(new TextEncoder().encode(stderrText)),
+      stdin: Sink.drain,
+    }),
+  );
+
+const runHelperProcess = <A>(
+  use: (helper: Helper) => Effect.Effect<A, unknown, Scope.Scope>,
+  stdoutText: string,
+  code: number = 0,
+  stderrText: string = "",
+) => {
+  const logs: Array<string> = [];
+  const testLogger = Logger.replace(
+    Logger.defaultLogger,
+    Logger.make(({ message }) => {
+      logs.push(String(message));
+    }),
+  );
+  const layer = Helper.DefaultWithoutDependencies.pipe(
+    Layer.provide(
+      Layer.merge(
+        NodeFileSystem.layer,
+        Layer.succeed(
+          CommandExecutor.CommandExecutor,
+          processExecutor(stdoutText, code, stderrText),
+        ),
+      ),
+    ),
+  );
+  return Effect.runPromise(
+    Effect.exit(
+      Effect.gen(function* () {
+        const helper = yield* Helper;
+        return yield* Effect.scoped(use(helper));
+      }).pipe(Effect.provide(Layer.merge(layer, testLogger))),
+    ),
+  ).then((exit) => ({ exit, logs }));
+};
+
+describe("Helper watch", () => {
+  it("a bad watch line is logged and skipped", async () => {
+    // Given: two Helper lines with a line that is not JSON between them
+    const stdout = [
+      '{"ts":"2026-01-01T00:00:00Z","app":"Safari","bundleId":"com.apple.Safari","title":null,"url":null,"idleSeconds":0,"missing":[]}',
+      "not json",
+      '{"ts":"2026-01-01T00:00:10Z","app":"Safari","bundleId":"com.apple.Safari","title":null,"url":null,"idleSeconds":0,"missing":[]}',
+    ].join("\n");
+    // When
+    const { exit, logs } = await runHelperProcess(
+      (helper) =>
+        helper.lines("/h").pipe(
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.map((chunk) =>
+            Chunk.toReadonlyArray(chunk).map((line) => ({
+              ts: DateTime.formatIso(line.ts),
+              app: line.app,
+              grant: line.grant,
+            })),
+          ),
+        ),
+      stdout,
+    );
+    // Then
+    expect({ readings: Exit.isSuccess(exit) && exit.value, logs }).toEqual({
+      readings: [
+        { ts: "2026-01-01T00:00:00.000Z", app: "Safari", grant: null },
+        { ts: "2026-01-01T00:00:10.000Z", app: "Safari", grant: null },
+      ],
+      logs: ["helper line rejected"],
+    });
+  });
+});
 
 describe("openArgs", () => {
   it("openArgs builds the open command for a permissions read", () => {
