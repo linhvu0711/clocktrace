@@ -37,7 +37,7 @@ import {
   setCategory,
   setProject,
   summary,
-  TimelineBlock,
+  TimelineReply,
   timeline,
   usedRange,
 } from "@clocktrace/core";
@@ -360,17 +360,10 @@ export const makeServer = async (
     },
     (input) =>
       run(
-        Effect.gen(function* () {
-          const range = yield* usedRange(input.range);
-          const blocks = yield* timeline({
-            range: input.range,
-            deviceId: input.device,
-          });
-          const rows = yield* Schema.encode(Schema.Array(TimelineBlock))(
-            blocks,
-          );
-          return { range, rows, total: rows.length, ...emptyNote(rows) };
-        }),
+        Effect.flatMap(
+          timeline({ range: input.range, device: input.device }),
+          Schema.encode(TimelineReply),
+        ),
       ),
   );
 

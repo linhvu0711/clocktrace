@@ -63,7 +63,14 @@ export const TimelineBlock = Schema.Struct({
 
 export const TimelineInput = Schema.Struct({
   range: Range,
-  deviceId: Schema.optional(Schema.UUID),
+  device: Schema.optional(DeviceId),
+});
+
+export const TimelineReply = Schema.Struct({
+  range: UsedRange,
+  rows: Schema.Array(TimelineBlock),
+  total: Schema.Int,
+  note: Schema.optionalWith(Schema.String, { exact: true }),
 });
 
 export const ActivitiesInput = Schema.Struct({
@@ -293,17 +300,16 @@ export const summary = (
   });
 
 export const timeline = (
-  input: TimelineInput,
+  input: Schema.Schema.Encoded<typeof TimelineInput>,
 ): Effect.Effect<
-  ReadonlyArray<TimelineBlock>,
-  InvalidRangeError | StoreError,
+  TimelineReply,
+  InvalidInputError | InvalidRangeError | StoreError,
   Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
-    const { rows, categories, projects, from, to } = yield* loadRange({
-      range: input.range,
-      device: input.deviceId,
-    });
+    const decoded = yield* decodeInput(TimelineInput)(input);
+    const { range, rows, categories, projects, from, to } =
+      yield* loadRange(decoded);
     const categoryById = new Map(categories.map((c) => [c.id, c]));
     const projectById = new Map(projects.map((p) => [p.id, p]));
     interface Block {
@@ -356,13 +362,19 @@ export const timeline = (
         });
       }
     }
-    return blocks.map((block) => ({
+    const timelineRows = blocks.map((block) => ({
       start: DateTime.unsafeMake(block.startMs),
       end: DateTime.unsafeMake(block.endMs),
       app: block.app,
       categoryName: block.categoryName,
       projectName: block.projectName,
     }));
+    return {
+      range,
+      rows: timelineRows,
+      total: timelineRows.length,
+      ...emptyNote(timelineRows),
+    };
   });
 
 export const activities = (
@@ -401,5 +413,6 @@ export type SummaryReply = Schema.Schema.Type<typeof SummaryReply>;
 export type SummaryInput = Schema.Schema.Type<typeof SummaryInput>;
 export type TimelineBlock = Schema.Schema.Type<typeof TimelineBlock>;
 export type TimelineInput = Schema.Schema.Type<typeof TimelineInput>;
+export type TimelineReply = Schema.Schema.Type<typeof TimelineReply>;
 export type ActivitiesInput = Schema.Schema.Type<typeof ActivitiesInput>;
 export type ActivitiesPage = Schema.Schema.Type<typeof ActivitiesPage>;

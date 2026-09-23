@@ -21,6 +21,7 @@ import {
   Store,
   SummaryReply,
   summary,
+  TimelineReply,
   timeline,
 } from "../src/index.js";
 
@@ -523,7 +524,7 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result)).toEqual([
+    expect(isoBlocks(result.rows)).toEqual([
       {
         start: "2026-09-18T19:00:00.000Z",
         end: "2026-09-18T19:30:00.000Z",
@@ -562,7 +563,7 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result).map((b) => b.app)).toEqual(["Bluesky"]);
+    expect(isoBlocks(result.rows).map((b) => b.app)).toEqual(["Bluesky"]);
   });
 
   it("an iOS Activity without a Rule lands in the genre Category", async () => {
@@ -597,7 +598,9 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result).map((b) => b.categoryName)).toEqual(["Social"]);
+    expect(isoBlocks(result.rows).map((b) => b.categoryName)).toEqual([
+      "Social",
+    ]);
   });
 
   it("an unmapped iOS bundle id keeps its bundle id", async () => {
@@ -613,7 +616,7 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result).map((b) => b.app)).toEqual([
+    expect(isoBlocks(result.rows).map((b) => b.app)).toEqual([
       "com.example.notanapp",
     ]);
   });
@@ -631,7 +634,7 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result)[0]?.app).toBe("Code");
+    expect(isoBlocks(result.rows)[0]?.app).toBe("Code");
   });
 
   it("timeline merges adjacent Activities with the same app and Category", async () => {
@@ -647,7 +650,7 @@ describe("timeline", () => {
       }),
     );
     // Then: A4 clips to the range start, A2 and A3 merge into one block
-    expect(isoBlocks(result)).toEqual([
+    expect(isoBlocks(result.rows)).toEqual([
       {
         start: "2026-09-18T07:00:00.000Z",
         end: "2026-09-18T07:30:00.000Z",
@@ -718,7 +721,7 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result)).toEqual([
+    expect(isoBlocks(result.rows)).toEqual([
       {
         start: "2026-09-18T10:00:00.000Z",
         end: "2026-09-18T10:10:00.000Z",
@@ -787,7 +790,7 @@ describe("timeline", () => {
       }),
     );
     // Then: same app and Category, but each block keeps its own Project
-    expect(isoBlocks(result)).toEqual([
+    expect(isoBlocks(result.rows)).toEqual([
       {
         start: "2026-09-18T10:00:00.000Z",
         end: "2026-09-18T10:10:00.000Z",
@@ -845,7 +848,7 @@ describe("timeline", () => {
       }),
     );
     // Then: same app and Category, but one block per Device
-    expect(isoBlocks(result)).toEqual([
+    expect(isoBlocks(result.rows)).toEqual([
       {
         start: "2026-09-18T10:00:00.000Z",
         end: "2026-09-18T10:10:00.000Z",
@@ -893,7 +896,7 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result)).toEqual([
+    expect(isoBlocks(result.rows)).toEqual([
       {
         start: "2026-09-18T10:00:00.000Z",
         end: "2026-09-18T10:20:00.000Z",
@@ -932,27 +935,55 @@ describe("timeline", () => {
       }),
     );
     // Then
-    expect(isoBlocks(result).map((b) => b.projectName)).toEqual([
+    expect(isoBlocks(result.rows).map((b) => b.projectName)).toEqual([
       null,
       null,
       "Shop",
     ]);
   });
 
-  it("timeline of a range with no Activities gives no blocks", async () => {
+  it("timeline of an empty range ends with the note", async () => {
     // Given: seedDay
     const result = await run(
       Effect.gen(function* () {
         const store = yield* Store;
         yield* seedDay(store);
         // When
-        return yield* timeline({
+        const reply = yield* timeline({
           range: { from: "2026-09-01", to: "2026-09-01" },
+        });
+        return yield* Schema.encode(TimelineReply)(reply);
+      }),
+    );
+    // Then
+    expect({ reply: result, keys: Object.keys(result) }).toEqual({
+      reply: {
+        range: emptyWindow,
+        rows: [],
+        total: 0,
+        note: "no activity in this range",
+      },
+      keys: ["range", "rows", "total", "note"],
+    });
+  });
+
+  it("timeline counts its blocks in total", async () => {
+    // Given: seedDay; A4, A1, then A2 and A3 merged
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDay(store);
+        // When
+        return yield* timeline({
+          range: { from: "2026-09-18", to: "2026-09-18" },
         });
       }),
     );
     // Then
-    expect(result).toEqual([]);
+    expect({ total: result.total, blocks: result.rows.length }).toEqual({
+      total: 3,
+      blocks: 3,
+    });
   });
 });
 
