@@ -226,7 +226,7 @@ describe("setup", () => {
     `  ✔ launch agent  ${plistPath}`,
     "  starting collector…",
     "  ✔ running",
-    "Permissions   2 of 2 granted",
+    "Permissions   2 of 3 granted",
     "  ✔ Accessibility     window titles",
     "  ✔ Full Disk Access  iPhone and iPad import",
     "  ○ Automation  no browser used yet",
