@@ -1,11 +1,11 @@
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
 import { Data, Effect, Layer, Ref, Schedule, Schema } from "effect";
 
+import { CollectorPaths } from "./paths.js";
 import { collectorLabel } from "./plist.js";
 
 export const LaunchdState = Schema.Struct({
@@ -79,15 +79,14 @@ export const fakeLaunchd = (
 export class LaunchdError extends Data.TaggedError("LaunchdError")<{
   readonly step: string;
   readonly detail: string;
+  // The collector log, set on launchctl failures only: a plist write or
+  // remove failure happens before the Collector runs, so its cause is in
+  // the step and detail, not the log.
+  readonly log?: string;
 }> {
   override get message(): string {
     const base = `${this.step}: ${this.detail}`;
-    // Only launchctl failures land in the collector log; a plist write or
-    // remove failure happens before the Collector runs, so its cause is in
-    // the step and detail, not the log.
-    return this.step.startsWith("launchctl")
-      ? `${base} · see ${logPath}`
-      : base;
+    return this.log === undefined ? base : `${base} · see ${this.log}`;
   }
 }
 
@@ -96,23 +95,13 @@ export type CollectorState = "running" | "stopped";
 export const stateFromPrint = (lines: ReadonlyArray<string>): CollectorState =>
   lines.some((l) => l.trim() === "state = running") ? "running" : "stopped";
 
-export const plistPath = join(
-  homedir(),
-  "Library",
-  "LaunchAgents",
-  `${collectorLabel}.plist`,
-);
-
-export const logDir = join(homedir(), "Library", "Logs", "clocktrace");
-
-export const logPath = join(logDir, "collector.log");
-
 export const entryPath = fileURLToPath(new URL("./main.js", import.meta.url));
 
 export class Launchd extends Effect.Service<Launchd>()("Launchd", {
   effect: Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const executor = yield* CommandExecutor.CommandExecutor;
+    const { plistPath, logDir, logPath } = yield* CollectorPaths;
     const getuid = process.getuid;
     if (getuid === undefined) {
       return yield* Effect.die(new Error("launchd needs a POSIX uid"));
@@ -123,7 +112,8 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
         Command.exitCode,
         Effect.provideService(CommandExecutor.CommandExecutor, executor),
         Effect.mapError(
-          (cause) => new LaunchdError({ step, detail: String(cause) }),
+          (cause) =>
+            new LaunchdError({ step, detail: String(cause), log: logPath }),
         ),
       );
     const state = () =>
@@ -136,6 +126,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
             new LaunchdError({
               step: "launchctl print",
               detail: String(cause),
+              log: logPath,
             }),
         ),
       );
@@ -148,6 +139,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 new LaunchdError({
                   step: "launchctl bootstrap",
                   detail: `exit ${code}`,
+                  log: logPath,
                 }),
               ),
         ),
@@ -165,6 +157,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 new LaunchdError({
                   step: "launchctl kickstart",
                   detail: `exit ${code}`,
+                  log: logPath,
                 }),
               ),
         ),
@@ -178,6 +171,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                 new LaunchdError({
                   step: "launchctl bootout",
                   detail: `exit ${code}`,
+                  log: logPath,
                 }),
               ),
         ),
@@ -246,6 +240,7 @@ export class Launchd extends Effect.Service<Launchd>()("Launchd", {
                         new LaunchdError({
                           step: "launchctl print",
                           detail: "job still registered",
+                          log: logPath,
                         }),
                       ),
                 ),

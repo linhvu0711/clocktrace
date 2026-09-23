@@ -1,5 +1,5 @@
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -81,7 +81,7 @@ describe("start and stop", () => {
           Helper.Test(),
           appLayer,
           Style.Test,
-          CollectorPaths.Test,
+          CollectorPaths.Default(homedir()),
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
         return {
@@ -152,7 +152,7 @@ describe("start and stop", () => {
     expect(exit).toEqual(
       Exit.fail(
         new AppMissingError({
-          path: collectorPaths("/Users/me").appMainPath,
+          path: collectorPaths(homedir()).appMainPath,
         }),
       ),
     );

@@ -1,4 +1,4 @@
-import { Launchd } from "@clocktrace/collector";
+import { type CollectorPaths, Launchd } from "@clocktrace/collector";
 import { Command } from "@effect/cli";
 import type { FileSystem } from "@effect/platform";
 import { Effect } from "effect";
@@ -11,7 +11,7 @@ import { type NotSetUpError, requireSetUp } from "./set-up.js";
 export const stop = (): Effect.Effect<
   void,
   NotSetUpError | ReportedError,
-  Prompt | Launchd | FileSystem.FileSystem | Style
+  Prompt | Launchd | CollectorPaths | FileSystem.FileSystem | Style
 > =>
   requireSetUp.pipe(
     Effect.andThen(

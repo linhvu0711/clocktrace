@@ -18,7 +18,6 @@ import {
   Launchd,
   LaunchdError,
   type LaunchdState,
-  logPath,
 } from "@clocktrace/collector";
 import { NodeContext } from "@effect/platform-node";
 import { ConfigProvider, Console, Effect, Exit, Layer, Ref } from "effect";
@@ -126,7 +125,7 @@ describe("uninstall", () => {
     dir = mkdtempSync(join(tmpdir(), "clocktrace-"));
     home = mkdtempSync(join(tmpdir(), "clocktrace-home-"));
     dbPath = join(dir, "clocktrace.db");
-    logDir = join(dir, "logs");
+    logDir = collectorPaths(home).logDir;
     appPath = collectorPaths(home).appPath;
     vi.stubEnv("HOME", home);
   });
@@ -139,7 +138,7 @@ describe("uninstall", () => {
       entry: "/repo/main.js",
       databasePath,
       helperPath: "/stub",
-      logPath: join(logDir, "collector.log"),
+      logPath: collectorPaths(home).logPath,
     });
 
   afterEach(() => {
@@ -207,7 +206,7 @@ describe("uninstall", () => {
           CollectorPaths.Default(home),
         );
         const exit = yield* Effect.exit(
-          uninstall({ purge: opts.purge ?? false, logDir }).pipe(
+          uninstall({ purge: opts.purge ?? false }).pipe(
             Effect.provide(layers),
           ),
         );
@@ -504,7 +503,7 @@ describe("uninstall", () => {
     );
     expect(output).toEqual([
       "✘ launchctl bootout: exit 1",
-      `  log  ${logPath}`,
+      "  log  ~/Library/Logs/clocktrace/collector.log",
     ]);
     expect(appPresent).toBe(true);
   });

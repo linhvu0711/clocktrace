@@ -4,13 +4,13 @@ import { join } from "node:path";
 import {
   App,
   CollectorPaths,
+  collectorPaths,
   fakeLaunchd,
   Helper,
   HelperExitedError,
   Launchd,
   LaunchdError,
   type LaunchdState,
-  logPath,
   type Permissions,
 } from "@clocktrace/collector";
 import {
@@ -1411,7 +1411,11 @@ describe("server", () => {
         uninstall: () => Effect.void,
         state: () =>
           Effect.fail(
-            new LaunchdError({ step: "launchctl bootstrap", detail: "exit 1" }),
+            new LaunchdError({
+              step: "launchctl bootstrap",
+              detail: "exit 1",
+              log: collectorPaths("/Users/me").logPath,
+            }),
           ),
       }),
     );
@@ -1424,7 +1428,9 @@ describe("server", () => {
     await close();
     // Then
     expect(result.isError).toBe(true);
-    expect(text(result)).toBe(`launchctl bootstrap: exit 1 · see ${logPath}`);
+    expect(text(result)).toBe(
+      "launchctl bootstrap: exit 1 · see /Users/me/Library/Logs/clocktrace/collector.log",
+    );
   });
 
   it("status returns the iOS import and the devices as fields", async () => {

@@ -13,9 +13,7 @@ import {
   HelperNotFoundError,
   LaunchdError,
   type LaunchdState,
-  logPath,
   type Permissions,
-  plistPath,
 } from "@clocktrace/collector";
 import { type Command, CommandExecutor } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
@@ -217,7 +215,7 @@ describe("setup", () => {
   const expectedSetup = () => [
     "Collector",
     "  ✔ app           ~/Applications/Clocktrace.app",
-    `  ✔ launch agent  ${plistPath}`,
+    "  ✔ launch agent  ~/Library/LaunchAgents/com.clocktrace.collector.plist",
     "  starting collector…",
     "  ✔ running",
     "Permissions   2 of 3 granted",
@@ -387,7 +385,7 @@ describe("setup", () => {
     expect(output).toEqual([
       "Collector",
       "  ✔ app           ~/Applications/Clocktrace.app",
-      `  ✘ collector did not start · see ${logPath}`,
+      "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
     ]);
     expect(state.installs).toBe(1);
   });
@@ -415,9 +413,9 @@ describe("setup", () => {
     expect(output).toEqual([
       "Collector",
       "  ✔ app           ~/Applications/Clocktrace.app",
-      `  ✔ launch agent  ${plistPath}`,
+      "  ✔ launch agent  ~/Library/LaunchAgents/com.clocktrace.collector.plist",
       "  starting collector…",
-      `  ✘ collector did not start · see ${logPath}`,
+      "  ✘ collector did not start · see ~/Library/Logs/clocktrace/collector.log",
     ]);
     expect(state.plist).toBe("<plist>");
     expect(state.installed).toBe(true);

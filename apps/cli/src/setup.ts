@@ -14,8 +14,6 @@ import {
   helperPathConfig,
   Launchd,
   LaunchdError,
-  logPath,
-  plistPath,
 } from "@clocktrace/collector";
 import type { DatabaseNewerError, StoreError } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
@@ -145,7 +143,8 @@ export const setup = (
         const prompt = yield* Prompt;
         const app = yield* App;
         const look = yield* Style;
-        const { appPath, appMainPath } = yield* CollectorPaths;
+        const { appPath, appMainPath, plistPath, logPath } =
+          yield* CollectorPaths;
         const home = homedir();
         yield* prompt.print(line([span("head", "Collector")], look));
         const collectorRows = columns(

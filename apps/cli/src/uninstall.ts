@@ -6,7 +6,6 @@ import {
   appBundleId,
   CollectorPaths,
   defaultDbPath,
-  logDir as defaultLogDir,
   Launchd,
   plistEnv,
 } from "@clocktrace/collector";
@@ -54,8 +53,6 @@ export const purgeTargets = (
 
 export const uninstall = (options: {
   readonly purge: boolean;
-  /** Test seam: the real log folder is fixed at import from the home dir. */
-  readonly logDir?: string;
 }): Effect.Effect<
   void,
   ReportedError | StoppedError,
@@ -79,8 +76,7 @@ export const uninstall = (options: {
     const fs = yield* FileSystem.FileSystem;
     const look = yield* Style;
     const home = homedir();
-    const logDir = options.logDir ?? defaultLogDir;
-    const { appPath } = yield* CollectorPaths;
+    const { appPath, logDir } = yield* CollectorPaths;
     const done = (text: string) =>
       prompt.print(line([mark("ok", look), ` ${text}`], look));
     const skipped = (text: string) =>
