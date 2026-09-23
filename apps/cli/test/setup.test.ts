@@ -96,9 +96,10 @@ const noCommandsLayer = Layer.succeed(CommandExecutor.CommandExecutor, {
 } satisfies CommandExecutor.CommandExecutor);
 
 // How the fake Lifecycle ends: loaded, failed reading the old plist
-// before the App step, failed at the App step, or not loaded at the
-// bootout of the old agent, at the agent step, or while it waits for the
-// start.
+// before the App step, failed at the App step, not loaded at the bootout
+// of the old agent, at the agent step, or while it waits for the start,
+// or stopped (Ctrl-C) while it waits for the start, after an undo that put
+// back what it says.
 type Outcome =
   | "loaded"
   | { readonly failAt: "read" }
@@ -109,6 +110,11 @@ type Outcome =
     }
   | {
       readonly failAt: "bootout" | "agent" | "start";
+      readonly appRestored: boolean;
+      readonly agentRestored: boolean;
+    }
+  | {
+      readonly stopAt: "start";
       readonly appRestored: boolean;
       readonly agentRestored: boolean;
     };
@@ -136,24 +142,40 @@ const fakeLifecycle = (
       install: <R>(settings: CollectorSettings, progress: InstallProgress<R>) =>
         Effect.gen(function* () {
           yield* Ref.update(installs, (all) => [...all, settings]);
-          if (outcome !== "loaded" && outcome.failAt === "read") {
+          if (
+            outcome !== "loaded" &&
+            "failAt" in outcome &&
+            outcome.failAt === "read"
+          ) {
             return yield* readError;
           }
-          if (outcome !== "loaded" && outcome.failAt === "app") {
+          if (
+            outcome !== "loaded" &&
+            "failAt" in outcome &&
+            outcome.failAt === "app"
+          ) {
             return yield* new AppNotInstalledError({
               cause: outcome.cause,
               appRestored: outcome.appRestored,
             });
           }
           yield* progress.done("app");
-          if (outcome !== "loaded" && outcome.failAt === "bootout") {
+          if (
+            outcome !== "loaded" &&
+            "failAt" in outcome &&
+            outcome.failAt === "bootout"
+          ) {
             return yield* new CollectorNotLoadedError({
               cause: bootoutError,
               appRestored: outcome.appRestored,
               agentRestored: outcome.agentRestored,
             });
           }
-          if (outcome !== "loaded" && outcome.failAt === "agent") {
+          if (
+            outcome !== "loaded" &&
+            "failAt" in outcome &&
+            outcome.failAt === "agent"
+          ) {
             return yield* new CollectorNotLoadedError({
               cause: new LaunchdError({
                 step: "launchctl bootstrap",
@@ -165,6 +187,15 @@ const fakeLifecycle = (
           }
           yield* progress.done("agent");
           yield* progress.starting(Effect.void);
+          if (outcome !== "loaded" && "stopAt" in outcome) {
+            yield* progress.stopping(
+              Effect.succeed({
+                appRestored: outcome.appRestored,
+                agentRestored: outcome.agentRestored,
+              }),
+            );
+            return yield* Effect.interrupt;
+          }
           if (outcome !== "loaded") {
             return yield* new CollectorNotLoadedError({
               cause: new LaunchdError({
@@ -528,6 +559,38 @@ describe("setup", () => {
     expect(output[failure - 1]).toBe(
       "launch agent: could not restore the previous install",
     );
+  });
+
+  it("a stop says it puts back the previous install", async () => {
+    // Given: setup is stopped (Ctrl-C) while the Collector starts, and the
+    // undo puts everything back
+    // When
+    const { exit, output } = await run(helperStub(allGranted), {
+      stopAt: "start",
+      appRestored: true,
+      agentRestored: true,
+    });
+    // Then: the stopping line is the last line, with no restore line
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(output.at(-1)).toBe("stopping, putting back the previous install…");
+    expect(output).not.toContain("app: could not restore the previous install");
+  });
+
+  it("a stop whose undo fails says what it could not put back", async () => {
+    // Given: setup is stopped while the Collector starts, and the undo puts
+    // back neither the App nor the agent
+    // When
+    const { output } = await run(helperStub(allGranted), {
+      stopAt: "start",
+      appRestored: false,
+      agentRestored: false,
+    });
+    // Then: the restore lines follow the stopping line
+    expect(output.slice(-3)).toEqual([
+      "stopping, putting back the previous install…",
+      "app: could not restore the previous install",
+      "launch agent: could not restore the previous install",
+    ]);
   });
 
   it("setup loads the Collector before the permissions walk and the Hosts", async () => {

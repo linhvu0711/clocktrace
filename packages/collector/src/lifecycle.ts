@@ -31,13 +31,25 @@ export class CollectorNotLoadedError extends Data.TaggedError(
 
 export type InstallStep = "app" | "agent";
 
+// What an undo put back: `appRestored` is false when the App could not
+// be, and `agentRestored` when the old plist could not be.
+export type Restored = {
+  readonly appRestored: boolean;
+  readonly agentRestored: boolean;
+};
+
 // How install reports while it works: `done` after each step lands, and
 // `starting` wraps the wait for Loaded, so a caller can show a spinner.
+// `stopping` wraps the undo a stop (Ctrl-C) after the App swap runs, and
+// gets what it put back.
 export type InstallProgress<R> = {
   readonly done: (step: InstallStep) => Effect.Effect<void, never, R>;
   readonly starting: <A, E>(
     wait: Effect.Effect<A, E>,
   ) => Effect.Effect<A, E, R>;
+  readonly stopping: (
+    undo: Effect.Effect<Restored>,
+  ) => Effect.Effect<void, never, R>;
 };
 
 export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
@@ -68,90 +80,106 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
           .pipe(Effect.map((plist) => plist?.settings ?? null));
       return {
         // Swaps in the App, replaces the agent, and waits until the
-        // Collector is Loaded. On a failure it puts the old App and plist
-        // back.
+        // Collector is Loaded. On a failure, or a stop (Ctrl-C) after the
+        // App swap, it puts the old App and plist back.
         install: <R>(
           settings: CollectorSettings,
           progress: InstallProgress<R>,
         ) =>
-          Effect.gen(function* () {
-            // Both only read, so a failure here leaves nothing to undo.
-            const installed = yield* launchd.isInstalled();
-            const previous = installed ? yield* launchd.readPlist() : null;
-            const appInstall = yield* app.install(settings.helperPath);
-            yield* progress.done("app");
-            // Whether the App change could be undone.
-            const undoApp = app.rollback(appInstall).pipe(
-              Effect.as(true),
-              Effect.catchAll(() => Effect.succeed(false)),
-            );
-            // A bootout that fails left the old job as it was, so only the
-            // App is undone and the old agent counts as put back.
-            if (installed) {
-              yield* launchd.bootout().pipe(
+          Effect.uninterruptibleMask((interruptible) =>
+            Effect.gen(function* () {
+              // Both only read, so a failure or a stop here leaves nothing
+              // to undo.
+              const installed = yield* interruptible(launchd.isInstalled());
+              const previous = installed
+                ? yield* interruptible(launchd.readPlist())
+                : null;
+              // Only the App build can stop; once the swap lands, install
+              // returns what it did, so the undo below can reverse it.
+              const appInstall = yield* app.install(settings.helperPath);
+              // Whether the App change could be undone.
+              const undoApp = app.rollback(appInstall).pipe(
+                Effect.as(true),
+                Effect.catchAll(() => Effect.succeed(false)),
+              );
+              // A fresh install that fails is removed, App and agent; a
+              // rewrite that fails puts the previous app and agent back,
+              // unloading the new one first so the old plist is the one
+              // launchd runs. An unload that fails stops the restore there,
+              // before the App rollback, so the App counts as not put back,
+              // and so does an old agent; a fresh install had none to lose.
+              const restore: Effect.Effect<Restored> = Effect.gen(function* () {
+                yield* launchd.uninstall();
+                const appRestored = yield* undoApp;
+                const agentRestored =
+                  previous === null
+                    ? true
+                    : yield* launchd.restore(previous).pipe(
+                        Effect.as(true),
+                        Effect.catchAll(() => Effect.succeed(false)),
+                      );
+                return { appRestored, agentRestored };
+              }).pipe(
+                Effect.catchAll(() =>
+                  Effect.succeed({
+                    appRestored: false,
+                    agentRestored: previous === null,
+                  }),
+                ),
+              );
+              // From the swap on, a stop puts the old App and plist back, as
+              // a failure does. The failure handlers run outside it, so a
+              // stop cannot cut their restore short.
+              const stoppable = <A, E, R2>(step: Effect.Effect<A, E, R2>) =>
+                interruptible(step).pipe(
+                  Effect.onInterrupt(() => progress.stopping(restore)),
+                );
+              yield* stoppable(progress.done("app"));
+              // A bootout that fails left the old job as it was, so only the
+              // App is undone and the old agent counts as put back.
+              if (installed) {
+                yield* stoppable(launchd.bootout()).pipe(
+                  Effect.catchTag("LaunchdError", (cause) =>
+                    Effect.flatMap(
+                      undoApp,
+                      (appRestored) =>
+                        new CollectorNotLoadedError({
+                          cause,
+                          appRestored,
+                          agentRestored: true,
+                        }),
+                    ),
+                  ),
+                );
+              }
+              yield* stoppable(
+                Effect.gen(function* () {
+                  yield* launchd.install({
+                    app: appMainPath,
+                    node: process.execPath,
+                    entry: entryPath,
+                    databasePath: settings.databasePath,
+                    helperPath: settings.helperPath,
+                    logPath,
+                  });
+                  yield* progress.done("agent");
+                  yield* progress.starting(loaded);
+                }),
+              ).pipe(
                 Effect.catchTag("LaunchdError", (cause) =>
                   Effect.flatMap(
-                    undoApp,
-                    (appRestored) =>
-                      new CollectorNotLoadedError({
-                        cause,
-                        appRestored,
-                        agentRestored: true,
-                      }),
+                    restore,
+                    (restored) =>
+                      new CollectorNotLoadedError({ cause, ...restored }),
                   ),
                 ),
               );
-            }
-            // A fresh install that fails is removed, App and agent; a
-            // rewrite that fails puts the previous app and agent back,
-            // unloading the new one first so the old plist is the one
-            // launchd runs. An unload that fails stops the restore there,
-            // before the App rollback, so the App counts as not put back,
-            // and so does an old agent; a fresh install had none to lose.
-            const restore = Effect.gen(function* () {
-              yield* launchd.uninstall();
-              const appRestored = yield* undoApp;
-              const agentRestored =
-                previous === null
-                  ? true
-                  : yield* launchd.restore(previous).pipe(
-                      Effect.as(true),
-                      Effect.catchAll(() => Effect.succeed(false)),
-                    );
-              return { appRestored, agentRestored };
-            }).pipe(
-              Effect.catchAll(() =>
-                Effect.succeed({
-                  appRestored: false,
-                  agentRestored: previous === null,
-                }),
-              ),
-            );
-            yield* Effect.gen(function* () {
-              yield* launchd.install({
-                app: appMainPath,
-                node: process.execPath,
-                entry: entryPath,
-                databasePath: settings.databasePath,
-                helperPath: settings.helperPath,
-                logPath,
-              });
-              yield* progress.done("agent");
-              yield* progress.starting(loaded);
-            }).pipe(
-              Effect.catchTag("LaunchdError", (cause) =>
-                Effect.flatMap(
-                  restore,
-                  (restored) =>
-                    new CollectorNotLoadedError({ cause, ...restored }),
-                ),
-              ),
-            );
-            // A failed .old delete must not undo a Collector that is
-            // already running.
-            yield* Effect.ignore(app.commit());
-            return "loaded" as const;
-          }),
+              // A failed .old delete must not undo a Collector that is
+              // already running.
+              yield* Effect.ignore(app.commit());
+              return "loaded" as const;
+            }),
+          ),
         settings,
         // The database the installed Collector writes: CLOCKTRACE_DB set
         // for this run wins, then the plist, then the default.
