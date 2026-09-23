@@ -40,7 +40,7 @@ final class UrlReaderTests: XCTestCase {
         script: browserScript(bundleId: "com.google.Chrome")!, at: t0)
     }
     // Then
-    XCTAssertEqual(result, .missing)
+    XCTAssertEqual(result, .missing(.noAnswer))
     XCTAssertLessThan(elapsed, 0.3)
   }
 
@@ -61,8 +61,8 @@ final class UrlReaderTests: XCTestCase {
       bundleId: "com.google.Chrome", script: script,
       at: t0.addingTimeInterval(31))
     // Then
-    XCTAssertEqual(first, .missing)
-    XCTAssertEqual(second, .missing)
+    XCTAssertEqual(first, .missing(.noAnswer))
+    XCTAssertEqual(second, .missing(.noAnswer))
     XCTAssertEqual(calls, 1)
   }
 
@@ -91,8 +91,8 @@ final class UrlReaderTests: XCTestCase {
       bundleId: "com.google.Chrome", script: script,
       at: t0.addingTimeInterval(30))
     // Then
-    XCTAssertEqual(first, .missing)
-    XCTAssertEqual(second, .missing)
+    XCTAssertEqual(first, .missing(.noAnswer))
+    XCTAssertEqual(second, .missing(.noAnswer))
     XCTAssertEqual(third, .granted("https://mail.google.com/"))
     XCTAssertEqual(calls, 2)
   }

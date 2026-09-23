@@ -52,7 +52,7 @@ final class SamplerTests: XCTestCase {
     // When
     let sample = Sampler.sample(reads, urls: UrlReader(reads: reads), at: Date())
     // Then
-    XCTAssertEqual(sample.url, .missing)
+    XCTAssertEqual(sample.url, .missing(.denied))
     XCTAssertEqual(scripts, [])
   }
 
@@ -105,7 +105,7 @@ final class SamplerTests: XCTestCase {
     XCTAssertEqual(
       sample,
       Sample(
-        front: chrome, axTrusted: true, title: "Inbox", url: .missing,
+        front: chrome, axTrusted: true, title: "Inbox", url: .missing(.noAnswer),
         idleSeconds: 1))
   }
 
