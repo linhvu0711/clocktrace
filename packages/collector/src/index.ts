@@ -9,6 +9,7 @@ export * from "./importer.js";
 export * from "./importer-rules.js";
 export * from "./installed.js";
 export * from "./launchd.js";
+export * from "./lifecycle.js";
 export * from "./mac-identity.js";
 export * from "./paths.js";
 export * from "./plist.js";

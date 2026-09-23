@@ -1,7 +1,196 @@
-import { Option, Schema } from "effect";
+import { Effect, Exit, Layer, Option, Ref, Schedule, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { CollectorPlistFromJson, collectorPlist } from "../src/plist.js";
+import { App, AppError } from "../src/app.js";
+import {
+  entryPath,
+  fakeLaunchd,
+  type Launchd,
+  type LaunchdState,
+} from "../src/launchd.js";
+import { type InstallProgress, Lifecycle } from "../src/lifecycle.js";
+import { CollectorPaths } from "../src/paths.js";
+import {
+  type CollectorPlist,
+  CollectorPlistFromJson,
+  collectorPlist,
+} from "../src/plist.js";
+
+// The previous agent's plist, in every case that has one.
+const samplePlist: CollectorPlist = {
+  app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
+  node: "/usr/local/bin/node",
+  entry: "/repo/main.js",
+  databasePath: "/old/clocktrace.db",
+  helperPath: "/old-helper",
+  logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
+};
+
+const fresh: LaunchdState = {
+  installed: false,
+  running: false,
+  plist: null,
+  installs: 0,
+};
+
+const settings = { databasePath: "/data/clocktrace.db", helperPath: "/stub" };
+
+// Counts installs, commits, and rollbacks, like the real App on disk.
+const fakeApp = (
+  installs: Ref.Ref<number>,
+  committed: Ref.Ref<number>,
+  rolledBack: Ref.Ref<number>,
+) =>
+  Layer.succeed(
+    App,
+    new App({
+      isInstalled: () => Effect.map(Ref.get(installs), (n) => n > 0),
+      install: () =>
+        Ref.update(installs, (n) => n + 1).pipe(Effect.as("written" as const)),
+      commit: () => Ref.update(committed, (n) => n + 1),
+      rollback: () => Ref.update(rolledBack, (n) => n + 1),
+      remove: () => Ref.set(installs, 0).pipe(Effect.as("removed" as const)),
+    }),
+  );
+
+const run = <A, E>(
+  initial: LaunchdState,
+  use: (
+    lifecycle: Lifecycle,
+    progress: InstallProgress<never>,
+  ) => Effect.Effect<A, E>,
+  opts: {
+    readonly launchd?: Parameters<typeof fakeLaunchd>[1];
+    readonly launchdLayer?: (
+      state: Ref.Ref<LaunchdState>,
+    ) => Layer.Layer<Launchd>;
+    readonly app?: Layer.Layer<App>;
+  } = {},
+) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const state = yield* Ref.make(initial);
+      const installs = yield* Ref.make(0);
+      const commits = yield* Ref.make(0);
+      const rollbacks = yield* Ref.make(0);
+      const steps = yield* Ref.make<ReadonlyArray<string>>([]);
+      const progress: InstallProgress<never> = {
+        done: (step) => Ref.update(steps, (s) => [...s, step]),
+        starting: (wait) =>
+          Ref.update(steps, (s) => [...s, "starting"]).pipe(
+            Effect.andThen(wait),
+          ),
+      };
+      const layer = Lifecycle.Default(Schedule.recurs(3)).pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            (opts.launchdLayer ?? ((s) => fakeLaunchd(s, opts.launchd)))(state),
+            opts.app ?? fakeApp(installs, commits, rollbacks),
+            CollectorPaths.Default("/Users/me"),
+          ),
+        ),
+      );
+      const exit = yield* Effect.exit(
+        Effect.flatMap(Lifecycle, (l) => use(l, progress)).pipe(
+          Effect.provide(layer),
+        ),
+      );
+      return {
+        exit,
+        steps: yield* Ref.get(steps),
+        state: yield* Ref.get(state),
+        appInstalls: yield* Ref.get(installs),
+        appCommits: yield* Ref.get(commits),
+        appRollbacks: yield* Ref.get(rollbacks),
+      };
+    }),
+  );
+
+const install = (l: Lifecycle, p: InstallProgress<never>) =>
+  l.install(settings, p);
+
+describe("Lifecycle.install", () => {
+  it("install on a fresh Mac loads the Collector", async () => {
+    // Given: no agent, no App
+    // When
+    const { exit, steps, state, appCommits } = await run(fresh, install);
+    // Then
+    expect(exit).toEqual(Exit.succeed("loaded"));
+    expect(steps).toEqual(["app", "agent", "starting"]);
+    expect(state).toEqual({
+      installed: true,
+      running: true,
+      installs: 1,
+      plist: {
+        app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
+        node: process.execPath,
+        entry: entryPath,
+        databasePath: "/data/clocktrace.db",
+        helperPath: "/stub",
+        logPath: "/Users/me/Library/Logs/clocktrace/collector.log",
+      },
+    });
+    expect(appCommits).toBe(1);
+  });
+
+  it("install again rewrites the agent and loads it", async () => {
+    // Given: a running agent from an earlier install
+    const { exit, state, appCommits } = await run(
+      { installed: true, running: true, plist: samplePlist, installs: 1 },
+      install,
+    );
+    // Then
+    expect(exit).toEqual(Exit.succeed("loaded"));
+    expect(state.installs).toBe(2);
+    expect(appCommits).toBe(1);
+  });
+
+  it("install over a stopped agent loads it again", async () => {
+    // Given: the plist present, the Collector not loaded
+    const { exit, state } = await run(
+      { installed: true, running: false, plist: samplePlist, installs: 1 },
+      install,
+    );
+    // Then
+    expect(exit).toEqual(Exit.succeed("loaded"));
+    expect(state.running).toBe(true);
+    expect(state.installs).toBe(2);
+  });
+
+  it("a slow start still loads", async () => {
+    // Given: the Collector reaches running only after two stopped samples
+    const { exit } = await run(fresh, install, {
+      launchd: { stalledSamples: 2 },
+    });
+    // Then: the bounded wait outlasts them
+    expect(exit).toEqual(Exit.succeed("loaded"));
+  });
+
+  it("a failed App install stops before the agent", async () => {
+    // Given: the App install fails at codesign
+    const appFails = Layer.succeed(
+      App,
+      new App({
+        isInstalled: () => Effect.succeed(false),
+        install: () =>
+          Effect.fail(new AppError({ step: "codesign", detail: "exit 1" })),
+        commit: () => Effect.void,
+        rollback: () => Effect.void,
+        remove: () => Effect.succeed("absent" as const),
+      }),
+    );
+    // When
+    const { exit, steps, state } = await run(fresh, install, {
+      app: appFails,
+    });
+    // Then
+    expect(exit).toEqual(
+      Exit.fail(new AppError({ step: "codesign", detail: "exit 1" })),
+    );
+    expect(steps).toEqual([]);
+    expect(state.installs).toBe(0);
+  });
+});
 
 const input = {
   app: "/Users/me/Applications/Clocktrace.app/Contents/MacOS/Clocktrace",
