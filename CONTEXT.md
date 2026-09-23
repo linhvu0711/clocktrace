@@ -19,7 +19,7 @@ macOS's yes or no for one permission of the App: Accessibility, Full Disk Access
 _Avoid_: Permission state, access, consent
 
 **Saved grant**:
-The last Automation Grant clocktrace saw for one browser, with the time it saw it. `status` and `permissions` show it when the browser is closed, because macOS answers only for an open browser.
+The last Automation Grant clocktrace saw for one browser, with the time it saw it. `status` and `permissions` show it when the browser is closed, because macOS answers only for an open browser. A live check that finds no Grant removes it.
 _Avoid_: Cached grant, last known grant, remembered permission
 
 **Collector**:
