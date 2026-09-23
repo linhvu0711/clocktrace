@@ -157,62 +157,62 @@ export const setup = (
             },
           )
           .pipe(
-            Effect.catchTags({
-              CollectorNotLoadedError: (e) =>
-                Effect.gen(function* () {
-                  if (!e.appRestored) {
-                    yield* prompt.print(
-                      "app: could not restore the previous install",
-                    );
-                  }
-                  if (!e.agentRestored) {
-                    yield* prompt.print(
-                      "launch agent: could not restore the previous install",
-                    );
-                  }
-                  // A failed bootout started nothing new, so it is not a start
-                  // failure; its line names no Collector log, which a bootout
-                  // does not write.
-                  yield* prompt.printError(
-                    line(
-                      e.cause.step.startsWith("launchctl") &&
-                        e.cause.step !== "launchctl bootout"
-                        ? [
-                            "  ",
-                            mark("bad", look),
-                            " collector did not start · see ",
-                            span("dim", shortPath(logPath, home)),
-                          ]
-                        : [
-                            "  ",
-                            mark("bad", look),
-                            ` ${e.cause.step}: ${e.cause.detail}`,
-                          ],
-                      look,
-                    ),
+            Effect.catchTag("CollectorNotLoadedError", (e) =>
+              Effect.gen(function* () {
+                if (!e.appRestored) {
+                  yield* prompt.print(
+                    "app: could not restore the previous install",
                   );
-                  return yield* new ReportedError({ cause: e.cause });
-                }),
-              AppNotInstalledError: (e) =>
-                Effect.gen(function* () {
-                  if (!e.appRestored) {
-                    yield* prompt.print(
-                      "app: could not restore the previous install",
-                    );
-                  }
-                  yield* prompt.printError(
-                    line(
-                      [
-                        "  ",
-                        mark("bad", look),
-                        ` ${e.cause.step}: ${e.cause.detail}`,
-                      ],
-                      look,
-                    ),
+                }
+                if (!e.agentRestored) {
+                  yield* prompt.print(
+                    "launch agent: could not restore the previous install",
                   );
-                  return yield* new ReportedError({ cause: e.cause });
-                }),
-            }),
+                }
+                // A failed bootout started nothing new, so it is not a start
+                // failure; its line names no Collector log, which a bootout
+                // does not write.
+                yield* prompt.printError(
+                  line(
+                    e.cause.step.startsWith("launchctl") &&
+                      e.cause.step !== "launchctl bootout"
+                      ? [
+                          "  ",
+                          mark("bad", look),
+                          " collector did not start · see ",
+                          span("dim", shortPath(logPath, home)),
+                        ]
+                      : [
+                          "  ",
+                          mark("bad", look),
+                          ` ${e.cause.step}: ${e.cause.detail}`,
+                        ],
+                    look,
+                  ),
+                );
+                return yield* new ReportedError({ cause: e.cause });
+              }),
+            ),
+            Effect.catchTag("AppNotInstalledError", (e) =>
+              Effect.gen(function* () {
+                if (!e.appRestored) {
+                  yield* prompt.print(
+                    "app: could not restore the previous install",
+                  );
+                }
+                yield* prompt.printError(
+                  line(
+                    [
+                      "  ",
+                      mark("bad", look),
+                      ` ${e.cause.step}: ${e.cause.detail}`,
+                    ],
+                    look,
+                  ),
+                );
+                return yield* new ReportedError({ cause: e.cause });
+              }),
+            ),
           );
         yield* prompt.print(collectorRows[2] ?? "");
         const interactive = yield* prompt.interactive;
