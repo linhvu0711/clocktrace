@@ -157,6 +157,26 @@ const readPlistFails = (state: Ref.Ref<LaunchdState>) =>
     ),
   ).pipe(Layer.provide(fakeLaunchd(state)));
 
+// The old job cannot be booted out; it keeps running as it was.
+const bootoutError = new LaunchdError({
+  step: "launchctl bootout",
+  detail: "exit 5",
+  log: "/Users/me/Library/Logs/clocktrace/collector.log",
+});
+
+const bootoutFails = (state: Ref.Ref<LaunchdState>) =>
+  Layer.effect(
+    Launchd,
+    Effect.map(
+      Launchd,
+      (base) =>
+        new Launchd({
+          ...base,
+          bootout: () => Effect.fail(bootoutError),
+        }),
+    ),
+  ).pipe(Layer.provide(fakeLaunchd(state)));
+
 const run = <A, E>(
   initial: LaunchdState,
   use: (
@@ -836,6 +856,31 @@ describe("Lifecycle.install on disk", () => {
     // Then: the read error, and the old App and agent as they were
     expect(exit).toEqual(Exit.fail(readError));
     expect(steps).toEqual([]);
+    expect(liveApp()).toBe("old-bytes");
+    expect(existsSync(`${appPath}.old`)).toBe(false);
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+    expect(state).toEqual(withAgent);
+  });
+
+  it("a failed bootout puts the old App back and keeps the old Collector", async () => {
+    // Given: an old App and a running agent that cannot be booted out
+    writeOldApp();
+    // When
+    const { exit, steps, state } = await run(withAgent, installHere, {
+      launchdLayer: bootoutFails,
+      app: diskApp(home),
+    });
+    // Then: the old App is live again and the old agent still runs
+    expect(exit).toEqual(
+      Exit.fail(
+        new CollectorNotLoadedError({
+          cause: bootoutError,
+          appRestored: true,
+          agentRestored: true,
+        }),
+      ),
+    );
+    expect(steps).toEqual(["app"]);
     expect(liveApp()).toBe("old-bytes");
     expect(existsSync(`${appPath}.old`)).toBe(false);
     expect(existsSync(`${appPath}.new`)).toBe(false);

@@ -80,8 +80,27 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
             const previous = installed ? yield* launchd.readPlist() : null;
             const appInstall = yield* app.install(settings.helperPath);
             yield* progress.done("app");
+            // Whether the App change could be undone.
+            const undoApp = app.rollback(appInstall).pipe(
+              Effect.as(true),
+              Effect.catchAll(() => Effect.succeed(false)),
+            );
+            // A bootout that fails left the old job as it was, so only the
+            // App is undone and the old agent counts as put back.
             if (installed) {
-              yield* launchd.bootout();
+              yield* launchd.bootout().pipe(
+                Effect.catchTag("LaunchdError", (cause) =>
+                  Effect.flatMap(
+                    undoApp,
+                    (appRestored) =>
+                      new CollectorNotLoadedError({
+                        cause,
+                        appRestored,
+                        agentRestored: true,
+                      }),
+                  ),
+                ),
+              );
             }
             // A fresh install that fails is removed, App and agent; a
             // rewrite that fails puts the previous app and agent back,
@@ -91,10 +110,7 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
             // and so does an old agent; a fresh install had none to lose.
             const restore = Effect.gen(function* () {
               yield* launchd.uninstall();
-              const appRestored = yield* app.rollback(appInstall).pipe(
-                Effect.as(true),
-                Effect.catchAll(() => Effect.succeed(false)),
-              );
+              const appRestored = yield* undoApp;
               const agentRestored =
                 previous === null
                   ? true
