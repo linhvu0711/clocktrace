@@ -10,15 +10,12 @@ import {
 } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { decodeBiomeLine } from "./biome-line.js";
+import type { BiomeLine } from "./biome-line.js";
 import { minActivityMillis } from "./collector.js";
 import {
-  type BiomeExitError,
-  type DeviceListUnreadableError,
   Helper,
   type HelperExitedError,
   type HelperFailedError,
-  type NoFullDiskAccessError,
 } from "./helper.js";
 import {
   importEvery,
@@ -105,10 +102,7 @@ export const importOnce = (
 ): Effect.Effect<
   void,
   | HelperExitedError
-  | NoFullDiskAccessError
-  | DeviceListUnreadableError
   | HelperFailedError
-  | BiomeExitError
   | ParseError
   | StoreError
   | MacIdentityError,
@@ -210,33 +204,37 @@ export const importOnce = (
     }
     const since = new Map([...progress].map(([id, p]) => [id, p.ts] as const));
 
-    let recordTexts: ReadonlyArray<string>;
+    let records: ReadonlyArray<BiomeLine>;
     let reason: string | null = null;
     const recordLines = yield* Effect.either(
       helper.biomeRecords(helperPath, since),
     );
     if (Either.isLeft(recordLines)) {
       const e = recordLines.left;
-      if (e._tag === "BiomeExitError" && e.code === 4) {
+      if (e._tag === "NoFullDiskAccessError") {
+        yield* Effect.logInfo("full disk access missing, iOS import skipped");
+        return;
+      }
+      if (e._tag === "NoBiomeFolderError") {
         yield* store.setSetting(
           importStatusKey,
           encodeResult({
             state: "broken",
             at: now,
-            reason: e.stderr.trim(),
+            reason: e.reason,
             devices: syncs,
           }),
         );
         return;
       }
-      if (e._tag === "BiomeExitError" && e.code === 6) {
-        recordTexts = e.lines ?? [];
-        reason = e.stderr.trim() || e.message;
+      if (e._tag === "FoldersUnreadableError") {
+        records = e.records;
+        reason = e.reason;
       } else {
         return yield* e;
       }
     } else {
-      recordTexts = recordLines.right;
+      records = recordLines.right;
     }
 
     const open = new Map<string, Open>();
@@ -268,8 +266,7 @@ export const importOnce = (
       }
     };
 
-    for (const text of recordTexts) {
-      const line = yield* decodeBiomeLine(text);
+    for (const line of records) {
       if ("error" in line) {
         if (reason === null) {
           reason = `parse error in ${line.segment} at ${line.offset}`;

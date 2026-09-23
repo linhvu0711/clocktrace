@@ -307,6 +307,94 @@ describe("Helper biome devices", () => {
   });
 });
 
+const R3_LINE =
+  '{"bundleId":"com.apple.mobilesafari","device":"00000000-0000-4000-8000-000000000002","focus":"start","offset":184,"segment":"000000000000001","ts":1789833660,"appVersion":null,"build":null,"reason":null}';
+const R3 = {
+  device: "00000000-0000-4000-8000-000000000002",
+  ts: 1789833660,
+  focus: "start",
+  bundleId: "com.apple.mobilesafari",
+  reason: null,
+  appVersion: null,
+  build: null,
+  segment: "000000000000001",
+  offset: 184,
+};
+
+describe("Helper biome records", () => {
+  it("biome records exit 0 gives decoded records and parse lines", async () => {
+    // Given: biome records printed one record and one parse error line
+    const stdout = `${R3_LINE}\n{"error":"parse","offset":148,"segment":"000000000000001"}\n`;
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      stdout,
+    );
+    // Then
+    expect(Exit.isSuccess(exit) && exit.value).toEqual([
+      R3,
+      { error: "parse", segment: "000000000000001", offset: 148 },
+    ]);
+  });
+
+  it("biome records exit 3 is no Full Disk Access", async () => {
+    // Given: biome records exited 3 without Full Disk Access
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      "",
+      3,
+      "full disk access needed\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({ _tag: "NoFullDiskAccessError" });
+  });
+
+  it("biome records exit 4 is no Biome folder", async () => {
+    // Given: biome records exited 4 without the remote folder
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      "",
+      4,
+      "no App.InFocus remote folder\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({
+      _tag: "NoBiomeFolderError",
+      reason: "no App.InFocus remote folder",
+    });
+  });
+
+  it("biome records exit 6 keeps the records and names the reason", async () => {
+    // Given: biome records printed R3, then exited 6 on the iPad folder
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      `${R3_LINE}\n`,
+      6,
+      "cannot list iPad folder\n",
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({
+      _tag: "FoldersUnreadableError",
+      reason: "cannot list iPad folder",
+      records: [R3],
+    });
+  });
+
+  it("biome records rejects a line that is not a record", async () => {
+    // Given: biome records printed a line whose shape matches no Biome line
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      '{"app":"Safari"}\n',
+    );
+    // Then
+    expect(failure(exit)).toMatchObject({ _tag: "ParseError" });
+  });
+});
+
 describe("openArgs", () => {
   it("openArgs builds the open command for a permissions read", () => {
     // Given: an app path and capture files

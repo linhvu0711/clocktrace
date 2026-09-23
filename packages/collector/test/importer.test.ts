@@ -14,12 +14,17 @@ import {
 } from "effect";
 import { describe, expect, it } from "vitest";
 
-import type { DevicePeerLine } from "../src/biome-line.js";
 import {
-  BiomeExitError,
+  BiomeLine,
+  type BiomeRecordLine,
+  type DevicePeerLine,
+} from "../src/biome-line.js";
+import {
   DeviceListUnreadableError,
+  FoldersUnreadableError,
   Helper,
   HelperFailedError,
+  NoBiomeFolderError,
   NoFullDiskAccessError,
 } from "../src/helper.js";
 import {
@@ -72,13 +77,14 @@ const D_UNK: DevicePeerLine = {
   platform: null,
 };
 
-const record = (o: Record<string, unknown>): string =>
-  JSON.stringify({
-    appVersion: null,
-    build: null,
-    reason: null,
-    ...o,
-  });
+const record = (
+  o: Omit<typeof BiomeRecordLine.Type, "appVersion" | "build" | "reason">,
+): BiomeLine => ({
+  appVersion: null,
+  build: null,
+  reason: null,
+  ...o,
+});
 
 const R1 = record({
   bundleId: "com.apple.springboard.home",
@@ -184,7 +190,7 @@ const R13 = record({
   segment: S,
   ts: 1789834560,
 });
-const E1 = `{"error":"parse","offset":148,"segment":"${S}"}`;
+const E1: BiomeLine = { error: "parse", offset: 148, segment: S };
 
 const ALL = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12];
 
@@ -193,11 +199,17 @@ type DevicesError =
   | DeviceListUnreadableError
   | HelperFailedError;
 
+type RecordsError =
+  | NoFullDiskAccessError
+  | NoBiomeFolderError
+  | FoldersUnreadableError
+  | HelperFailedError;
+
 interface Ctx {
   calls: Ref.Ref<number>;
   sinces: Ref.Ref<ReadonlyArray<ReadonlyMap<string, number>>>;
   devicesRef: Ref.Ref<ReadonlyArray<DevicePeerLine>>;
-  recordsRef: Ref.Ref<ReadonlyArray<string>>;
+  recordsRef: Ref.Ref<ReadonlyArray<BiomeLine>>;
 }
 
 const run = <A, E>(
@@ -207,8 +219,8 @@ const run = <A, E>(
       | Effect.Effect<ReadonlyArray<DevicePeerLine>, DevicesError>
       | "ref";
     records:
-      | ReadonlyArray<string>
-      | Effect.Effect<ReadonlyArray<string>, BiomeExitError>
+      | ReadonlyArray<BiomeLine>
+      | Effect.Effect<ReadonlyArray<BiomeLine>, RecordsError>
       | "ref";
     store?: Layer.Layer<Store, never, Store>;
   },
@@ -223,7 +235,7 @@ const run = <A, E>(
         ReadonlyArray<ReadonlyMap<string, number>>
       >([]);
       const devicesRef = yield* Ref.make<ReadonlyArray<DevicePeerLine>>([]);
-      const recordsRef = yield* Ref.make<ReadonlyArray<string>>([]);
+      const recordsRef = yield* Ref.make<ReadonlyArray<BiomeLine>>([]);
       const deviceEff: Effect.Effect<
         ReadonlyArray<DevicePeerLine>,
         DevicesError
@@ -232,12 +244,14 @@ const run = <A, E>(
         : Effect.isEffect(spec.devices)
           ? spec.devices
           : Effect.succeed(spec.devices);
-      const recordEff: Effect.Effect<readonly string[], BiomeExitError> =
-        spec.records === "ref"
-          ? Ref.get(recordsRef)
-          : Effect.isEffect(spec.records)
-            ? spec.records
-            : Effect.succeed(spec.records);
+      const recordEff: Effect.Effect<
+        ReadonlyArray<BiomeLine>,
+        RecordsError
+      > = spec.records === "ref"
+        ? Ref.get(recordsRef)
+        : Effect.isEffect(spec.records)
+          ? spec.records
+          : Effect.succeed(spec.records);
       const stubHelper = Helper.Test({
         biomeDevices: () =>
           Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(deviceEff)),
@@ -581,16 +595,13 @@ describe("importer", () => {
   });
 
   it("a missing remote folder records broken with the helper's reason", async () => {
-    // Given: biome records exits 4 after the devices import
+    // Given: biome records finds no remote folder after the devices import
     // When
     const result = await run(
       {
         devices: [D_PHONE, D_PAD],
         records: Effect.fail(
-          new BiomeExitError({
-            code: 4,
-            stderr: "no App.InFocus remote folder\n",
-          }),
+          new NoBiomeFolderError({ reason: "no App.InFocus remote folder" }),
         ),
       },
       "27.0",
@@ -716,7 +727,7 @@ describe("importer", () => {
     const result = await run(
       {
         devices: [D_MAC, D_PHONE, D_PAD],
-        records: ALL.filter((r) => r.includes(P2)),
+        records: ALL.filter((r) => "device" in r && r.device === P2),
       },
       "27.0",
       (ctx) =>
@@ -769,16 +780,15 @@ describe("importer", () => {
   });
 
   it("a partial device failure keeps the emitted records and records broken", async () => {
-    // Given: biome records emits Safari's records then exits 6 on the iPad folder
+    // Given: biome records emits Safari's records, then cannot list the iPad folder
     // When
     const result = await run(
       {
         devices: [D_PHONE, D_PAD],
         records: Effect.fail(
-          new BiomeExitError({
-            code: 6,
-            stderr: "cannot list iPad folder\n",
-            lines: [R3, R4],
+          new FoldersUnreadableError({
+            records: [R3, R4],
+            reason: "cannot list iPad folder",
           }),
         ),
       },
@@ -901,7 +911,8 @@ describe("importer", () => {
       "utf8",
     )
       .trim()
-      .split("\n");
+      .split("\n")
+      .map((text) => Schema.decodeUnknownSync(BiomeLine)(text));
     // When
     const activities = await run(
       { devices: [D_MAC, D_PHONE, D_PAD], records: lines },

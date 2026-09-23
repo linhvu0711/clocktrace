@@ -2,19 +2,15 @@ import { join } from "node:path";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
-import {
-  Chunk,
-  Data,
-  Effect,
-  Either,
-  Layer,
-  Option,
-  type Scope,
-  Stream,
-} from "effect";
+import { Chunk, Data, Effect, Layer, Option, type Scope, Stream } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { type DevicePeerLine, decodeDevicePeerLine } from "./biome-line.js";
+import {
+  type BiomeLine,
+  type DevicePeerLine,
+  decodeBiomeLine,
+  decodeDevicePeerLine,
+} from "./biome-line.js";
 import { decodeHelperLine, type HelperLine } from "./helper-line.js";
 import {
   decodePermissions,
@@ -71,30 +67,24 @@ export class HelperFailedError extends Data.TaggedError("HelperFailedError")<{
   }
 }
 
-export class BiomeExitError extends Data.TaggedError("BiomeExitError")<{
-  readonly code: number;
-  readonly stderr: string;
-  readonly lines?: ReadonlyArray<string>;
+export class NoBiomeFolderError extends Data.TaggedError("NoBiomeFolderError")<{
+  readonly reason: string;
 }> {
   override get message(): string {
-    return `helper biome exited ${this.code}: ${this.stderr.trim()}`;
+    return this.reason;
   }
 }
 
-export const biomeResult = (
-  code: number,
-  lines: ReadonlyArray<string>,
-  stderr: string,
-): Either.Either<ReadonlyArray<string>, BiomeExitError> =>
-  code === 0
-    ? Either.right(lines.filter((l) => l !== ""))
-    : Either.left(
-        new BiomeExitError({
-          code,
-          stderr,
-          lines: lines.filter((l) => l !== ""),
-        }),
-      );
+export class FoldersUnreadableError extends Data.TaggedError(
+  "FoldersUnreadableError",
+)<{
+  readonly records: ReadonlyArray<BiomeLine>;
+  readonly reason: string;
+}> {
+  override get message(): string {
+    return this.reason;
+  }
+}
 
 interface BiomeOutput {
   readonly code: number;
@@ -123,6 +113,44 @@ const devicesResult = ({
     case 5:
       return Effect.fail(
         new DeviceListUnreadableError({ reason: stderr.trim() }),
+      );
+    default:
+      return Effect.fail(new HelperFailedError({ code, stderr }));
+  }
+};
+
+// `biome records` exits 3 without Full Disk Access, 4 without the remote
+// folder, and 6 when a device folder cannot be listed; the other devices'
+// records still print (packages/helper/README.md).
+const recordsResult = ({
+  code,
+  lines,
+  stderr,
+}: BiomeOutput): Effect.Effect<
+  ReadonlyArray<BiomeLine>,
+  | NoFullDiskAccessError
+  | NoBiomeFolderError
+  | FoldersUnreadableError
+  | HelperFailedError
+  | ParseError
+> => {
+  switch (code) {
+    case 0:
+      return Effect.forEach(lines, (l) => decodeBiomeLine(l));
+    case 3:
+      return Effect.fail(new NoFullDiskAccessError());
+    case 4:
+      return Effect.fail(new NoBiomeFolderError({ reason: stderr.trim() }));
+    case 6:
+      return Effect.forEach(lines, (l) => decodeBiomeLine(l)).pipe(
+        Effect.flatMap((records) =>
+          Effect.fail(
+            new FoldersUnreadableError({
+              records,
+              reason: stderr.trim() || "some device folders unreadable",
+            }),
+          ),
+        ),
       );
     default:
       return Effect.fail(new HelperFailedError({ code, stderr }));
@@ -239,11 +267,7 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
       biomeRecords: (path: string, since: ReadonlyMap<string, number>) =>
         runBiome(
           Command.make(path, "biome", "records", ...sinceArgs(since)),
-        ).pipe(
-          Effect.flatMap(({ code, lines, stderr }) =>
-            biomeResult(code, lines, stderr),
-          ),
-        ),
+        ).pipe(Effect.flatMap(recordsResult)),
     };
 
     // Runs the Helper as ~/Applications/Clocktrace.app and returns what it
