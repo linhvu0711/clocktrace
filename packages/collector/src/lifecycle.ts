@@ -14,9 +14,9 @@ export const loadRetry = Schedule.spaced("100 millis").pipe(
   Schedule.upTo("45 seconds"),
 );
 
-// The Collector did not reach Loaded. The old App and plist were put back
-// first; `appRestored` is false when the App could not be, and
-// `agentRestored` when the old plist could not be.
+// The Collector did not reach Loaded. The App change was undone and the
+// old plist put back first; `appRestored` is false when the App could not
+// be, and `agentRestored` when the old plist could not be.
 export class CollectorNotLoadedError extends Data.TaggedError(
   "CollectorNotLoadedError",
 )<{
@@ -75,22 +75,22 @@ export class Lifecycle extends Effect.Service<Lifecycle>()("Lifecycle", {
           progress: InstallProgress<R>,
         ) =>
           Effect.gen(function* () {
-            yield* app.install(settings.helperPath);
+            const appInstall = yield* app.install(settings.helperPath);
             yield* progress.done("app");
             const installed = yield* launchd.isInstalled();
             const previous = installed ? yield* launchd.readPlist() : null;
             if (installed) {
               yield* launchd.bootout();
             }
-            // A fresh install that fails is removed; a rewrite that fails
-            // puts the previous app and agent back, unloading the new one
-            // first so the old plist is the one launchd runs. An unload
-            // that fails stops the restore there, before the App rollback,
-            // so the App counts as not put back, and so does an old agent;
-            // a fresh install had none to lose.
+            // A fresh install that fails is removed, App and agent; a
+            // rewrite that fails puts the previous app and agent back,
+            // unloading the new one first so the old plist is the one
+            // launchd runs. An unload that fails stops the restore there,
+            // before the App rollback, so the App counts as not put back,
+            // and so does an old agent; a fresh install had none to lose.
             const restore = Effect.gen(function* () {
               yield* launchd.uninstall();
-              const appRestored = yield* app.rollback().pipe(
+              const appRestored = yield* app.rollback(appInstall).pipe(
                 Effect.as(true),
                 Effect.catchAll(() => Effect.succeed(false)),
               );

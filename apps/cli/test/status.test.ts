@@ -154,7 +154,7 @@ describe("status", () => {
       App,
       new App({
         isInstalled: () => Effect.succeed(false),
-        install: () => Effect.succeed("written" as const),
+        install: () => Effect.succeed("replaced" as const),
         commit: () => Effect.void,
         rollback: () => Effect.void,
         remove: () => Effect.succeed("absent" as const),
