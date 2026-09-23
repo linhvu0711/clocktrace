@@ -14,6 +14,14 @@ _Avoid_: Event, session, entry, log
 `~/Applications/Clocktrace.app`, the bundle `setup` writes whose main program is the Helper binary. It owns the macOS Accessibility, Automation, and Full Disk Access grants: the Collector and `permissions`/`status` run through it, and it must not be moved.
 _Avoid_: Bundle, wrapper, launcher
 
+**Grant**:
+macOS's yes or no for one permission of the App: Accessibility, Full Disk Access, or Automation for one browser. macOS asks for an Automation Grant once; after a no, only the user's switch in System Settings changes it.
+_Avoid_: Permission state, access, consent
+
+**Saved grant**:
+The last Automation Grant clocktrace saw for one browser, with the time it saw it. `status` and `permissions` show it when the browser is closed, because macOS answers only for an open browser.
+_Avoid_: Cached grant, last known grant, remembered permission
+
 **Collector**:
 The background process that watches the Mac and writes Activities. Runs as a per-user launchd agent.
 _Avoid_: Tracker, daemon, watcher, recorder
