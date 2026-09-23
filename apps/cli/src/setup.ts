@@ -169,16 +169,24 @@ export const setup = (
                     "launch agent: could not restore the previous install",
                   );
                 }
+                // A failed bootout started nothing new, so it is not a start
+                // failure; its line names no Collector log, which a bootout
+                // does not write.
                 yield* prompt.printError(
                   line(
-                    e.cause.step.startsWith("launchctl")
+                    e.cause.step.startsWith("launchctl") &&
+                      e.cause.step !== "launchctl bootout"
                       ? [
                           "  ",
                           mark("bad", look),
                           " collector did not start · see ",
                           span("dim", shortPath(logPath, home)),
                         ]
-                      : ["  ", mark("bad", look), ` ${e.cause.message}`],
+                      : [
+                          "  ",
+                          mark("bad", look),
+                          ` ${e.cause.step}: ${e.cause.detail}`,
+                        ],
                     look,
                   ),
                 );
