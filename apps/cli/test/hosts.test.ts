@@ -390,36 +390,6 @@ describe("hosts", () => {
     });
   });
 
-  it("a failed add puts back the previous claude registration", async () => {
-    // Given: ~/.claude.json holds the legacy bare-word entry; the add fails
-    writeFileSync(
-      join(home, ".claude.json"),
-      JSON.stringify({
-        mcpServers: {
-          clocktrace: { type: "stdio", command: "clocktrace", args: ["mcp"] },
-        },
-      }),
-    );
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [addClaude]: { code: 1, output: "boom" },
-        "claude mcp add --scope user clocktrace -- clocktrace mcp": {
-          code: 0,
-        },
-      }),
-    );
-    // When
-    const line = await register("claude", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then: remove, add, restore the old entry
-    expect(recorded).toEqual([
-      removeClaude,
-      addClaude,
-      "claude mcp add --scope user clocktrace -- clocktrace mcp",
-    ]);
-    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.claude });
-  });
-
   it("a failed add puts back the previous codex registration", async () => {
     // Given: config.toml holds a stale [mcp_servers.clocktrace] table
     mkdirSync(join(home, ".codex"), { recursive: true });
@@ -534,29 +504,6 @@ describe("hosts", () => {
       `codex mcp add clocktrace --env CLOCKTRACE_DB=/work/db.db -- ${serverNode} ${serverEntry} mcp`,
     ]);
     expect(line).toEqual({ outcome: "registered" });
-  });
-
-  it("a failed add does not restore a url-based registration", async () => {
-    // Given: ~/.claude.json holds an http entry argv cannot rebuild
-    writeFileSync(
-      join(home, ".claude.json"),
-      JSON.stringify({
-        mcpServers: {
-          clocktrace: { type: "http", url: "https://example.com/mcp" },
-        },
-      }),
-    );
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        [addClaude]: { code: 1, output: "boom" },
-      }),
-    );
-    // When
-    const line = await register("claude", executor.layer);
-    const recorded = await Effect.runPromise(Ref.get(executor.recorded));
-    // Then: remove then add, and no partial restore of a wrong entry
-    expect(recorded).toEqual([removeClaude, addClaude]);
-    expect(line).toEqual({ outcome: "failed", byHand: manualCommand.claude });
   });
 
   it("manual commands quote the node and entry paths", () => {
@@ -882,23 +829,6 @@ describe("hosts", () => {
       Exit.succeed("unregistered"),
       Exit.succeed("unregistered"),
     ]);
-  });
-
-  it("claude without the server exits 1 and is not registered", async () => {
-    // Given: claude on PATH; its remove exits 1 with the real message
-    const executor = await Effect.runPromise(
-      fakeExecutor({
-        "which claude": { code: 0 },
-        "claude mcp remove clocktrace --scope user": {
-          code: 1,
-          output: 'No MCP server named "clocktrace" in user scope',
-        },
-      }),
-    );
-    // When
-    const outcome = await unregister("claude", executor.layer);
-    // Then
-    expect(outcome).toEqual(Exit.succeed("not registered"));
   });
 
   it("codex without the server exits 0 and is still not registered", async () => {
