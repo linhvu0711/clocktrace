@@ -32,6 +32,12 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+# The build is native, and v0 ships arm64 only.
+if [[ "$(uname -m)" != "arm64" ]]; then
+  echo "release: an arm64 Mac is required, this is $(uname -m)"
+  exit 1
+fi
+
 # A release commits to main and pushes it, so it starts from what GitHub holds.
 if [[ "$sign" == "1" ]]; then
   branch="$(git rev-parse --abbrev-ref HEAD)"
