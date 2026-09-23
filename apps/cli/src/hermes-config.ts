@@ -46,8 +46,13 @@ const blockLines = (
     .filter((line) => line !== "")
     .map((line) => " ".repeat(indent) + line);
 
-const lineEnd = (text: string): string =>
-  text.includes("\r\n") ? "\r\n" : "\n";
+// The line end of the line before `offset`, else of the first line: a
+// file that mixes the two gets new lines like their neighbours.
+const lineEndAt = (text: string, offset: number): string => {
+  const before = text.lastIndexOf("\n", offset - 1);
+  const at = before === -1 ? text.indexOf("\n") : before;
+  return at > 0 && text.charAt(at - 1) === "\r" ? "\r\n" : "\n";
+};
 
 const lineStart = (text: string, offset: number): number =>
   text.lastIndexOf("\n", offset - 1) + 1;
@@ -79,8 +84,8 @@ const spliceLines = (
   from: number,
   to: number,
   lines: ReadonlyArray<string>,
-  eol: string,
 ): string => {
+  const eol = lineEndAt(text, from);
   const body = lines.join(eol);
   if (from === text.length) {
     return text === "" || text.endsWith("\n")
@@ -214,19 +219,12 @@ const placeRegistration = (
   doc: Document,
   entry: Record<string, unknown>,
 ): Either.Either<string, HermesConfigEditError> => {
-  const eol = lineEnd(text);
   const root = doc.contents;
   const newServers = (step: number, indent: number) =>
     blockLines({ [serversKey]: { [registrationKey]: entry } }, step, indent);
   if (root === null) {
     return Either.right(
-      spliceLines(
-        text,
-        text.length,
-        text.length,
-        newServers(defaultStep, 0),
-        eol,
-      ),
+      spliceLines(text, text.length, text.length, newServers(defaultStep, 0)),
     );
   }
   if (!isMap(root)) {
@@ -236,10 +234,21 @@ const placeRegistration = (
     if (root.items.length > 0) {
       return refuse("the top level is a one-line map");
     }
-    const from = lineStart(text, nodeStart(root));
-    const to = lineAfter(text, nodeEnd(root));
+    // `{}` goes; a comment after it on the same line stays.
+    const start = nodeStart(root);
+    const rest = text.slice(root.range?.[1] ?? start).replace(/^[ \t]+/, "");
+    const from = lineStart(text, start);
+    const cleared =
+      text.slice(from, start).trim() === "" && /^(\r?\n|$)/.test(rest)
+        ? text.slice(0, from) + rest.replace(/^\r?\n/, "")
+        : text.slice(0, start) + rest;
     return Either.right(
-      spliceLines(text, from, to, newServers(defaultStep, 0), eol),
+      spliceLines(
+        cleared,
+        cleared.length,
+        cleared.length,
+        newServers(defaultStep, 0),
+      ),
     );
   }
   const step = indentStep(text, root);
@@ -251,7 +260,6 @@ const placeRegistration = (
         text.length,
         text.length,
         newServers(step, column(text, nodeStart(root.items[0]?.key))),
-        eol,
       ),
     );
   }
@@ -272,7 +280,7 @@ const placeRegistration = (
       step,
       keyColumn + step,
     );
-    return Either.right(spliceLines(cleared, at, at, lines, eol));
+    return Either.right(spliceLines(cleared, at, at, lines));
   }
   if (!isMap(servers) || servers.flow) {
     return refuse("mcp_servers is not a block map");
@@ -286,14 +294,14 @@ const placeRegistration = (
   if (old !== undefined) {
     const from = lineStart(text, nodeStart(old.key));
     const to = lineAfter(text, Math.max(nodeEnd(old.key), nodeEnd(old.value)));
-    return Either.right(spliceLines(text, from, to, lines, eol));
+    return Either.right(spliceLines(text, from, to, lines));
   }
   const last = servers.items[servers.items.length - 1];
   const at = lineAfter(
     text,
     Math.max(nodeEnd(last?.key), nodeEnd(last?.value)),
   );
-  return Either.right(spliceLines(text, at, at, lines, eol));
+  return Either.right(spliceLines(text, at, at, lines));
 };
 
 export const setRegistration = (

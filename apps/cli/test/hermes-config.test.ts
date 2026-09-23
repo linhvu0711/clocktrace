@@ -158,6 +158,28 @@ describe("setRegistration", () => {
     );
   });
 
+  it("an empty one-line top level keeps its comment", () => {
+    // Given: the whole file is `{}` with a note after it
+    const text = "{} # managed by dotfiles\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(result).toEqual(
+      Either.right(`# managed by dotfiles\nmcp_servers:\n${b2}`),
+    );
+  });
+
+  it("new lines take the line end of the line above them", () => {
+    // Given: one CRLF line in a file that is LF where the lines go
+    const text = "a: 1\r\nmcp_servers:\n  foo: x\n";
+    // When
+    const result = setRegistration(text, server);
+    // Then
+    expect(result).toEqual(
+      Either.right(`a: 1\r\nmcp_servers:\n  foo: x\n${b2}`),
+    );
+  });
+
   it("set stops when another key aliases the Registration", () => {
     // Given: backup points at the Registration through an anchor
     const text =
