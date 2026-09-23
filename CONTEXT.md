@@ -97,8 +97,12 @@ One test on an Activity with one effect: set its Category, set its Project, or m
 _Avoid_: Filter, mapping, classifier, blacklist
 
 **Private**:
-A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead.
+A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
 _Avoid_: Ignore, exclude, hidden, public
+
+**Private window**:
+A browser window the browser itself marks private (Incognito, InPrivate, Private Browsing). The Helper sends no title and no URL for it, always, with no Rule and with or without Accessibility.
+_Avoid_: Incognito tab, private mode, secret window
 
 **Uncategorized**:
 The Category an Activity falls into when no Rule matches. Not a stored Category, a result.
