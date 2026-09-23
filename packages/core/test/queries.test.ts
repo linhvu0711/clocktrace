@@ -22,6 +22,7 @@ import {
   TimelineReply,
   timeline,
 } from "../src/index.js";
+import { seedMany } from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -984,27 +985,6 @@ describe("timeline", () => {
     });
   });
 });
-
-const seedMany = (store: StoreShape, count: number) =>
-  Effect.gen(function* () {
-    const studio = yield* store.upsertDevice({
-      kind: "mac",
-      name: "Studio",
-      externalId: "mac-1",
-    });
-    for (let i = 0; i < count; i++) {
-      const startedAt = Date.UTC(2026, 8, 18, 8) + i * 60_000;
-      yield* store.insertActivity({
-        deviceId: studio.id,
-        bundleId: "com.microsoft.VSCode",
-        appName: "Code",
-        title: null,
-        url: null,
-        startedAt: DateTime.unsafeMake(startedAt),
-        endedAt: DateTime.unsafeMake(startedAt + 60_000),
-      });
-    }
-  });
 
 describe("activities", () => {
   it("activities returns the resolved name in appName", async () => {

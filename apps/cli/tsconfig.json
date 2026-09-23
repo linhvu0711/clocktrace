@@ -4,6 +4,7 @@
     "noEmit": true,
     "paths": {
       "@clocktrace/core": ["../../packages/core/src/index.ts"],
+      "@clocktrace/core/testing": ["../../packages/core/src/testing.ts"],
       "@clocktrace/collector": ["../../packages/collector/src/index.ts"]
     }
   },

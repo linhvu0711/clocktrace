@@ -4,14 +4,13 @@ import {
   InvalidRangeError,
   openStore,
   Store,
-  type StoreShape,
   SummaryReply,
   summary,
 } from "@clocktrace/core";
+import { seedDay, seedTwoDevices } from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import { Console, DateTime, Effect, Exit, Layer, Schema } from "effect";
 import { describe, expect, it } from "vitest";
-
 import { Style } from "../src/format.js";
 import { Prompt } from "../src/prompt.js";
 import { printSummary } from "../src/summary.js";
@@ -56,57 +55,6 @@ const runPrint = <A, E>(
       return { exit, output };
     }),
   );
-
-const t = (s: string) => DateTime.unsafeMake(s);
-
-// Studio: Code 08:00 to 09:30Z, then Chrome to 09:40Z; 01:00 to 02:40 in Los Angeles
-const seedDay = (store: StoreShape) =>
-  Effect.gen(function* () {
-    const studio = yield* store.upsertDevice({
-      kind: "mac",
-      name: "Studio",
-      externalId: "mac-1",
-    });
-    yield* store.insertActivity({
-      deviceId: studio.id,
-      bundleId: "com.microsoft.VSCode",
-      appName: "Code",
-      title: "a",
-      url: null,
-      startedAt: t("2026-09-18T08:00:00.000Z"),
-      endedAt: t("2026-09-18T09:30:00.000Z"),
-    });
-    yield* store.insertActivity({
-      deviceId: studio.id,
-      bundleId: "com.google.Chrome",
-      appName: "Google Chrome",
-      title: "b",
-      url: "https://github.com/acme/shop",
-      startedAt: t("2026-09-18T09:30:00.000Z"),
-      endedAt: t("2026-09-18T09:40:00.000Z"),
-    });
-    return studio;
-  });
-
-const seedTwoDevices = (store: StoreShape) =>
-  Effect.gen(function* () {
-    const studio = yield* seedDay(store);
-    const laptop = yield* store.upsertDevice({
-      kind: "mac",
-      name: "Laptop",
-      externalId: "mac-2",
-    });
-    yield* store.insertActivity({
-      deviceId: laptop.id,
-      bundleId: "com.apple.Safari",
-      appName: "Safari",
-      title: "c",
-      url: null,
-      startedAt: t("2026-09-18T10:00:00.000Z"),
-      endedAt: t("2026-09-18T10:05:00.000Z"),
-    });
-    return studio;
-  });
 
 const window = "2026-09-18 whole day · America/Los_Angeles";
 
