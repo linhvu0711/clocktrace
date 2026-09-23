@@ -79,7 +79,7 @@ describe("cli", () => {
           fakeLaunchd(state),
           helperStub(allGranted),
           App.Test,
-          Hosts.Test,
+          Hosts.Test(),
           Style.Test,
         );
         const exit = yield* Effect.exit(
