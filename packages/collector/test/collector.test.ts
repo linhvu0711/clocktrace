@@ -741,6 +741,57 @@ describe("collector", () => {
     );
   });
 
+  it("a backward clock writes an unchanged Grant again", async () => {
+    // Given: two granted Chrome lines, the second before the first in wall time
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "granted",
+      }),
+      line({
+        ts: "2026-01-01T08:59:30Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "granted",
+      }),
+    ];
+    let writes = 0;
+    const countSetSetting = Layer.effect(
+      Store,
+      Effect.map(
+        Store,
+        (s) =>
+          new Store({
+            ...s,
+            setSetting: (key, value) => {
+              writes += 1;
+              return s.setSetting(key, value);
+            },
+          }),
+      ),
+    );
+    // When
+    const saved = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }).pipe(Effect.provide(Layer.provide(countSetSetting, Store.Test))),
+    );
+    // Then: the backward line writes again with the earlier checkedAt
+    expect(writes).toBe(2);
+    expect(saved).toEqual(
+      Option.some('{"state":"granted","checkedAt":"2026-01-01T08:59:30.000Z"}'),
+    );
+  });
+
   it("a line with no grant key still records", async () => {
     // Given: a Chrome line without a grant key, then a Finder line
     const lines = [

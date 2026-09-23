@@ -74,6 +74,7 @@ export const collect = <E, R>(
         if (
           saved !== undefined &&
           saved.state === line.grant &&
+          DateTime.distance(saved.writtenAt, line.ts) >= 0 &&
           DateTime.distance(saved.writtenAt, line.ts) < 60_000
         ) {
           return;
