@@ -15,7 +15,11 @@ public func browserScript(bundleId: String) -> String? {
   }
   if chromeFamily.contains(bundleId) {
     return
-      "tell application id \"\(bundleId)\" to get URL of active tab of front window"
+      "tell application id \"\(bundleId)\" to tell front window to return mode & linefeed & URL of active tab"
   }
   return nil
+}
+
+func isChromeFamily(_ bundleId: String) -> Bool {
+  chromeFamily.contains(bundleId)
 }

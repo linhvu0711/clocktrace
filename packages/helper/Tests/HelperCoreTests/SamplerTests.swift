@@ -7,6 +7,126 @@ final class SamplerTests: XCTestCase {
     name: "Safari", bundleId: "com.apple.Safari", pid: 3)
   private let textEdit = FrontApp(
     name: "TextEdit", bundleId: "com.apple.TextEdit", pid: 2)
+  private let brave = FrontApp(
+    name: "Brave Browser", bundleId: "com.brave.Browser", pid: 4)
+  private let t0 = Date(timeIntervalSince1970: 1_767_225_600)
+  private let ts0 = "2026-01-01T00:00:00.000Z"
+
+  private func reads(
+    front: FrontApp,
+    axTrusted: Bool,
+    title: String?,
+    runScript: @escaping (String) -> String?
+  ) -> Reads {
+    Reads(
+      frontmost: { front },
+      axTrusted: { axTrusted },
+      focusedTitle: { _ in title },
+      automationStatus: { _, _ in 0 },
+      runScript: runScript,
+      idleSeconds: { 1 }
+    )
+  }
+
+  private func line(_ reads: Reads, urls: UrlReader? = nil) -> Line? {
+    var tracker = Tracker()
+    return tracker.observe(
+      Sampler.sample(reads, urls: urls ?? UrlReader(reads: reads), at: t0), at: t0)
+  }
+
+  private func braveLine(title: String?, url: String?, missing: [String]) -> Line {
+    Line(
+      ts: ts0, app: "Brave Browser", bundleId: "com.brave.Browser", grant: "granted",
+      title: title, url: url, idleSeconds: 1, missing: missing)
+  }
+
+  func testAChromeIncognitoWindowHasNoTitleOrUrl() {
+    // Given: Brave front, Accessibility on, an incognito window
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave (Private)",
+      runScript: { _ in "incognito\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: []))
+  }
+
+  func testAChromeIncognitoWindowWithoutAccessibilityHasNoTitleOrUrl() {
+    // Given: Brave front, Accessibility off, an incognito window
+    let r = reads(
+      front: brave, axTrusted: false, title: "Example Domain - Brave (Private)",
+      runScript: { _ in "incognito\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: ["accessibility"]))
+  }
+
+  func testAChromeNormalWindowKeepsTheTitleAndUrl() {
+    // Given: Brave front, Accessibility on, a normal window
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in "normal\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      braveLine(title: "Example Domain - Brave", url: "https://example.com/", missing: []))
+  }
+
+  func testAChromeNormalWindowWithoutAccessibilityKeepsTheUrl() {
+    // Given: Brave front, Accessibility off, a normal window
+    let r = reads(
+      front: brave, axTrusted: false, title: "Example Domain - Brave",
+      runScript: { _ in "normal\nhttps://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      braveLine(title: nil, url: "https://example.com/", missing: ["accessibility"]))
+  }
+
+  func testAFailedChromeScriptHasNoUrl() {
+    // Given: Brave front, Accessibility on, the script fails
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in nil })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result, braveLine(title: "Example Domain - Brave", url: nil, missing: []))
+  }
+
+  func testAChromeOutputWithoutAModeHasNoUrl() {
+    // Given: Brave front, Accessibility on, the script gives a URL with no mode
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in "https://example.com/" })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result, braveLine(title: "Example Domain - Brave", url: nil, missing: []))
+  }
+
+  func testASlowChromeReadHasNoUrl() {
+    // Given: Brave front, Accessibility on, the read sleeps past the limit
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      runScript: { _ in
+        Thread.sleep(forTimeInterval: 0.5)
+        return "normal\nhttps://example.com/"
+      })
+    let urls = UrlReader(reads: r, readLimit: .milliseconds(50))
+    // When
+    let result = line(r, urls: urls)
+    // Then
+    XCTAssertEqual(
+      result, braveLine(title: "Example Domain - Brave", url: nil, missing: []))
+  }
 
   func testRunsTheScriptWhenAutomationIsGranted() {
     // Given: Reads for a Safari frontmost with Automation granted
