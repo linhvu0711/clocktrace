@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import { CommandExecutor } from "@effect/platform";
 import { NodeFileSystem } from "@effect/platform-node";
@@ -232,6 +232,17 @@ describe("Helper watch", () => {
 const failure = (exit: Exit.Exit<unknown, unknown>): unknown =>
   Exit.isFailure(exit) && exit.cause._tag === "Fail" ? exit.cause.error : null;
 
+// A sample file the Swift tests compare the Helper's output against, so both
+// sides agree on every line kind.
+const sharedSample = (name: string): string =>
+  readFileSync(
+    new URL(
+      `../../helper/Tests/HelperCoreTests/Fixtures/${name}`,
+      import.meta.url,
+    ),
+    "utf8",
+  );
+
 describe("Helper biome devices", () => {
   it("biome devices exit 0 gives decoded devices", async () => {
     // Given: biome devices printed the iPad's DevicePeer row and exited 0
@@ -392,6 +403,71 @@ describe("Helper biome records", () => {
     );
     // Then
     expect(failure(exit)).toMatchObject({ _tag: "ParseError" });
+  });
+});
+
+describe("Helper shared sample files", () => {
+  it("biome records decodes every line of infocus.expected.jsonl", async () => {
+    // Given: biome records printed the shared Biome records sample and exited 0
+    const stdout = sharedSample("infocus.expected.jsonl");
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeRecords("/h", new Map()),
+      stdout,
+    );
+    // Then
+    expect({
+      success: Exit.isSuccess(exit),
+      count: Exit.isSuccess(exit) ? exit.value.length : 0,
+    }).toEqual({ success: true, count: 3 });
+  });
+
+  it("watch decodes every line of watch.expected.jsonl", async () => {
+    // Given: watch printed the shared watch sample
+    const stdout = sharedSample("watch.expected.jsonl");
+    // When
+    const { exit, logs } = await runHelperProcess(
+      (helper) => helper.lines("/h").pipe(Stream.take(5), Stream.runCollect),
+      stdout,
+    );
+    // Then
+    expect({
+      count: Exit.isSuccess(exit) ? Chunk.size(exit.value) : 0,
+      logs,
+    }).toEqual({ count: 5, logs: [] });
+  });
+
+  it("permissions decodes every line of permissions.expected.jsonl", async () => {
+    // Given: each line of the shared permissions sample as the Helper's answer
+    const answers = sharedSample("permissions.expected.jsonl")
+      .trim()
+      .split("\n");
+    // When
+    const results = await Promise.all(
+      answers.map((answer) =>
+        runHelper((helper) => helper.permissions("/x/Clocktrace.app"), answer),
+      ),
+    );
+    // Then
+    expect(results.map(({ exit }) => Exit.isSuccess(exit))).toEqual([
+      true,
+      true,
+    ]);
+  });
+
+  it("biome devices decodes every line of devices.expected.jsonl", async () => {
+    // Given: biome devices printed the shared device sample and exited 0
+    const stdout = sharedSample("devices.expected.jsonl");
+    // When
+    const { exit } = await runHelperProcess(
+      (helper) => helper.biomeDevices("/h"),
+      stdout,
+    );
+    // Then
+    expect({
+      success: Exit.isSuccess(exit),
+      count: Exit.isSuccess(exit) ? exit.value.length : 0,
+    }).toEqual({ success: true, count: 3 });
   });
 });
 

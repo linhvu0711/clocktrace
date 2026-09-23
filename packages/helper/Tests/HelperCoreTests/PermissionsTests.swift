@@ -276,4 +276,21 @@ final class PermissionsTests: XCTestCase {
     // Then
     XCTAssertEqual(state, .granted)
   }
+
+  func testPermissionsAnswersMatchTheSharedFile() throws {
+    // Given: the default reads, then Chrome's probe hanging past the limit,
+    // and the shared file the TS tests decode
+    let expectedUrl = try XCTUnwrap(
+      Bundle.module.url(
+        forResource: "permissions.expected", withExtension: "jsonl", subdirectory: "Fixtures"))
+    let expected = try String(contentsOf: expectedUrl, encoding: .utf8)
+    // When
+    let actual =
+      [
+        checkPermissions(reads: reads()).json(),
+        checkPermissions(reads: slowChromeReads(), probeLimit: .milliseconds(50)).json(),
+      ].joined(separator: "\n") + "\n"
+    // Then
+    XCTAssertEqual(actual, expected)
+  }
 }

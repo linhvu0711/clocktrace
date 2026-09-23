@@ -344,4 +344,46 @@ final class BiomeCommandsTests: XCTestCase {
     XCTAssertEqual(out, [])
     XCTAssertEqual(err, ["cannot read DevicePeer: no such table: DevicePeer"])
   }
+
+  func testDeviceLinesMatchTheSharedFile() throws {
+    // Given: three DevicePeer rows, the last with every optional field nil,
+    // and the shared file the TS tests decode
+    let reads = reads(devicePeers: {
+      .rows([
+        DevicePeerLine(
+          deviceIdentifier: "00000000-0000-4000-8000-000000000001",
+          me: true,
+          name: "",
+          model: "26A428",
+          platform: 3,
+          lastSyncDate: nil
+        ),
+        DevicePeerLine(
+          deviceIdentifier: "00000000-0000-4000-8000-000000000002",
+          me: false,
+          name: "",
+          model: "24A437",
+          platform: 2,
+          lastSyncDate: 1790044540.0484
+        ),
+        DevicePeerLine(
+          deviceIdentifier: "00000000-0000-4000-8000-000000000003",
+          me: false,
+          name: nil,
+          model: nil,
+          platform: nil,
+          lastSyncDate: nil
+        ),
+      ])
+    })
+    let expectedUrl = try XCTUnwrap(
+      Bundle.module.url(
+        forResource: "devices.expected", withExtension: "jsonl", subdirectory: "Fixtures"))
+    let expected = try String(contentsOf: expectedUrl, encoding: .utf8)
+    var out: [String] = []
+    // When
+    _ = biomeDevices(reads: reads, emit: { out.append($0) }, emitError: { _ in })
+    // Then
+    XCTAssertEqual(out.joined(separator: "\n") + "\n", expected)
+  }
 }
