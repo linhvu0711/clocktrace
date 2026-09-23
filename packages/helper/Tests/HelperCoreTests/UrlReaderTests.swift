@@ -144,4 +144,31 @@ final class UrlReaderTests: XCTestCase {
     XCTAssertEqual(third, .granted("https://example.com/"))
     XCTAssertEqual(calls, 2)
   }
+
+  func testLogsOnceWhenTheCheckStopsAnswering() {
+    // Given: every check sleeps past the limit; the log appends to an array
+    var lines: [String] = []
+    let reader = UrlReader(
+      reads: reads(automationStatus: { _, _ in
+        Thread.sleep(forTimeInterval: 0.2)
+        return 0
+      }),
+      checkLimit: .milliseconds(50),
+      log: { lines.append($0) })
+    let script = browserScript(bundleId: "com.google.Chrome")!
+    // When
+    _ = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    Thread.sleep(forTimeInterval: 0.3)
+    _ = reader.read(
+      bundleId: "com.google.Chrome", script: script,
+      at: t0.addingTimeInterval(30))
+    Thread.sleep(forTimeInterval: 0.3)
+    _ = reader.read(
+      bundleId: "com.google.Chrome", script: script,
+      at: t0.addingTimeInterval(60))
+    // Then
+    XCTAssertEqual(
+      lines,
+      ["com.google.Chrome did not answer the Grant check, trying again every 30 s"])
+  }
 }

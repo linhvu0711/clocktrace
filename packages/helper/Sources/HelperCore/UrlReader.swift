@@ -58,7 +58,6 @@ public final class UrlReader {
       self.lock.lock()
       var s = self.states[bundleId] ?? State()
       s.checkRunning = false
-      s.logged = false
       self.states[bundleId] = s
       self.lock.unlock()
       answer = status
@@ -78,6 +77,12 @@ public final class UrlReader {
       }
       return nil
     }
+    lock.lock()
+    if var s = states[bundleId] {
+      s.logged = false
+      states[bundleId] = s
+    }
+    lock.unlock()
     return answer
   }
 
