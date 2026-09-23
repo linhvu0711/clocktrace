@@ -50,7 +50,13 @@ export const collect = <E, R>(
           });
 
     const remembered = yield* Ref.make<
-      ReadonlyMap<string, "granted" | "denied">
+      ReadonlyMap<
+        string,
+        {
+          readonly state: "granted" | "denied";
+          readonly writtenAt: DateTime.Utc;
+        }
+      >
     >(new Map());
     const warned = yield* Ref.make<ReadonlySet<string>>(new Set());
 
@@ -64,14 +70,22 @@ export const collect = <E, R>(
         }
         const bundleId = line.bundleId;
         const last = yield* Ref.get(remembered);
-        if (last.get(bundleId) === line.grant) {
+        const saved = last.get(bundleId);
+        if (
+          saved !== undefined &&
+          saved.state === line.grant &&
+          DateTime.distance(saved.writtenAt, line.ts) < 60_000
+        ) {
           return;
         }
         yield* saveGrant(bundleId, line.grant, line.ts).pipe(
           Effect.tap(() =>
             Ref.set(
               remembered,
-              new Map(last).set(bundleId, line.grant as "granted" | "denied"),
+              new Map(last).set(bundleId, {
+                state: line.grant as "granted" | "denied",
+                writtenAt: line.ts,
+              }),
             ),
           ),
           Effect.catchTag("StoreError", () =>

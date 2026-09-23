@@ -644,7 +644,7 @@ describe("collector", () => {
     );
   });
 
-  it("the same Grant is saved once", async () => {
+  it("identical Grant lines within 60 s write once", async () => {
     // Given: two Chrome lines with the same Grant ten seconds apart
     const lines = [
       line({
@@ -681,6 +681,63 @@ describe("collector", () => {
     // Then
     expect(saved).toEqual(
       Option.some('{"state":"denied","checkedAt":"2026-01-01T09:00:00.000Z"}'),
+    );
+  });
+
+  it("an unchanged Grant is written again after 60 s", async () => {
+    // Given: three granted Chrome lines at t0, t0 + 30 s, t0 + 61 s
+    const lines = [
+      line({
+        ts: "2026-01-01T09:00:00Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "granted",
+      }),
+      line({
+        ts: "2026-01-01T09:00:30Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "granted",
+      }),
+      line({
+        ts: "2026-01-01T09:01:01Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "granted",
+      }),
+    ];
+    let writes = 0;
+    const countSetSetting = Layer.effect(
+      Store,
+      Effect.map(
+        Store,
+        (s) =>
+          new Store({
+            ...s,
+            setSetting: (key, value) => {
+              writes += 1;
+              return s.setSetting(key, value);
+            },
+          }),
+      ),
+    );
+    // When
+    const saved = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* collect(Stream.fromIterable(lines), device.id);
+        return yield* store.getSetting("grant.com.google.Chrome");
+      }).pipe(Effect.provide(Layer.provide(countSetSetting, Store.Test))),
+    );
+    // Then: written at t0 and again at t0 + 61 s, not at t0 + 30 s
+    expect(writes).toBe(2);
+    expect(saved).toEqual(
+      Option.some('{"state":"granted","checkedAt":"2026-01-01T09:01:01.000Z"}'),
     );
   });
 
