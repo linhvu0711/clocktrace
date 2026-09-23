@@ -6,6 +6,7 @@ export * from "./helper.js";
 export * from "./helper-line.js";
 export * from "./importer.js";
 export * from "./importer-rules.js";
+export * from "./installed.js";
 export * from "./launchd.js";
 export * from "./mac-identity.js";
 export * from "./permissions.js";
