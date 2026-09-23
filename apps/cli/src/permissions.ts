@@ -261,8 +261,18 @@ export const walkPermissions = (
           yield* printRow(perm);
           return false;
         }
-        const { code } = yield* runCommand("tccutil", resetArgs(item));
-        return code === 0;
+        const { code, output } = yield* runCommand("tccutil", resetArgs(item));
+        if (code !== 0) {
+          const error =
+            output
+              .split("\n")
+              .map((l) => l.trim())
+              .find((l) => l !== "") ?? `tccutil reset exited ${code}`;
+          perm.row = [lead("bad", item), span("bad", error)];
+          yield* printRow(perm);
+          return false;
+        }
+        return true;
       });
     // True when macOS was asked and the grant is worth reading again.
     const requestGrant = (perm: Perm) =>

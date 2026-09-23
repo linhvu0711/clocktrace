@@ -317,6 +317,62 @@ describe("permissions", () => {
     ]);
   });
 
+  it("a failed tccutil prints its error and the walk goes on", async () => {
+    // Given: Chromium and full disk access denied; tccutil exits 64 with its
+    // real stderr text; full disk access grants on re-read
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "denied",
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [p, { ...p, fullDiskAccess: "granted" }],
+      ["y", { key: "enter" }, { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": {
+            code: 64,
+            output:
+              'tccutil: No such bundle identifier "com.clocktrace.app": The operation couldn’t be completed. (OSStatus error -10814.)',
+          },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
+    const cross = output.indexOf(
+      '  ✘ Automation · Chromium  tccutil: No such bundle identifier "com.clocktrace.app": The operation couldn’t be completed. (OSStatus error -10814.)',
+    );
+    const granted = output.indexOf("  ✔ Full Disk Access       granted");
+    expect(cross).toBeGreaterThanOrEqual(0);
+    expect(granted).toBeGreaterThan(cross);
+  });
+
+  it("a tccutil failure with no output prints its exit code", async () => {
+    // Given: Chromium denied; tccutil not listed, so it exits 1 with no output
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p],
+      ["y", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([]);
+    expect(output[output.length - 1]).toBe(
+      "  ✘ Automation · Chromium  tccutil reset exited 1",
+    );
+  });
+
   it("a browser that did not answer shows the fix and is not asked", async () => {
     // Given: Chrome running but its probe never answered; interactive, no keys
     const p: Permissions = {
