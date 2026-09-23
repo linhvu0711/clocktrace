@@ -255,25 +255,276 @@ describe("permissions", () => {
     expect(requests).toEqual([]);
   });
 
-  it("a browser denied earlier is never asked and shows the fix", async () => {
-    // Given: Chromium denied before the walk
+  it("a denied browser offers the reset and asks macOS again on y", async () => {
+    // Given: Chromium denied before the walk; tccutil succeeds; the re-read
+    // after the request says granted
     const p: Permissions = {
       accessibility: "granted",
       automation: { "org.chromium.Chromium": "denied" },
       fullDiskAccess: "granted",
     };
     // When
-    const { exit, output, shown, requests } = await run([p], [], true);
+    const { exit, output, shown, requests, commands } = await run(
+      [p, { ...p, automation: { "org.chromium.Chromium": "granted" } }],
+      ["y", { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "org.chromium.Chromium" },
+    ]);
+    expect(shown).toContain(
+      "macOS will not ask again — reset the grant for Clocktrace?",
+    );
+    expect(shown).not.toContain("Allow");
     expect(output).toEqual([
       "Permissions   2 of 3 granted",
       "  ✔ Accessibility          window titles",
       "  ✔ Full Disk Access       iPhone and iPad import",
-      "  ✘ Automation · Chromium  denied · turn it on in System Settings › Privacy › Automation",
+      "  ✔ Automation · Chromium  granted",
     ]);
-    expect(shown).not.toContain("Allow");
+  });
+
+  it("n at the reset offer prints the manual reset command", async () => {
+    // Given: Chromium denied before the walk, answered n at the offer
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p],
+      ["n", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
     expect(requests).toEqual([]);
+    expect(output).toEqual([
+      "Permissions   2 of 3 granted",
+      "  ✔ Accessibility          window titles",
+      "  ✔ Full Disk Access       iPhone and iPad import",
+      "  ○ Automation · Chromium  later: tccutil reset AppleEvents com.clocktrace.app, then run clocktrace permissions",
+    ]);
+  });
+
+  it("a browser reset re-asks the browsers it cleared", async () => {
+    // Given: Brave granted, Chromium denied; the reset clears both, so the
+    // re-read after the Chromium ask reads Brave notAsked
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.brave.Browser": "granted",
+        "org.chromium.Chromium": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [
+        p,
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "notAsked",
+            "org.chromium.Chromium": "granted",
+          },
+        },
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "granted",
+          },
+        },
+      ],
+      ["y", { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "org.chromium.Chromium" },
+      { kind: "automation", bundleId: "com.brave.Browser" },
+    ]);
+    expect(shown).toContain("Allow Automation · Brave (URLs in Brave)");
+    expect(output).toEqual([
+      "Permissions   3 of 4 granted",
+      "  ✔ Accessibility          window titles",
+      "  ✔ Automation · Brave     URLs in Brave",
+      "  ✔ Full Disk Access       iPhone and iPad import",
+      "  ✔ Automation · Chromium  granted",
+      "  ✔ Automation · Brave     granted",
+    ]);
+  });
+
+  it("a browser reset re-asks the browsers it cleared when its own ask fails", async () => {
+    // Given: Brave granted, Chromium denied; the reset clears both, then the
+    // Chromium ask dies in the helper, so nothing reads the states again
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.brave.Browser": "granted",
+        "org.chromium.Chromium": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [
+        p,
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "notAsked",
+          },
+        },
+      ],
+      ["y", { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+        requestError: (grant) =>
+          grant.kind === "automation" &&
+          grant.bundleId === "org.chromium.Chromium"
+            ? new HelperExitedError({ cause: "open exited 1" })
+            : null,
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "com.brave.Browser" },
+    ]);
+    expect(output.slice(-2)).toEqual([
+      "  ✘ Automation · Chromium  helper exited: open exited 1",
+      "  ✔ Automation · Brave     granted",
+    ]);
+  });
+
+  it("a second denied browser after a reset gets Allow, not a second reset", async () => {
+    // Given: Brave and Chromium both denied; one reset clears both
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: {
+        "com.brave.Browser": "denied",
+        "org.chromium.Chromium": "denied",
+      },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [
+        p,
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "notAsked",
+          },
+        },
+        {
+          ...p,
+          automation: {
+            "com.brave.Browser": "granted",
+            "org.chromium.Chromium": "granted",
+          },
+        },
+      ],
+      ["y", { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([
+      { kind: "automation", bundleId: "com.brave.Browser" },
+      { kind: "automation", bundleId: "org.chromium.Chromium" },
+    ]);
+    expect(shown).toContain("Allow Automation · Chromium (URLs in Chromium)");
+    expect(output.slice(-2)).toEqual([
+      "  ✔ Automation · Brave     granted",
+      "  ✔ Automation · Chromium  granted",
+    ]);
+  });
+
+  it("a failed tccutil prints its error and the walk goes on", async () => {
+    // Given: Chromium and full disk access denied; tccutil exits 64 with its
+    // real stderr text; full disk access grants on re-read
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "denied",
+    };
+    // When
+    const { exit, output, requests } = await run(
+      [p, { ...p, fullDiskAccess: "granted" }],
+      ["y", { key: "enter" }, { key: "enter" }, { key: "enter" }],
+      true,
+      {
+        commands: {
+          "tccutil reset AppleEvents com.clocktrace.app": {
+            code: 64,
+            output:
+              'tccutil: No such bundle identifier "com.clocktrace.app": The operation couldn’t be completed. (OSStatus error -10814.)',
+          },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
+    const cross = output.indexOf(
+      '  ✘ Automation · Chromium  tccutil: No such bundle identifier "com.clocktrace.app": The operation couldn’t be completed. (OSStatus error -10814.)',
+    );
+    const granted = output.indexOf("  ✔ Full Disk Access       granted");
+    expect(cross).toBeGreaterThanOrEqual(0);
+    expect(granted).toBeGreaterThan(cross);
+  });
+
+  it("a tccutil failure with no output prints its exit code", async () => {
+    // Given: Chromium denied; tccutil not listed, so it exits 1 with no output
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "granted",
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p],
+      ["y", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual(["tccutil reset AppleEvents com.clocktrace.app"]);
+    expect(requests).toEqual([]);
+    expect(output[output.length - 1]).toBe(
+      "  ✘ Automation · Chromium  tccutil reset exited 1",
+    );
   });
 
   it("a browser that did not answer shows the fix and is not asked", async () => {
@@ -377,6 +628,33 @@ describe("permissions", () => {
     ]);
     expect(shown).toBe("");
     expect(requests).toEqual([]);
+  });
+
+  it("no terminal keeps a denied browser's fix row and resets nothing", async () => {
+    // Given: Chromium and full disk access denied, no TTY
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "denied",
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [p],
+      [],
+      false,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
+    expect(requests).toEqual([]);
+    expect(shown).toBe("");
+    expect(output).toEqual([
+      "Permissions   1 of 3 granted",
+      "  ✔ Accessibility          window titles",
+      "  ✘ Automation · Chromium  denied · turn it on in System Settings › Privacy › Automation",
+      "  ✘ Full Disk Access       denied · turn it on in System Settings › Privacy › Full Disk Access",
+      "no terminal, skipping questions",
+    ]);
   });
 
   it("ctrl-c at a permission question stops the walk", async () => {
@@ -606,6 +884,115 @@ describe("permissions", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(output[output.length - 1]).toBe(
       "  ○ Full Disk Access  later: turn it on, then run clocktrace permissions",
+    );
+  });
+
+  it("accessibility still denied after the ask offers the reset and asks again", async () => {
+    // Given: accessibility denied; the first re-check still reads denied,
+    // tccutil succeeds, the re-check after the second ask reads granted
+    const p = {
+      accessibility: "denied" as const,
+      automation: {},
+      fullDiskAccess: "granted" as const,
+    };
+    // When
+    const { exit, output, shown, requests, commands } = await run(
+      [p, p, { ...p, accessibility: "granted" }],
+      [
+        { key: "enter" },
+        { key: "enter" },
+        "y",
+        { key: "enter" },
+        { key: "enter" },
+      ],
+      true,
+      {
+        commands: {
+          "tccutil reset Accessibility com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([
+      "tccutil reset Accessibility com.clocktrace.app",
+    ]);
+    expect(requests).toEqual([
+      { kind: "accessibility" },
+      { kind: "accessibility" },
+    ]);
+    expect(shown).toContain("Still denied — reset the grant for Clocktrace?");
+    expect(output).toEqual([
+      "Permissions   1 of 2 granted",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "  → macOS dialog opened, turn it on for Clocktrace",
+      "  → macOS dialog opened, turn it on for Clocktrace",
+      "  ✔ Accessibility     granted",
+    ]);
+  });
+
+  it("full disk access still denied after the ask offers the reset and asks again", async () => {
+    // Given: full disk access denied; the first re-check still reads denied,
+    // tccutil succeeds, the re-check after the second ask reads granted
+    const p = {
+      accessibility: "granted" as const,
+      automation: {},
+      fullDiskAccess: "denied" as const,
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p, p, { ...p, fullDiskAccess: "granted" }],
+      [
+        { key: "enter" },
+        { key: "enter" },
+        "y",
+        { key: "enter" },
+        { key: "enter" },
+      ],
+      true,
+      {
+        commands: {
+          "tccutil reset SystemPolicyAllFiles com.clocktrace.app": { code: 0 },
+        },
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([
+      "tccutil reset SystemPolicyAllFiles com.clocktrace.app",
+    ]);
+    expect(requests).toEqual([
+      { kind: "fullDiskAccess" },
+      { kind: "fullDiskAccess" },
+    ]);
+    expect(output).toEqual([
+      "Permissions   1 of 2 granted",
+      "  ✔ Accessibility     window titles",
+      "  → System Settings opened, turn it on for Clocktrace",
+      "  → System Settings opened, add Clocktrace with + and turn it on",
+      "  ✔ Full Disk Access  granted",
+    ]);
+  });
+
+  it("n at the full disk access reset offer prints its manual command", async () => {
+    // Given: full disk access denied and still denied after the ask
+    const p = {
+      accessibility: "granted" as const,
+      automation: {},
+      fullDiskAccess: "denied" as const,
+    };
+    // When
+    const { exit, output, requests, commands } = await run(
+      [p, p],
+      [{ key: "enter" }, { key: "enter" }, "n", { key: "enter" }],
+      true,
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(commands).toEqual([]);
+    expect(requests).toEqual([{ kind: "fullDiskAccess" }]);
+    expect(output[output.length - 1]).toBe(
+      "  ○ Full Disk Access  later: tccutil reset SystemPolicyAllFiles com.clocktrace.app, then run clocktrace permissions",
     );
   });
 

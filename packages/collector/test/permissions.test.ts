@@ -6,6 +6,7 @@ import {
   Permissions,
   permissionItems,
   requestArgs,
+  tccService,
 } from "../src/permissions.js";
 
 const line =
@@ -82,6 +83,22 @@ describe("permissions", () => {
       ["accessibility"],
       ["automation", "com.apple.Safari"],
       ["fulldiskaccess"],
+    ]);
+  });
+
+  it("tccService names tccutil's services", () => {
+    // Given: the three request kinds, automation with com.apple.Safari
+    // When
+    const services = [
+      tccService({ kind: "accessibility" }),
+      tccService({ kind: "automation", bundleId: "com.apple.Safari" }),
+      tccService({ kind: "fullDiskAccess" }),
+    ];
+    // Then
+    expect(services).toEqual([
+      "Accessibility",
+      "AppleEvents",
+      "SystemPolicyAllFiles",
     ]);
   });
 });

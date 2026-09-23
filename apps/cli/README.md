@@ -47,7 +47,10 @@ bundle that owns the macOS grants; it must not be moved — writes
 `~/Library/LaunchAgents/com.clocktrace.collector.plist`, starts the
 Collector, and walks the three permissions: one line per permission, a
 `(Y/n)` question only for what can be granted now, and an offer to open
-a closed browser first. At the end it shows a
+a closed browser first. A denied permission gets an offer to reset its
+grant with `tccutil reset` so macOS asks again; a browser reset clears
+every browser's grant, and those are asked again in the same run. At the
+end it shows a
 checklist of the four Hosts (Claude Code, Codex, Hermes Agent,
 OpenClaw) with the ones found on this Mac pre-ticked, and registers
 `clocktrace mcp` with each ticked one; `setup --hosts` picks the Hosts
