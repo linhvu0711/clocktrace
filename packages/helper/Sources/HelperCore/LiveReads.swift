@@ -39,7 +39,9 @@ extension Reads {
     },
     runScript: { source in
       var error: NSDictionary?
-      let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+      let result = NSAppleScript(
+        source: "with timeout of 2 seconds\n\(source)\nend timeout")?
+        .executeAndReturnError(&error)
       return result?.stringValue
     },
     idleSeconds: {

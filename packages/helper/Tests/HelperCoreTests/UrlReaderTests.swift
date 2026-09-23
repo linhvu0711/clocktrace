@@ -96,4 +96,52 @@ final class UrlReaderTests: XCTestCase {
     XCTAssertEqual(third, .granted("https://mail.google.com/"))
     XCTAssertEqual(calls, 2)
   }
+
+  func testASlowReadHasNoUrl() {
+    // Given: a granted browser whose URL read sleeps past the limit
+    let reader = UrlReader(
+      reads: reads(runScript: { _ in
+        Thread.sleep(forTimeInterval: 0.5)
+        return "https://example.com/"
+      }),
+      readLimit: .milliseconds(50))
+    // When
+    let (result, elapsed) = timed {
+      reader.read(
+        bundleId: "com.apple.Safari",
+        script: browserScript(bundleId: "com.apple.Safari")!, at: t0)
+    }
+    // Then
+    XCTAssertEqual(result, .granted(nil))
+    XCTAssertLessThan(elapsed, 0.3)
+  }
+
+  func testTheNextReadingReadsAgain() {
+    // Given: the first read sleeps past the limit; later reads pass, counted
+    var calls = 0
+    let reader = UrlReader(
+      reads: reads(runScript: { _ in
+        calls += 1
+        if calls == 1 {
+          Thread.sleep(forTimeInterval: 0.2)
+        }
+        return "https://example.com/"
+      }),
+      readLimit: .milliseconds(50))
+    let script = browserScript(bundleId: "com.apple.Safari")!
+    // When
+    let first = reader.read(bundleId: "com.apple.Safari", script: script, at: t0)
+    let second = reader.read(
+      bundleId: "com.apple.Safari", script: script,
+      at: t0.addingTimeInterval(1))
+    Thread.sleep(forTimeInterval: 0.3)
+    let third = reader.read(
+      bundleId: "com.apple.Safari", script: script,
+      at: t0.addingTimeInterval(2))
+    // Then
+    XCTAssertEqual(first, .granted(nil))
+    XCTAssertEqual(second, .granted(nil))
+    XCTAssertEqual(third, .granted("https://example.com/"))
+    XCTAssertEqual(calls, 2)
+  }
 }
