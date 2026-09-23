@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import {
   type App,
   type DeviceStatus,
+  grantWords,
   type Helper,
   type HelperExitedError,
   type Launchd,
@@ -37,24 +38,7 @@ const permissionRow = (
   look: Look,
   now: DateTime.Zoned,
 ): ReadonlyArray<Cell> => {
-  const rest = p.name.startsWith("automation ")
-    ? p.name.slice("automation ".length)
-    : null;
-  const label =
-    rest !== null
-      ? `Automation · ${rest}`
-      : p.name === "automation"
-        ? "Automation"
-        : p.name === "full disk access"
-          ? "Full Disk Access"
-          : "Accessibility";
-  const gives =
-    rest !== null
-      ? `URLs in ${rest}`
-      : p.name === "full disk access"
-        ? "iPhone and iPad import"
-        : "window titles";
-  const pane = rest !== null ? "Automation" : label;
+  const { label, gives, fix } = grantWords(p.kind, p.bundleId);
   const lead = (tone: "ok" | "warn" | "bad") => [
     "  ",
     mark(tone, look),
@@ -69,13 +53,7 @@ const permissionRow = (
   if (p.state === "not checked") {
     return [lead("warn"), span("warn", p.note ?? "")];
   }
-  return [
-    lead("bad"),
-    span(
-      "bad",
-      `denied · turn it on in System Settings › Privacy › ${pane}${checked}`,
-    ),
-  ];
+  return [lead("bad"), span("bad", `${fix}${checked}`)];
 };
 
 const deviceRow = (

@@ -6,6 +6,7 @@ import { dbPathConfig } from "./config.js";
 import {
   browserName,
   type GrantItem,
+  GrantKind,
   grantPicture,
   noAnswerNote,
 } from "./grant.js";
@@ -19,6 +20,8 @@ export const PermissionLine = Schema.Struct({
   state: Schema.Literal("granted", "denied", "not checked"),
   note: Schema.NullOr(Schema.String),
   checkedAt: Schema.NullOr(Schema.DateTimeUtc),
+  kind: GrantKind,
+  bundleId: Schema.NullOr(Schema.String),
 });
 
 export type PermissionLine = Schema.Schema.Type<typeof PermissionLine>;
@@ -71,6 +74,8 @@ export const permissionLine = (item: GrantItem): PermissionLine => {
     state,
     note,
     checkedAt: item.checkedAt,
+    kind: item.kind,
+    bundleId: item.bundleId,
   });
   const browser =
     item.bundleId === null ? item.name : browserName(item.bundleId);
