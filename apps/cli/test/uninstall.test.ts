@@ -100,7 +100,7 @@ const hostsFinding = (
     host: HostName,
   ) => Effect.Effect<UnregisterOutcome, HostRemoveError>,
 ) =>
-  Hosts.testWith({
+  Hosts.Test({
     detect: () =>
       Effect.succeed({
         claude: found.includes("claude"),
@@ -199,7 +199,7 @@ describe("uninstall", () => {
           Stdin.Test,
           (opts.launchd ?? fakeLaunchd)(state),
           fakeApp(appPresent, executor.recorded),
-          opts.hostLayer ?? Hosts.Test,
+          opts.hostLayer ?? Hosts.Test(),
           executor.layer,
           Style.Test,
         );

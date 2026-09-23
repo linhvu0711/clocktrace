@@ -68,21 +68,19 @@ export class Hosts extends Effect.Service<Hosts>()("Hosts", {
       ),
   },
 }) {
-  // Tests give only the methods they need; the rest find no Host and
+  // A test passes only the methods it changes; the rest find no Host and
   // succeed.
-  static testWith = (
-    over: Partial<Pick<Hosts, "detect" | "register" | "unregister">>,
+  // biome-ignore lint/style/useNamingConvention: layers are PascalCase
+  static Test = (
+    methods: Partial<ConstructorParameters<typeof Hosts>[0]> = {},
   ) =>
     Layer.succeed(
-      Hosts,
+      this,
       new Hosts({
         detect: () => Effect.succeed(byName(() => false)),
         register: () => Effect.succeed({ outcome: "registered" } as const),
         unregister: () => Effect.succeed("unregistered" as const),
-        ...over,
+        ...methods,
       }),
     );
-
-  // biome-ignore lint/style/useNamingConvention: layers are PascalCase
-  static Test = Hosts.testWith({});
 }

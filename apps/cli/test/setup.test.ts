@@ -184,7 +184,7 @@ describe("setup", () => {
           fakeLaunchd(state, opts.launchd),
           helperLayer,
           opts.app ?? fakeApp(appInstalls, appCommits, appRollbacks),
-          opts.hostLayer ?? Hosts.Test,
+          opts.hostLayer ?? Hosts.Test(),
           noCommandsLayer,
           Style.Test,
         );
@@ -545,7 +545,7 @@ describe("setup", () => {
 
   // Claude Code is found; each register is recorded and succeeds.
   const recordingHosts = (calls: Ref.Ref<ReadonlyArray<HostName>>) =>
-    Hosts.testWith({
+    Hosts.Test({
       detect: () =>
         Effect.succeed({
           claude: true,
@@ -651,7 +651,7 @@ describe("setup", () => {
       {
         hosts: ["codex"],
         interactive: false,
-        hostLayer: Hosts.testWith({
+        hostLayer: Hosts.Test({
           register: () =>
             Effect.succeed({ outcome: "failed", byHand: manualCommand.codex }),
         }),
