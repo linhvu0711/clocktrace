@@ -502,6 +502,66 @@ describe("App.install", () => {
     expect(existsSync(`${appPath}.reverting`)).toBe(false);
   });
 
+  it("a failed swap whose old app cannot come back is not restored", async () => {
+    // Given: a first install with the old helper; the helper rebuilt
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    writeFileSync(helperPath, "helper-bytes-2");
+    // When: the staged app cannot be renamed in, nor .old renamed back
+    const { result } = await runApp(
+      ADHOC,
+      (app) => app.install(helperPath),
+      undefined,
+      {
+        rename: (from) =>
+          from === `${appPath}.new` || from === `${appPath}.old`,
+      },
+    );
+    // Then: not restored, no live app, and the old app waits in .old
+    const error =
+      Exit.isFailure(result) && result.cause._tag === "Fail"
+        ? result.cause.error
+        : undefined;
+    expect(error).toBeInstanceOf(AppNotInstalledError);
+    expect(error).toMatchObject({
+      appRestored: false,
+      cause: { step: `rename ${appPath}.new` },
+    });
+    expect(existsSync(appPath)).toBe(false);
+    expect(
+      readFileSync(
+        join(`${appPath}.old`, "Contents", "MacOS", "Clocktrace"),
+        "utf8",
+      ),
+    ).toBe("helper-bytes");
+  });
+
+  it("a failed swap puts the old app back", async () => {
+    // Given: a first install with the old helper; the helper rebuilt
+    await runApp(ADHOC, (app) => app.install(helperPath));
+    writeFileSync(helperPath, "helper-bytes-2");
+    // When: the staged app cannot be renamed in
+    const { result } = await runApp(
+      ADHOC,
+      (app) => app.install(helperPath),
+      undefined,
+      { rename: (from) => from === `${appPath}.new` },
+    );
+    // Then: restored; the old app is live and no staging is left
+    const error =
+      Exit.isFailure(result) && result.cause._tag === "Fail"
+        ? result.cause.error
+        : undefined;
+    expect(error).toBeInstanceOf(AppNotInstalledError);
+    expect(error).toMatchObject({
+      appRestored: true,
+      cause: { step: `rename ${appPath}.new` },
+    });
+    expect(
+      readFileSync(join(appPath, "Contents", "MacOS", "Clocktrace"), "utf8"),
+    ).toBe("helper-bytes");
+    expect(existsSync(`${appPath}.new`)).toBe(false);
+  });
+
   it("install copies a built app next to the Helper whole and signs nothing", async () => {
     // Given: a built Clocktrace.app sitting next to the helper
     const built = join(buildDir, "Clocktrace.app");
