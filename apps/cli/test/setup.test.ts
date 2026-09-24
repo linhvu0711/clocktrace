@@ -326,7 +326,7 @@ describe("setup", () => {
     expect(installs).toEqual([{ helperPath: "/stub", databasePath: path }]);
   });
 
-  it("setup wraps the collector paths on a narrow terminal", async () => {
+  it("setup prints the collector paths whole on a narrow terminal", async () => {
     // Given: no plist and no database file, a terminal 50 columns wide
     // When
     const { exit, output } = await run(
@@ -342,11 +342,10 @@ describe("setup", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    expect(output.slice(0, 6)).toEqual([
+    expect(output.slice(0, 5)).toEqual([
       "Collector",
       "  ✔ app           ~/Applications/Clocktrace.app",
-      "  ✔ launch agent  ~/Library/LaunchAgents/com.clock",
-      "                  trace.collector.plist",
+      "  ✔ launch agent  ~/Library/LaunchAgents/com.clocktrace.collector.plist",
       "  starting collector…",
       "  ✔ running",
     ]);

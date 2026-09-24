@@ -310,6 +310,26 @@ describe("status", () => {
     ]);
   });
 
+  it("status prints a database path whole on a narrow terminal", async () => {
+    // Given: a database path with two spaces in a row, 40 columns
+    path = join(dir, "My  Logs.db");
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+      App.Test,
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 40 }),
+      ),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.at(-1)).toBe(`Database       ${path}`);
+  });
+
   it("status prints a browser that did not answer", async () => {
     // Given: Safari not running, Chrome noAnswer, one Activity
     await Effect.runPromise(Effect.scoped(openStore(path)));
