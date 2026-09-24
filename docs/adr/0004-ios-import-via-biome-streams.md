@@ -10,5 +10,12 @@ Apple documents none of this and can move it in any release, so the importer liv
 
 ## Considered options
 
-- Apple's DeviceActivity and FamilyControls frameworks: rejected, they exist for iOS and Mac Catalyst only and give no historical data (https://developer.apple.com/documentation/deviceactivity).
+- Apple's DeviceActivity and FamilyControls frameworks: rejected, they exist for iOS and Mac Catalyst only and give no historical data (https://developer.apple.com/documentation/deviceactivity). Rechecked on 2026-09-24: the macOS 27.0 SDK marks `DeviceActivityReport`, `DeviceActivityData`, `DeviceActivityFilter`, and `DeviceActivityCenter` `@available(macOS, unavailable)`.
+- An iPhone companion app that reads its own Screen Time data and sends it to the Mac: rejected. A report extension "runs in a sandbox" that prevents "network requests or moving sensitive content outside the extension's address space" (https://developer.apple.com/documentation/deviceactivity/deviceactivityreport). Threshold events carry an event name only, with no minutes, and `Application.bundleIdentifier` is nil outside a shield extension (https://developer.apple.com/documentation/managedsettings/application/bundleidentifier). The entitlement needs Apple's approval and covers App Store and Ad Hoc builds, not Developer ID (https://developer.apple.com/documentation/xcode/configuring-family-controls). `FamilyActivityData` (iOS 26.4) gives real data but only to installs in the EU (https://developer.apple.com/documentation/familycontrols/familyactivitydata).
+- Speeding up Apple's Biome sync: rejected, there is no public way to ask for a sync; restarting `biomesyncd` is private and can break with any release.
 - Skip iOS in v0: rejected once the route was verified in an afternoon.
+
+## Consequences
+
+- iPhone and iPad time arrives hours after Apple's own Screen Time shows it. On 2026-09-24, System Settings › Screen Time on this Mac showed the iPhone's morning use at 12:44, while the Biome remote segment still ended at 07:00; `biomesyncd` ran about every 30 minutes and took new App.InFocus data only after a nearby device answered (its CloudKit sync touched only an `AppLaunch` zone). Screen Time uses its own `ScreenTimeAgent` store under `$(getconf DARWIN_USER_DIR)com.apple.ScreenTimeAgent`, which answers `Operation not permitted` even with Full Disk Access on macOS 27.
+- `status` must say that iPhone and iPad data is late, not missing, so a user who compares with Screen Time is not misled (#215).
