@@ -18,4 +18,4 @@ Apple documents none of this and can move it in any release, so the importer liv
 ## Consequences
 
 - iPhone and iPad time arrives hours after Apple's own Screen Time shows it. On 2026-09-24, System Settings › Screen Time on this Mac showed the iPhone's morning use at 12:44, while the Biome remote segment still ended at 07:00; `biomesyncd` ran about every 30 minutes and took new App.InFocus data only after a nearby device answered (its CloudKit sync touched only an `AppLaunch` zone). Screen Time uses its own `ScreenTimeAgent` store under `$(getconf DARWIN_USER_DIR)com.apple.ScreenTimeAgent`, which answers `Operation not permitted` even with Full Disk Access on macOS 27.
-- `status` must say that iPhone and iPad data is late, not missing, so a user who compares with Screen Time is not misled.
+- `status` must say that iPhone and iPad data is late, not missing, so a user who compares with Screen Time is not misled (#215).
