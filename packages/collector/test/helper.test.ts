@@ -339,7 +339,7 @@ const R3 = {
 describe("Helper biome records", () => {
   it("biome records exit 0 gives decoded records and parse lines", async () => {
     // Given: biome records printed one record and one parse error line
-    const stdout = `${R3_LINE}\n{"error":"parse","offset":148,"segment":"000000000000001"}\n`;
+    const stdout = `${R3_LINE}\n{"device":"00000000-0000-4000-8000-000000000002","error":"parse","offset":148,"segment":"000000000000001"}\n`;
     // When
     const { exit } = await runHelperProcess(
       (helper) => helper.biomeRecords("/h", new Map()),
@@ -348,7 +348,12 @@ describe("Helper biome records", () => {
     // Then
     expect(Exit.isSuccess(exit) && exit.value).toEqual([
       R3,
-      { error: "parse", segment: "000000000000001", offset: 148 },
+      {
+        device: "00000000-0000-4000-8000-000000000002",
+        error: "parse",
+        segment: "000000000000001",
+        offset: 148,
+      },
     ]);
   });
 

@@ -48,7 +48,7 @@ final class BiomeCommandsTests: XCTestCase {
     // Then
     XCTAssertEqual(
       lines,
-      [.parseError(BiomeParseErrorLine(segment: "1", offset: 0))])
+      [.parseError(BiomeParseErrorLine(device: "a-device", segment: "1", offset: 0))])
   }
 
   func testReportsAParseErrorForAnEntryWhoseCrc32DoesNotMatchAndKeepsTheOthers() {
@@ -63,9 +63,9 @@ final class BiomeCommandsTests: XCTestCase {
     XCTAssertEqual(
       lines,
       [
-        "{\"error\":\"parse\",\"offset\":32,\"segment\":\"infocus.segb\"}",
+        "{\"device\":\"fixture-device\",\"error\":\"parse\",\"offset\":32,\"segment\":\"infocus.segb\"}",
         "{\"appVersion\":null,\"build\":null,\"bundleId\":\"com.example.alpha\",\"device\":\"fixture-device\",\"focus\":\"end\",\"offset\":108,\"reason\":null,\"segment\":\"infocus.segb\",\"ts\":1758307260.25}",
-        "{\"error\":\"parse\",\"offset\":148,\"segment\":\"infocus.segb\"}",
+        "{\"device\":\"fixture-device\",\"error\":\"parse\",\"offset\":148,\"segment\":\"infocus.segb\"}",
       ])
   }
 
@@ -133,13 +133,13 @@ final class BiomeCommandsTests: XCTestCase {
       [
         "{\"appVersion\":\"1.2.3\",\"build\":\"456\",\"bundleId\":\"com.example.alpha\",\"device\":\"a-device\",\"focus\":\"start\",\"offset\":32,\"reason\":\"com.example.reason\",\"segment\":\"1\",\"ts\":1758307200.5}",
         "{\"appVersion\":null,\"build\":null,\"bundleId\":\"com.example.alpha\",\"device\":\"a-device\",\"focus\":\"end\",\"offset\":108,\"reason\":null,\"segment\":\"1\",\"ts\":1758307260.25}",
-        "{\"error\":\"parse\",\"offset\":148,\"segment\":\"1\"}",
+        "{\"device\":\"a-device\",\"error\":\"parse\",\"offset\":148,\"segment\":\"1\"}",
         "{\"appVersion\":\"1.2.3\",\"build\":\"456\",\"bundleId\":\"com.example.alpha\",\"device\":\"a-device\",\"focus\":\"start\",\"offset\":32,\"reason\":\"com.example.reason\",\"segment\":\"2\",\"ts\":1758307200.5}",
         "{\"appVersion\":null,\"build\":null,\"bundleId\":\"com.example.alpha\",\"device\":\"a-device\",\"focus\":\"end\",\"offset\":108,\"reason\":null,\"segment\":\"2\",\"ts\":1758307260.25}",
-        "{\"error\":\"parse\",\"offset\":148,\"segment\":\"2\"}",
+        "{\"device\":\"a-device\",\"error\":\"parse\",\"offset\":148,\"segment\":\"2\"}",
         "{\"appVersion\":\"1.2.3\",\"build\":\"456\",\"bundleId\":\"com.example.alpha\",\"device\":\"b-device\",\"focus\":\"start\",\"offset\":32,\"reason\":\"com.example.reason\",\"segment\":\"1\",\"ts\":1758307200.5}",
         "{\"appVersion\":null,\"build\":null,\"bundleId\":\"com.example.alpha\",\"device\":\"b-device\",\"focus\":\"end\",\"offset\":108,\"reason\":null,\"segment\":\"1\",\"ts\":1758307260.25}",
-        "{\"error\":\"parse\",\"offset\":148,\"segment\":\"1\"}",
+        "{\"device\":\"b-device\",\"error\":\"parse\",\"offset\":148,\"segment\":\"1\"}",
       ])
   }
 
@@ -213,7 +213,7 @@ final class BiomeCommandsTests: XCTestCase {
     XCTAssertEqual(code, 0)
     XCTAssertEqual(err, [])
     XCTAssertEqual(out.count, 4)
-    XCTAssertEqual(out.first, "{\"error\":\"parse\",\"offset\":0,\"segment\":\"1\"}")
+    XCTAssertEqual(out.first, "{\"device\":\"a-device\",\"error\":\"parse\",\"offset\":0,\"segment\":\"1\"}")
   }
 
   func testContinuesAfterASegmentWithoutTheMagic() {
@@ -233,7 +233,7 @@ final class BiomeCommandsTests: XCTestCase {
     XCTAssertEqual(code, 0)
     XCTAssertEqual(err, [])
     XCTAssertEqual(out.count, 4)
-    XCTAssertEqual(out.first, "{\"error\":\"parse\",\"offset\":0,\"segment\":\"1\"}")
+    XCTAssertEqual(out.first, "{\"device\":\"a-device\",\"error\":\"parse\",\"offset\":0,\"segment\":\"1\"}")
   }
 
   func testContinuesAfterAnUnlistableDeviceFolderAndExits6() {

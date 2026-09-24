@@ -254,23 +254,22 @@ export const importOnce = (
     const activities: Array<NewActivity> = [];
 
     for (const line of records) {
+      const p = progress.get(line.device);
+      const written =
+        p !== undefined &&
+        (line.segment < p.segment ||
+          (line.segment === p.segment && line.offset <= p.offset));
       if ("error" in line) {
-        if (reason === null) {
+        // A segment that cannot be read at all (offset 0) fails this run,
+        // even when it is the Progress segment.
+        if (reason === null && (!written || line.offset === 0)) {
           reason = `parse error in ${line.segment} at ${line.offset}`;
         }
         continue;
       }
       const entry = devices.get(line.device);
       const writer = writers.get(line.device);
-      if (entry === undefined || writer === undefined) {
-        continue;
-      }
-      const p = progress.get(line.device);
-      if (
-        p !== undefined &&
-        (line.segment < p.segment ||
-          (line.segment === p.segment && line.offset <= p.offset))
-      ) {
+      if (entry === undefined || writer === undefined || written) {
         continue;
       }
       const ts = DateTime.unsafeMake(line.ts * 1000);

@@ -2,11 +2,12 @@ import Foundation
 
 public func decodeSegment(_ data: Data, device: String, segment: String) -> [BiomeLine] {
   guard case .entries(let entries) = readSegb(data) else {
-    return [.parseError(BiomeParseErrorLine(segment: segment, offset: 0))]
+    return [.parseError(BiomeParseErrorLine(device: device, segment: segment, offset: 0))]
   }
   return entries.map { entry in
     guard let payload = entry.payload, let record = inFocusRecord(payload) else {
-      return .parseError(BiomeParseErrorLine(segment: segment, offset: entry.offset))
+      return .parseError(
+        BiomeParseErrorLine(device: device, segment: segment, offset: entry.offset))
     }
     return .record(
       BiomeRecordLine(
@@ -52,7 +53,9 @@ public func biomeRecords(
       // Biome appends to a segment without touching its modified time, so the skip is by name.
       if let from = from[device], segment < from { continue }
       guard let data = reads.segmentData(device, segment) else {
-        emit(BiomeLine.parseError(BiomeParseErrorLine(segment: segment, offset: 0)).json())
+        emit(
+          BiomeLine.parseError(BiomeParseErrorLine(device: device, segment: segment, offset: 0))
+            .json())
         continue
       }
       for line in decodeSegment(data, device: device, segment: segment) {

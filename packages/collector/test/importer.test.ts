@@ -191,7 +191,7 @@ const R13 = record({
   segment: S,
   ts: 1789834560,
 });
-const E1: BiomeLine = { error: "parse", offset: 148, segment: S };
+const E1: BiomeLine = { device: P2, error: "parse", offset: 148, segment: S };
 
 const ALL = [R1, R2, R3, R4, R5, R6, R7, R8, R9, R10, R11, R12];
 
@@ -682,6 +682,86 @@ describe("importer", () => {
       state: "broken",
       at: "2026-09-19T17:30:00.000Z",
       reason: "parse error in 000000000000001 at 148",
+      devices: [{ externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" }],
+    });
+  });
+
+  it("a parse error at or before the Progress offset does not mark the next run broken", async () => {
+    // Given: a run whose parse error at offset 148 sits before the Progress
+    // it leaves at offset 260, and a second run that reads the same segment
+    // When
+    const status = await run(
+      { devices: [D_PHONE], records: [R1, R2, E1, R3, R4] },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub");
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return yield* store.getSetting("importer.status");
+        }),
+    );
+    // Then
+    expect(JSON.parse(Option.getOrElse(status, () => ""))).toEqual({
+      state: "ok",
+      at: "2026-09-19T17:30:00.000Z",
+      devices: [{ externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" }],
+    });
+  });
+
+  it("a parse error after the Progress offset marks the next run broken", async () => {
+    // Given: a first run that leaves Progress at offset 488, then a parse
+    // error at offset 700 in the same segment
+    // When
+    const status = await run(
+      { devices: [D_PHONE], records: "ref" },
+      "27.0",
+      (ctx) =>
+        Effect.gen(function* () {
+          yield* Ref.set(ctx.recordsRef, ALL);
+          yield* importOnce("/stub");
+          yield* Ref.set(ctx.recordsRef, [
+            ...ALL,
+            { device: P2, error: "parse", offset: 700, segment: S },
+          ]);
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return yield* store.getSetting("importer.status");
+        }),
+    );
+    // Then
+    expect(JSON.parse(Option.getOrElse(status, () => ""))).toEqual({
+      state: "broken",
+      at: "2026-09-19T17:30:00.000Z",
+      reason: "parse error in 000000000000001 at 700",
+      devices: [{ externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" }],
+    });
+  });
+
+  it("an unreadable Progress segment marks the next run broken", async () => {
+    // Given: a first run that leaves Progress in segment S, then S cannot be
+    // read at all (the parse line at offset 0)
+    // When
+    const status = await run(
+      { devices: [D_PHONE], records: "ref" },
+      "27.0",
+      (ctx) =>
+        Effect.gen(function* () {
+          yield* Ref.set(ctx.recordsRef, ALL);
+          yield* importOnce("/stub");
+          yield* Ref.set(ctx.recordsRef, [
+            { device: P2, error: "parse", offset: 0, segment: S },
+          ]);
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return yield* store.getSetting("importer.status");
+        }),
+    );
+    // Then
+    expect(JSON.parse(Option.getOrElse(status, () => ""))).toEqual({
+      state: "broken",
+      at: "2026-09-19T17:30:00.000Z",
+      reason: "parse error in 000000000000001 at 0",
       devices: [{ externalId: P2, lastSync: "2026-09-19T17:00:00.000Z" }],
     });
   });
