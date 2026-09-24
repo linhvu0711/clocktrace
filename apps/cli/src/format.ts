@@ -21,10 +21,11 @@ export type Look = {
 export type ColumnsOptions = {
   /**
    * What to do with a last cell wider than the room `Look.width` leaves:
-   * cut it with an ellipsis (the default), or wrap it onto lines indented
-   * to the column's start.
+   * cut it with an ellipsis (the default), wrap it onto lines indented
+   * to the column's start, or keep it whole for the terminal to wrap.
+   * Text a person reads wraps; a token they copy into a command keeps.
    */
-  readonly overflow?: "truncate" | "wrap";
+  readonly overflow?: "truncate" | "wrap" | "keep";
   /** Per column, by index; a missing entry is `"left"`. */
   readonly align?: ReadonlyArray<"left" | "right">;
 };
@@ -216,16 +217,17 @@ const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
   return lines.map(regroup);
 };
 
-export const columns = (
+/** The printed lines of each row, in row order; a wrapped row has more than one. */
+export const rowLines = (
   rows: ReadonlyArray<ReadonlyArray<Cell>>,
   look: Look,
   options: ColumnsOptions = {},
-): ReadonlyArray<string> => {
+): ReadonlyArray<ReadonlyArray<string>> => {
   const widest = (i: number): number =>
     Math.max(...rows.map((r) => visible(r[i] ?? "")));
   const render = (ss: ReadonlyArray<Span>): string =>
     ss.map((s) => renderSpan(s, look)).join("");
-  return rows.flatMap((r) => {
+  return rows.map((r) => {
     const last = r.length - 1;
     const cell = r[last];
     if (cell === undefined) {
@@ -242,12 +244,15 @@ export const columns = (
       })
       .join("");
     const room = look.width - start;
-    if (look.width === 0 || visible(cell) <= room) {
+    // No room: the lead cells already overflow, so a cut saves no line.
+    if (
+      look.width === 0 ||
+      visible(cell) <= room ||
+      room <= 0 ||
+      options.overflow === "keep"
+    ) {
       const pad = right(last) ? " ".repeat(widest(last) - visible(cell)) : "";
       return [head + pad + render(spans(cell))];
-    }
-    if (room <= 0) {
-      return [head];
     }
     if (options.overflow === "wrap") {
       const [first, ...rest] = wrap(cell, room).map(render);
@@ -256,6 +261,12 @@ export const columns = (
     return [head + render(cut(cell, room, look))];
   });
 };
+
+export const columns = (
+  rows: ReadonlyArray<ReadonlyArray<Cell>>,
+  look: Look,
+  options: ColumnsOptions = {},
+): ReadonlyArray<string> => rowLines(rows, look, options).flat();
 
 export const clock = (t: DateTime.Utc, now: DateTime.Zoned): string => {
   const at = isoMinute(DateTime.setZone(t, now.zone));
