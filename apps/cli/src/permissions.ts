@@ -32,9 +32,9 @@ import type { ParseError } from "effect/ParseResult";
 import {
   type Cell,
   clock,
-  columns,
   line,
   mark,
+  rowLines,
   Style,
   span,
 } from "./format.js";
@@ -132,8 +132,13 @@ export const walkPermissions = (): Effect.Effect<
     type Perm = (typeof perms)[number];
     // The printed rows, one per perm, kept so the columns line up.
     const rows = perms.map((p) => initialRow(p.item));
+    // A narrow terminal wraps a row's fix or error, never cuts it.
     const printRow = (perm: Perm) =>
-      prompt.print(columns(rows, look)[perms.indexOf(perm)] ?? "");
+      Effect.forEach(
+        rowLines(rows, look, { overflow: "wrap" })[perms.indexOf(perm)] ?? [""],
+        (l) => prompt.print(l),
+        { discard: true },
+      );
     const show = (perm: Perm, row: ReadonlyArray<Cell>) => {
       rows[perms.indexOf(perm)] = row;
       return printRow(perm);
