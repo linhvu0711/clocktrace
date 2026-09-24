@@ -226,6 +226,25 @@ describe("infoPlist", () => {
   });
 });
 
+describe("appIconFiles", () => {
+  it("the published package carries every icon file", async () => {
+    // Given: the collector's package.json, which decides what pnpm deploy
+    // ships; a bare-Helper install reads the icons from there
+    const manifest = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { readonly files: ReadonlyArray<string> };
+    // When
+    const missing = appIconFiles.filter(
+      (file) => !manifest.files.includes(`assets/${file}`),
+    );
+    // Then
+    expect(missing).toEqual([]);
+    for (const file of appIconFiles) {
+      expect(existsSync(join(appIconDir, file))).toBe(true);
+    }
+  });
+});
+
 describe("hasDeveloperIdSignature", () => {
   it("hasDeveloperIdSignature is true on an Authority line", async () => {
     // Given: codesign -dv output with a Developer ID authority
