@@ -27,6 +27,7 @@ import {
   columns,
   type Look,
   mark,
+  rowLines,
   Style,
   shortPath,
   span,
@@ -121,18 +122,23 @@ const statusScreen = (
   // A narrow terminal wraps a hint and keeps a path whole: wrapping would
   // fold its spaces, and a path must match the file it names.
   const wrap = { overflow: "wrap" } as const;
-  const groupRows = columns(
-    [collector, permissions, ...(ios !== null ? [ios] : []), last, database],
-    look,
-    { overflow: "keep" },
-  );
-  const [g0, g1, gIos, gLast, gDb] =
+  const groups = [
+    collector,
+    permissions,
+    ...(ios !== null ? [ios] : []),
+    last,
+    database,
+  ];
+  // Both renders share one label column, so the rows still line up.
+  const groupRows = rowLines(groups, look, wrap);
+  const databaseRow = rowLines(groups, look, { overflow: "keep" }).at(-1);
+  const [g0, g1, gIos, gLast] =
     ios !== null
-      ? [groupRows[0], groupRows[1], groupRows[2], groupRows[3], groupRows[4]]
-      : [groupRows[0], groupRows[1], undefined, groupRows[2], groupRows[3]];
+      ? [groupRows[0], groupRows[1], groupRows[2], groupRows[3]]
+      : [groupRows[0], groupRows[1], undefined, groupRows[2]];
   return [
-    g0 ?? "",
-    g1 ?? "",
+    ...(g0 ?? []),
+    ...(g1 ?? []),
     ...columns(
       [...granted, ...rest].map((p) => permissionRow(p, look, now)),
       look,
@@ -140,7 +146,7 @@ const statusScreen = (
     ),
     ...(ios !== null
       ? [
-          gIos ?? "",
+          ...(gIos ?? []),
           ...columns(
             s.devices.map((d) => deviceRow(d, look, now)),
             look,
@@ -148,8 +154,8 @@ const statusScreen = (
           ),
         ]
       : []),
-    gLast ?? "",
-    gDb ?? "",
+    ...(gLast ?? []),
+    ...(databaseRow ?? []),
   ];
 };
 

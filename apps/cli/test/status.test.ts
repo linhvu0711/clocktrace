@@ -310,6 +310,28 @@ describe("status", () => {
     ]);
   });
 
+  it("status wraps the collector hint on a narrow terminal", async () => {
+    // Given: the collector stopped, a terminal 40 columns wide
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: false, plist: null, installs: 0 },
+      status(),
+      App.Test,
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 40 }),
+      ),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.slice(0, 2)).toEqual([
+      "Collector      ○ stopped · run",
+      "               clocktrace start",
+    ]);
+  });
+
   it("status prints a database path whole on a narrow terminal", async () => {
     // Given: a database path with two spaces in a row, 40 columns
     path = join(dir, "My  Logs.db");
