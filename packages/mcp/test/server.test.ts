@@ -839,6 +839,19 @@ describe("server", () => {
     );
   });
 
+  it("the status description names the lag and dataUpTo", async () => {
+    // Given: a server over an in-memory store
+    const { client, close } = await connect(Store.Test);
+    // When
+    const { tools } = await client.listTools();
+    await close();
+    // Then
+    const description =
+      tools.find((t) => t.name === "status")?.description ?? "";
+    expect(description).toContain("lags hours behind Apple's Screen Time");
+    expect(description).toContain("dataUpTo is how far it goes");
+  });
+
   it("instructions name the four question tools and the range format", async () => {
     // Given: the same
     const { client, close } = await connect(Store.Test);
@@ -1468,6 +1481,10 @@ describe("server", () => {
             ],
           }),
         );
+        yield* store.setSetting(
+          "importer.progress.P2",
+          JSON.stringify({ segment: "s1", offset: 10, ts: 1789837200 }),
+        );
       });
     const { client, close } = await connect(withActivities(seedIos));
     // When
@@ -1511,6 +1528,7 @@ describe("server", () => {
           kind: "ipad",
           lastSync: "2026-09-17T17:00:00.000Z",
           sync: "stale",
+          dataUpTo: null,
           lastActivity: null,
         },
         {
@@ -1518,6 +1536,7 @@ describe("server", () => {
           kind: "iphone",
           lastSync: null,
           sync: "never",
+          dataUpTo: "2026-09-19T17:00:00.000Z",
           lastActivity: "2026-09-19T16:06:00.000Z",
         },
       ],

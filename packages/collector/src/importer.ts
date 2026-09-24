@@ -76,6 +76,18 @@ export const importStatusKey = "importer.status";
 export const importProgressKey = (externalId: string): string =>
   `importer.progress.${externalId}`;
 
+/** A Device's Progress; none when it has no records yet or the value does not decode. */
+export const readProgress = (
+  store: Store,
+  externalId: string,
+): Effect.Effect<Option.Option<ImportProgress>, StoreError> =>
+  Effect.gen(function* () {
+    const stored = yield* store.getSetting(importProgressKey(externalId));
+    return yield* Effect.option(
+      Schema.decodeUnknown(ImportProgress)(Option.getOrElse(stored, () => "")),
+    );
+  });
+
 const encodeResult = Schema.encodeSync(ImportResult);
 const encodeProgress = Schema.encodeSync(ImportProgress);
 
@@ -191,12 +203,7 @@ export const importOnce = (
       { segment: string; offset: number; ts: number }
     >();
     for (const externalId of devices.keys()) {
-      const stored = yield* store.getSetting(importProgressKey(externalId));
-      const decoded = yield* Effect.option(
-        Schema.decodeUnknown(ImportProgress)(
-          Option.getOrElse(stored, () => ""),
-        ),
-      );
+      const decoded = yield* readProgress(store, externalId);
       if (Option.isSome(decoded)) {
         progress.set(externalId, decoded.value);
       }

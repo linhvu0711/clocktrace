@@ -92,6 +92,21 @@ const runAt = <A>(
     }).pipe(Effect.provide(TestContext.TestContext)),
   );
 
+// The iPhone and the iPad with no Activities.
+const seedDevices = (store: Store) =>
+  Effect.gen(function* () {
+    yield* store.upsertDevice({
+      kind: "iphone",
+      name: "iPhone",
+      externalId: "P2",
+    });
+    yield* store.upsertDevice({
+      kind: "ipad",
+      name: "Linh's iPad",
+      externalId: "P3",
+    });
+  });
+
 const seed = (store: Store) =>
   Effect.gen(function* () {
     const iphone = yield* store.upsertDevice({
@@ -136,6 +151,51 @@ const BLOB_BROKEN = JSON.stringify({
   reason: "no App.InFocus remote folder",
   devices: [{ externalId: "P2", lastSync: "2026-09-19T17:00:00.000Z" }],
 });
+
+// 1789837200 is 2026-09-19 17:00Z, 10:00 in Los Angeles: after the
+// iPhone's last Activity (09:06).
+const PROGRESS_P2 = JSON.stringify({
+  segment: "s1",
+  offset: 10,
+  ts: 1789837200,
+});
+
+// 1789826400 is 2026-09-19 14:00Z, 07:00 in Los Angeles: before it.
+const OLD_PROGRESS_P2 = JSON.stringify({
+  segment: "s1",
+  offset: 10,
+  ts: 1789826400,
+});
+
+const NO_DATA_LINES = [
+  "collector: running",
+  "accessibility: granted",
+  "automation: not checked, no browser used yet",
+  "full disk access: granted",
+  "iOS import: ok 2026-09-19 10:30",
+  "Linh's iPad: not syncing since 2026-09-17 10:00",
+  "Linh's iPad: last activity none yet",
+  "iPhone: no data yet",
+  "iPhone: last activity none yet",
+  "iPhone and iPad data comes from Apple a few hours late.",
+  "last activity: none yet",
+  `database: ${dbPath}`,
+];
+
+const DATA_UP_TO_LAST_ACTIVITY_LINES = [
+  "collector: running",
+  "accessibility: granted",
+  "automation: not checked, no browser used yet",
+  "full disk access: granted",
+  "iOS import: ok 2026-09-19 10:30",
+  "Linh's iPad: not syncing since 2026-09-17 10:00",
+  "Linh's iPad: last activity none yet",
+  "iPhone: data up to 2026-09-19 09:06",
+  "iPhone: last activity 2026-09-19 09:06",
+  "iPhone and iPad data comes from Apple a few hours late.",
+  "last activity: 2026-09-19 09:06",
+  `database: ${dbPath}`,
+];
 
 const allGranted: Permissions = {
   accessibility: "granted",
@@ -281,7 +341,8 @@ describe("status", () => {
   });
 
   it("iOS import ok with a syncing iPhone and a stale iPad", async () => {
-    // Given: every grant, an ok import blob, an iPhone and an iPad
+    // Given: every grant, an ok import blob, an iPhone and an iPad, the
+    // iPhone's Progress at 2026-09-19 17:00Z
     // When
     const lines = await runAt(
       allGranted,
@@ -290,6 +351,7 @@ describe("status", () => {
         const store = yield* Store;
         yield* seed(store);
         yield* store.setSetting("importer.status", BLOB_OK);
+        yield* store.setSetting("importer.progress.P2", PROGRESS_P2);
         const status = yield* readStatus();
         return yield* statusLines(status);
       }),
@@ -303,7 +365,125 @@ describe("status", () => {
       "iOS import: ok 2026-09-19 10:30",
       "Linh's iPad: not syncing since 2026-09-17 10:00",
       "Linh's iPad: last activity none yet",
-      "iPhone: last synced 2026-09-19 10:00",
+      "iPhone: data up to 2026-09-19 10:00",
+      "iPhone: last activity 2026-09-19 09:06",
+      "iPhone and iPad data comes from Apple a few hours late.",
+      "last activity: 2026-09-19 09:06",
+      `database: ${dbPath}`,
+    ]);
+  });
+
+  it("a synced iPhone with no Progress shows no data yet", async () => {
+    // Given: every grant, an ok import blob, no Progress and no Activity
+    // for the iPhone
+    // When
+    const lines = await runAt(
+      allGranted,
+      running,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDevices(store);
+        yield* store.setSetting("importer.status", BLOB_OK);
+        const status = yield* readStatus();
+        return yield* statusLines(status);
+      }),
+    );
+    // Then
+    expect(lines).toEqual(NO_DATA_LINES);
+  });
+
+  it("a Progress value that does not decode shows no data yet", async () => {
+    // Given: every grant, an ok import blob, an iPhone Progress that is not
+    // JSON, no Activity
+    // When
+    const lines = await runAt(
+      allGranted,
+      running,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedDevices(store);
+        yield* store.setSetting("importer.status", BLOB_OK);
+        yield* store.setSetting("importer.progress.P2", "not json");
+        const status = yield* readStatus();
+        return yield* statusLines(status);
+      }),
+    );
+    // Then
+    expect(lines).toEqual(NO_DATA_LINES);
+  });
+
+  it("a synced iPhone with Activities and no Progress shows data up to its last Activity", async () => {
+    // Given: every grant, an ok import blob, an iPhone Activity ending 09:06,
+    // no Progress
+    // When
+    const lines = await runAt(
+      allGranted,
+      running,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seed(store);
+        yield* store.setSetting("importer.status", BLOB_OK);
+        const status = yield* readStatus();
+        return yield* statusLines(status);
+      }),
+    );
+    // Then
+    expect(lines).toEqual(DATA_UP_TO_LAST_ACTIVITY_LINES);
+  });
+
+  it("data up to is the last Activity end when Progress is older", async () => {
+    // Given: every grant, an ok import blob, an iPhone Activity ending 09:06,
+    // Progress at 07:00
+    // When
+    const lines = await runAt(
+      allGranted,
+      running,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seed(store);
+        yield* store.setSetting("importer.status", BLOB_OK);
+        yield* store.setSetting("importer.progress.P2", OLD_PROGRESS_P2);
+        const status = yield* readStatus();
+        return yield* statusLines(status);
+      }),
+    );
+    // Then
+    expect(lines).toEqual(DATA_UP_TO_LAST_ACTIVITY_LINES);
+  });
+
+  it("no late hint when no device is synced", async () => {
+    // Given: every grant, an ok import blob with only the stale iPad
+    // When
+    const lines = await runAt(
+      allGranted,
+      running,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seed(store);
+        yield* store.setSetting(
+          "importer.status",
+          JSON.stringify({
+            state: "ok",
+            at: "2026-09-19T17:30:00.000Z",
+            devices: [
+              { externalId: "P3", lastSync: "2026-09-17T17:00:00.000Z" },
+            ],
+          }),
+        );
+        const status = yield* readStatus();
+        return yield* statusLines(status);
+      }),
+    );
+    // Then
+    expect(lines).toEqual([
+      "collector: running",
+      "accessibility: granted",
+      "automation: not checked, no browser used yet",
+      "full disk access: granted",
+      "iOS import: ok 2026-09-19 10:30",
+      "Linh's iPad: not syncing since 2026-09-17 10:00",
+      "Linh's iPad: last activity none yet",
+      "iPhone: never synced",
       "iPhone: last activity 2026-09-19 09:06",
       "last activity: 2026-09-19 09:06",
       `database: ${dbPath}`,

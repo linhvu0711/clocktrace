@@ -328,7 +328,7 @@ export const makeServer = async (
     "status",
     {
       description:
-        "Whether the Collector runs, whether the app that owns the grants is present, each permission with its state and what is lost while denied, the last Activity time, the iOS import state, and each iPhone and iPad with its last sync and last Activity, and the database path.",
+        "Whether the Collector runs, whether the app that owns the grants is present, each permission with its state and what is lost while denied, the last Activity time, the iOS import state, and each iPhone and iPad with its last sync, how far its data goes (dataUpTo: the later of the Importer's Progress and its last Activity end, null when it has neither), and its last Activity, and the database path. iPhone and iPad data lags hours behind Apple's Screen Time: Apple sends it to the Mac late, so dataUpTo is how far it goes, and time after it is late, not missing.",
       output: Status,
     },
     readStatus,
