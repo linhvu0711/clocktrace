@@ -245,6 +245,7 @@ describe("setup", () => {
       readonly interactive?: boolean;
       readonly stdin?: boolean;
       readonly hostLayer?: Layer.Layer<Hosts>;
+      readonly styleLayer?: Layer.Layer<Style>;
     } = {},
   ) =>
     Effect.runPromise(
@@ -273,7 +274,7 @@ describe("setup", () => {
           App.Test,
           opts.hostLayer ?? Hosts.Test(),
           noCommandsLayer,
-          Style.Test,
+          opts.styleLayer ?? Style.Test,
           CollectorPaths.Default(home),
         );
         const exit = yield* Effect.exit(
@@ -323,6 +324,32 @@ describe("setup", () => {
     expect(output).toEqual(expectedSetup());
     expect(existsSync(path)).toBe(true);
     expect(installs).toEqual([{ helperPath: "/stub", databasePath: path }]);
+  });
+
+  it("setup wraps the collector paths on a narrow terminal", async () => {
+    // Given: no plist and no database file, a terminal 50 columns wide
+    // When
+    const { exit, output } = await run(
+      helperStub(allGranted),
+      "loaded",
+      "/stub",
+      {
+        styleLayer: Layer.succeed(
+          Style,
+          new Style({ color: false, unicode: true, width: 50 }),
+        ),
+      },
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.slice(0, 6)).toEqual([
+      "Collector",
+      "  ✔ app           ~/Applications/Clocktrace.app",
+      "  ✔ launch agent  ~/Library/LaunchAgents/com.clock",
+      "                  trace.collector.plist",
+      "  starting collector…",
+      "  ✔ running",
+    ]);
   });
 
   it("setup fails when the helper binary is missing", async () => {

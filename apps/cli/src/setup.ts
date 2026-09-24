@@ -25,7 +25,7 @@ import type {
 import { type DateTime, Effect, Option } from "effect";
 import type { ParseError } from "effect/ParseResult";
 
-import { columns, line, mark, Style, shortPath, span } from "./format.js";
+import { line, mark, rowLines, Style, shortPath, span } from "./format.js";
 import {
   type HostName,
   Hosts,
@@ -134,7 +134,8 @@ export const setup = (
         const { appPath, plistPath, logPath } = yield* CollectorPaths;
         const home = homedir();
         yield* prompt.print(line([span("head", "Collector")], look));
-        const collectorRows = columns(
+        // Paths are read, so a narrow terminal wraps them, never cuts.
+        const collectorRows = rowLines(
           [
             [
               ["  ", mark("ok", look), " app"],
@@ -147,7 +148,12 @@ export const setup = (
             [["  ", mark("ok", look), " running"]],
           ],
           look,
+          { overflow: "wrap" },
         );
+        const printCollectorRow = (i: number) =>
+          Effect.forEach(collectorRows[i] ?? [""], (l) => prompt.print(l), {
+            discard: true,
+          });
         // What an undo, after a failure or a stop, could not put back.
         const printNotRestored = (restored: Restored) =>
           Effect.gen(function* () {
@@ -166,8 +172,7 @@ export const setup = (
           .install(
             { helperPath, databasePath },
             {
-              done: (step) =>
-                prompt.print(collectorRows[step === "app" ? 0 : 1] ?? ""),
+              done: (step) => printCollectorRow(step === "app" ? 0 : 1),
               starting: (wait) => prompt.wait("  starting collector…", wait),
               stopping: (undo) =>
                 prompt
@@ -224,7 +229,7 @@ export const setup = (
               }),
             ),
           );
-        yield* prompt.print(collectorRows[2] ?? "");
+        yield* printCollectorRow(2);
         const interactive = yield* prompt.interactive;
         yield* walkPermissions();
         const selected =
