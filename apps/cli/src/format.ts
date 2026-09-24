@@ -159,21 +159,29 @@ const cut = (cell: Cell, room: number, look: Look): ReadonlyArray<Span> => {
 const widthOf = (gs: ReadonlyArray<Grapheme>): number =>
   gs.reduce((n, g) => n + g.width, 0);
 
-/** Splits at spaces; a run of spaces is one break and the spaces are dropped. */
-const tokens = (
-  gs: ReadonlyArray<Grapheme>,
-): ReadonlyArray<ReadonlyArray<Grapheme>> => {
-  const out: Array<Array<Grapheme>> = [];
-  let open: Array<Grapheme> = [];
+type Token = {
+  /** The run of spaces before the word, kept so a line prints it as it was. */
+  readonly gap: ReadonlyArray<Grapheme>;
+  readonly word: ReadonlyArray<Grapheme>;
+};
+
+/** Splits at spaces; a run of spaces is one break. */
+const tokens = (gs: ReadonlyArray<Grapheme>): ReadonlyArray<Token> => {
+  const out: Array<Token> = [];
+  let gap: Array<Grapheme> = [];
+  let word: Array<Grapheme> = [];
   for (const g of gs) {
     if (g.text !== " ") {
-      open.push(g);
-    } else if (open.length > 0) {
-      out.push(open);
-      open = [];
+      word.push(g);
+    } else if (word.length > 0) {
+      out.push({ gap, word });
+      gap = [g];
+      word = [];
+    } else if (out.length > 0) {
+      gap.push(g);
     }
   }
-  return open.length > 0 ? [...out, open] : out;
+  return word.length > 0 ? [...out, { gap, word }] : out;
 };
 
 const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
@@ -187,11 +195,13 @@ const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
       openWidth = 0;
     }
   };
-  for (const token of tokens(graphemes(cell))) {
-    const w = widthOf(token);
+  // A line keeps the spaces between its words; a break drops them.
+  for (const { gap, word } of tokens(graphemes(cell))) {
+    const w = widthOf(word);
+    const g = widthOf(gap);
     if (w > room) {
       flush();
-      let rest = token;
+      let rest = word;
       while (rest.length > 0) {
         const chunk = take(rest, room);
         // A grapheme wider than the room can never fit: drop it, as cut does.
@@ -201,15 +211,14 @@ const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
         rest = rest.slice(Math.max(chunk.length, 1));
       }
     } else if (open.length === 0) {
-      open = [...token];
+      open = [...word];
       openWidth = w;
-    } else if (openWidth + 1 + w <= room) {
-      const first = token[0];
-      open.push({ text: " ", tone: first?.tone, width: 1 }, ...token);
-      openWidth += 1 + w;
+    } else if (openWidth + g + w <= room) {
+      open.push(...gap, ...word);
+      openWidth += g + w;
     } else {
       flush();
-      open = [...token];
+      open = [...word];
       openWidth = w;
     }
   }

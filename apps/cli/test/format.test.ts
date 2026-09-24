@@ -278,6 +278,15 @@ describe("format", () => {
     ).toEqual(["ab  abcde", "    fghij", "    k"]);
   });
 
+  it("wrap keeps a run of spaces inside a line", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 9 };
+    // When / Then
+    expect(columns([["ab", "a  b cdefg"]], look, { overflow: "wrap" })).toEqual(
+      ["ab  a  b", "    cdefg"],
+    );
+  });
+
   it("a wrapped cell keeps its tone on every line", () => {
     // Given
     const look = { color: true, unicode: true, width: 7 };
