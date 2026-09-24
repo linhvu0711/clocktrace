@@ -140,6 +140,12 @@ export const readStatus = (): Effect.Effect<
             const lastSync = lastSyncs.get(device.externalId) ?? null;
             const lastActivity = yield* store.latestActivityEnd(device.id);
             const progress = yield* readProgress(store, device.externalId);
+            // How far the data goes: Progress waits while an Activity is
+            // open, so a written Activity can end after it.
+            const ends = [
+              Option.map(progress, (p) => DateTime.unsafeMake(p.ts * 1000)),
+              lastActivity,
+            ].flatMap(Option.toArray);
             devices.push({
               name: device.name,
               kind: device.kind,
@@ -151,9 +157,10 @@ export const readStatus = (): Effect.Effect<
                       syncStaleAfterMillis
                     ? "stale"
                     : "synced",
-              dataUpTo: Option.getOrNull(
-                Option.map(progress, (p) => DateTime.unsafeMake(p.ts * 1000)),
-              ),
+              dataUpTo:
+                ends.length === 0
+                  ? null
+                  : ends.reduce((a, b) => DateTime.max(a, b)),
               lastActivity: Option.getOrNull(lastActivity),
             });
           }

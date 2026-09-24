@@ -656,10 +656,11 @@ describe("status", () => {
     ]);
   });
 
-  // A stale iPad, and an iPhone that synced an hour ago with one Activity.
-  // The suite runs on the real clock, so the sync is relative to it.
+  // A stale iPad, and an iPhone that synced an hour ago, with or without
+  // one Activity and Progress. The suite runs on the real clock, so the
+  // sync is relative to it.
   const syncedAt = new Date(Date.now() - 3_600_000).toISOString();
-  const seedSynced = (progress: boolean) =>
+  const seedSynced = (seeds: { activity: boolean; progress: boolean }) =>
     Effect.runPromise(
       Effect.scoped(
         Effect.gen(function* () {
@@ -674,15 +675,17 @@ describe("status", () => {
             name: "iPhone",
             externalId: "P2",
           });
-          yield* store.insertActivity({
-            deviceId: iphone.id,
-            bundleId: "com.apple.mobilesafari",
-            appName: "com.apple.mobilesafari",
-            title: null,
-            url: null,
-            startedAt: DateTime.unsafeMake("2026-09-19T16:01:00.000Z"),
-            endedAt: DateTime.unsafeMake("2026-09-19T16:06:00.000Z"),
-          });
+          if (seeds.activity) {
+            yield* store.insertActivity({
+              deviceId: iphone.id,
+              bundleId: "com.apple.mobilesafari",
+              appName: "com.apple.mobilesafari",
+              title: null,
+              url: null,
+              startedAt: DateTime.unsafeMake("2026-09-19T16:01:00.000Z"),
+              endedAt: DateTime.unsafeMake("2026-09-19T16:06:00.000Z"),
+            });
+          }
           yield* store.setSetting(
             "importer.status",
             JSON.stringify({
@@ -694,11 +697,11 @@ describe("status", () => {
               ],
             }),
           );
-          if (progress) {
-            // 1789826400 is 2026-09-19 14:00Z, 07:00 in Los Angeles.
+          if (seeds.progress) {
+            // 1789837200 is 2026-09-19 17:00Z, 10:00 in Los Angeles.
             yield* store.setSetting(
               "importer.progress.P2",
-              JSON.stringify({ segment: "s1", offset: 10, ts: 1789826400 }),
+              JSON.stringify({ segment: "s1", offset: 10, ts: 1789837200 }),
             );
           }
         }),
@@ -706,8 +709,8 @@ describe("status", () => {
     );
 
   it("status prints data up to for a synced iPhone and the late hint", async () => {
-    // Given: a stale iPad, a synced iPhone with Progress at 07:00
-    await seedSynced(true);
+    // Given: a stale iPad, a synced iPhone with Progress at 10:00
+    await seedSynced({ activity: true, progress: true });
     // When
     const { exit, output } = await run(
       allGranted,
@@ -724,7 +727,7 @@ describe("status", () => {
       "  ○ Automation        no browser used yet",
       "iOS import     ✔ ok · 2026-09-19 10:30",
       "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
-      "  ✔ iPhone       data up to 2026-09-19 07:00 · last activity 2026-09-19 09:06",
+      "  ✔ iPhone       data up to 2026-09-19 10:00 · last activity 2026-09-19 09:06",
       "  iPhone and iPad data comes from Apple a few hours late.",
       "Last activity  2026-09-19 09:06",
       `Database       ${path}`,
@@ -732,8 +735,8 @@ describe("status", () => {
   });
 
   it("status prints no data yet for a synced iPhone with no Progress", async () => {
-    // Given: a stale iPad, a synced iPhone with no Progress
-    await seedSynced(false);
+    // Given: a stale iPad, a synced iPhone with no Progress and no Activity
+    await seedSynced({ activity: false, progress: false });
     // When
     const { exit, output } = await run(
       allGranted,
@@ -750,16 +753,16 @@ describe("status", () => {
       "  ○ Automation        no browser used yet",
       "iOS import     ✔ ok · 2026-09-19 10:30",
       "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
-      "  ✔ iPhone       no data yet · last activity 2026-09-19 09:06",
+      "  ✔ iPhone       no data yet · last activity none yet",
       "  iPhone and iPad data comes from Apple a few hours late.",
-      "Last activity  2026-09-19 09:06",
+      "Last activity  none yet",
       `Database       ${path}`,
     ]);
   });
 
   it("status wraps the late hint on a narrow terminal", async () => {
     // Given: a synced iPhone with Progress, a terminal 40 columns wide
-    await seedSynced(true);
+    await seedSynced({ activity: true, progress: true });
     // When
     const { exit, output } = await run(
       allGranted,
@@ -781,8 +784,8 @@ describe("status", () => {
   });
 
   it("status --json carries dataUpTo", async () => {
-    // Given: a stale iPad, a synced iPhone with Progress at 14:00Z
-    await seedSynced(true);
+    // Given: a stale iPad, a synced iPhone with Progress at 17:00Z
+    await seedSynced({ activity: true, progress: true });
     // When
     const { exit, output } = await run(
       allGranted,
@@ -805,7 +808,7 @@ describe("status", () => {
         kind: "iphone",
         lastSync: syncedAt,
         sync: "synced",
-        dataUpTo: "2026-09-19T14:00:00.000Z",
+        dataUpTo: "2026-09-19T17:00:00.000Z",
         lastActivity: "2026-09-19T16:06:00.000Z",
       },
     ]);
