@@ -21,7 +21,10 @@ const EmptyStore = Layer.scoped(
   Effect.map(openStore(":memory:"), (shape) => new Store(shape)),
 );
 
-const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
+const runPrint = <A, E>(
+  body: Effect.Effect<A, E, Store | Prompt | Style>,
+  style: Layer.Layer<Style> = Style.Test,
+) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* MockTerminal.make(false);
@@ -36,7 +39,7 @@ const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
                 terminal.layer,
                 Prompt.Default,
                 EmptyStore,
-                Style.Test,
+                style,
               ),
             ),
           ),
@@ -79,6 +82,41 @@ describe("rules", () => {
         yield* printRules(false);
         return { r0, r1 };
       }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const { r0, r1 } = exit.value;
+      expect(output).toEqual([
+        "  #  when                           then               id",
+        `  0  title ends with "(Incognito)"  private            ${r0.id}`,
+        `  1  domain ends with "github.com"  category Research  ${r1.id}`,
+        "  2 rules",
+      ]);
+    }
+  });
+
+  it("list on a narrow terminal prints the id whole", async () => {
+    // Given: two Rules, a terminal 60 columns wide
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const c = yield* seedCategory;
+        const r0 = yield* addRule(privateRule);
+        const r1 = yield* addRule({
+          field: "domain",
+          compare: "ends with",
+          value: "github.com",
+          effect: "category",
+          target: c.id,
+        });
+        // When
+        yield* printRules(false);
+        return { r0, r1 };
+      }),
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 60 }),
+      ),
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);

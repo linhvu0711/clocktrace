@@ -134,6 +134,7 @@ export const setup = (
         const { appPath, plistPath, logPath } = yield* CollectorPaths;
         const home = homedir();
         yield* prompt.print(line([span("head", "Collector")], look));
+        // A path stays whole on a narrow terminal, so it matches its file.
         const collectorRows = columns(
           [
             [
@@ -147,6 +148,7 @@ export const setup = (
             [["  ", mark("ok", look), " running"]],
           ],
           look,
+          { overflow: "keep" },
         );
         // What an undo, after a failure or a stop, could not put back.
         const printNotRestored = (restored: Restored) =>

@@ -52,7 +52,9 @@ export const printCategories = (
       categories.length === 0
         ? ["none"]
         : [
-            ...columns([header, ...categories.map(categoryRow)], look),
+            ...columns([header, ...categories.map(categoryRow)], look, {
+              overflow: "keep",
+            }),
             line(
               [
                 span(

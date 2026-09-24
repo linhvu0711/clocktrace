@@ -68,6 +68,7 @@ describe("permissions", () => {
       readonly outcome?: RequestOutcome;
       readonly requestError?: (grant: GrantRequest) => HelperExitedError | null;
       readonly appLayer?: Layer.Layer<App>;
+      readonly styleLayer?: Layer.Layer<Style>;
       readonly commands?: Record<string, ExecResult>;
       readonly permissionsErrorAt?: number;
       readonly permissionsError?: HelperExitedError;
@@ -125,7 +126,7 @@ describe("permissions", () => {
           fakeLaunchd(state),
           helper,
           options.appLayer ?? App.Test,
-          Style.Test,
+          options.styleLayer ?? Style.Test,
           CollectorPaths.Test,
           exec.layer,
         );
@@ -248,6 +249,34 @@ describe("permissions", () => {
       "  ✔ Accessibility          window titles",
       "  ✘ Automation · Chromium  denied · turn it on in System Settings › Privacy › Automation",
       "  ✘ Full Disk Access       denied · turn it on in System Settings › Privacy › Full Disk Access",
+      "no terminal, skipping questions",
+    ]);
+  });
+
+  it("a narrow terminal wraps the fix rows", async () => {
+    // Given: Chromium and full disk access denied, no TTY, 60 columns
+    const p: Permissions = {
+      accessibility: "granted",
+      automation: { "org.chromium.Chromium": "denied" },
+      fullDiskAccess: "denied",
+    };
+    // When
+    const { exit, output } = await run([p], [], false, {
+      styleLayer: Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 60 }),
+      ),
+    });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Permissions   1 of 3 granted",
+      "  ✔ Accessibility          window titles",
+      "  ✘ Automation · Chromium  denied · turn it on in System",
+      "                           Settings › Privacy › Automation",
+      "  ✘ Full Disk Access       denied · turn it on in System",
+      "                           Settings › Privacy › Full Disk",
+      "                           Access",
       "no terminal, skipping questions",
     ]);
   });

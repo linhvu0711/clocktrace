@@ -96,6 +96,7 @@ describe("status", () => {
       | Style
     >,
     appLayer: Layer.Layer<App> = App.Test,
+    styleLayer: Layer.Layer<Style> = Style.Test,
   ) =>
     Effect.runPromise(
       Effect.gen(function* () {
@@ -110,7 +111,7 @@ describe("status", () => {
           fakeLaunchd(state),
           helperStub(p),
           appLayer,
-          Style.Test,
+          styleLayer,
           CollectorPaths.Test,
         );
         const exit = yield* Effect.exit(command.pipe(Effect.provide(layers)));
@@ -275,6 +276,80 @@ describe("status", () => {
       "Last activity  2026-09-18 10:05",
       `Database       ${path}`,
     ]);
+  });
+
+  it("status wraps a denied fix on a narrow terminal", async () => {
+    // Given: Chrome denied, one Activity, a terminal 60 columns wide
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    await Effect.runPromise(seedOne(path));
+    // When
+    const { exit, output } = await run(
+      {
+        accessibility: "granted",
+        automation: { "com.google.Chrome": "denied" },
+        fullDiskAccess: "granted",
+      },
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+      App.Test,
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 60 }),
+      ),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.slice(0, 7)).toEqual([
+      "Collector      ✔ running",
+      "Permissions    2 of 3 granted",
+      "  ✔ Accessibility        window titles",
+      "  ✔ Full Disk Access     iPhone and iPad import",
+      "  ✘ Automation · Chrome  denied · turn it on in System",
+      "                         Settings › Privacy › Automation",
+      "Last activity  2026-09-18 10:05",
+    ]);
+  });
+
+  it("status wraps the collector hint on a narrow terminal", async () => {
+    // Given: the collector stopped, a terminal 40 columns wide
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: false, plist: null, installs: 0 },
+      status(),
+      App.Test,
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 40 }),
+      ),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.slice(0, 2)).toEqual([
+      "Collector      ○ stopped · run",
+      "               clocktrace start",
+    ]);
+  });
+
+  it("status prints a database path whole on a narrow terminal", async () => {
+    // Given: a database path with two spaces in a row, 40 columns
+    path = join(dir, "My  Logs.db");
+    await Effect.runPromise(Effect.scoped(openStore(path)));
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+      App.Test,
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 40 }),
+      ),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.at(-1)).toBe(`Database       ${path}`);
   });
 
   it("status prints a browser that did not answer", async () => {

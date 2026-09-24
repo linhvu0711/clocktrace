@@ -12,7 +12,10 @@ import { Prompt } from "../src/prompt.js";
 import * as MockConsole from "./mock-console.js";
 import * as MockTerminal from "./mock-terminal.js";
 
-const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
+const runPrint = <A, E>(
+  body: Effect.Effect<A, E, Store | Prompt | Style>,
+  style: Layer.Layer<Style> = Style.Test,
+) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const terminal = yield* MockTerminal.make(false);
@@ -27,7 +30,7 @@ const runPrint = <A, E>(body: Effect.Effect<A, E, Store | Prompt | Style>) =>
                 terminal.layer,
                 Prompt.Default,
                 Store.Test,
-                Style.Test,
+                style,
               ),
             ),
           ),
@@ -48,6 +51,31 @@ describe("projects", () => {
         yield* printProjects(false);
         return p;
       }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      expect(output).toEqual([
+        "  name    id",
+        `  Thesis  ${exit.value.id}`,
+        "  1 project",
+      ]);
+    }
+  });
+
+  it("list on a narrow terminal prints the id whole", async () => {
+    // Given: one Project, a terminal 20 columns wide
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const p = yield* setProject({ id: null, name: "Thesis" });
+        // When
+        yield* printProjects(false);
+        return p;
+      }),
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 20 }),
+      ),
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);

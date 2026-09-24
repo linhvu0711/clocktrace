@@ -79,7 +79,9 @@ export const printRules = (
       rules.length === 0
         ? ["none"]
         : [
-            ...columns([header, ...rules.map((r) => ruleRow(r, names))], look),
+            ...columns([header, ...rules.map((r) => ruleRow(r, names))], look, {
+              overflow: "keep",
+            }),
             line(
               [span("dim", `  ${count(rules.length, "rule", "rules")}`)],
               look,

@@ -21,10 +21,11 @@ export type Look = {
 export type ColumnsOptions = {
   /**
    * What to do with a last cell wider than the room `Look.width` leaves:
-   * cut it with an ellipsis (the default), or wrap it onto lines indented
-   * to the column's start.
+   * cut it with an ellipsis (the default), wrap it onto lines indented
+   * to the column's start, or keep it whole for the terminal to wrap.
+   * Text a person reads wraps; a token they copy into a command keeps.
    */
-  readonly overflow?: "truncate" | "wrap";
+  readonly overflow?: "truncate" | "wrap" | "keep";
   /** Per column, by index; a missing entry is `"left"`. */
   readonly align?: ReadonlyArray<"left" | "right">;
 };
@@ -158,21 +159,29 @@ const cut = (cell: Cell, room: number, look: Look): ReadonlyArray<Span> => {
 const widthOf = (gs: ReadonlyArray<Grapheme>): number =>
   gs.reduce((n, g) => n + g.width, 0);
 
-/** Splits at spaces; a run of spaces is one break and the spaces are dropped. */
-const tokens = (
-  gs: ReadonlyArray<Grapheme>,
-): ReadonlyArray<ReadonlyArray<Grapheme>> => {
-  const out: Array<Array<Grapheme>> = [];
-  let open: Array<Grapheme> = [];
+type Token = {
+  /** The run of spaces before the word, kept so a line prints it as it was. */
+  readonly gap: ReadonlyArray<Grapheme>;
+  readonly word: ReadonlyArray<Grapheme>;
+};
+
+/** Splits at spaces; a run of spaces is one break. */
+const tokens = (gs: ReadonlyArray<Grapheme>): ReadonlyArray<Token> => {
+  const out: Array<Token> = [];
+  let gap: Array<Grapheme> = [];
+  let word: Array<Grapheme> = [];
   for (const g of gs) {
     if (g.text !== " ") {
-      open.push(g);
-    } else if (open.length > 0) {
-      out.push(open);
-      open = [];
+      word.push(g);
+    } else if (word.length > 0) {
+      out.push({ gap, word });
+      gap = [g];
+      word = [];
+    } else if (out.length > 0) {
+      gap.push(g);
     }
   }
-  return open.length > 0 ? [...out, open] : out;
+  return word.length > 0 ? [...out, { gap, word }] : out;
 };
 
 const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
@@ -186,11 +195,13 @@ const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
       openWidth = 0;
     }
   };
-  for (const token of tokens(graphemes(cell))) {
-    const w = widthOf(token);
+  // A line keeps the spaces between its words; a break drops them.
+  for (const { gap, word } of tokens(graphemes(cell))) {
+    const w = widthOf(word);
+    const g = widthOf(gap);
     if (w > room) {
       flush();
-      let rest = token;
+      let rest = word;
       while (rest.length > 0) {
         const chunk = take(rest, room);
         // A grapheme wider than the room can never fit: drop it, as cut does.
@@ -200,15 +211,14 @@ const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
         rest = rest.slice(Math.max(chunk.length, 1));
       }
     } else if (open.length === 0) {
-      open = [...token];
+      open = [...word];
       openWidth = w;
-    } else if (openWidth + 1 + w <= room) {
-      const first = token[0];
-      open.push({ text: " ", tone: first?.tone, width: 1 }, ...token);
-      openWidth += 1 + w;
+    } else if (openWidth + g + w <= room) {
+      open.push(...gap, ...word);
+      openWidth += g + w;
     } else {
       flush();
-      open = [...token];
+      open = [...word];
       openWidth = w;
     }
   }
@@ -216,16 +226,17 @@ const wrap = (cell: Cell, room: number): ReadonlyArray<ReadonlyArray<Span>> => {
   return lines.map(regroup);
 };
 
-export const columns = (
+/** The printed lines of each row, in row order; a wrapped row has more than one. */
+export const rowLines = (
   rows: ReadonlyArray<ReadonlyArray<Cell>>,
   look: Look,
   options: ColumnsOptions = {},
-): ReadonlyArray<string> => {
+): ReadonlyArray<ReadonlyArray<string>> => {
   const widest = (i: number): number =>
     Math.max(...rows.map((r) => visible(r[i] ?? "")));
   const render = (ss: ReadonlyArray<Span>): string =>
     ss.map((s) => renderSpan(s, look)).join("");
-  return rows.flatMap((r) => {
+  return rows.map((r) => {
     const last = r.length - 1;
     const cell = r[last];
     if (cell === undefined) {
@@ -242,12 +253,15 @@ export const columns = (
       })
       .join("");
     const room = look.width - start;
-    if (look.width === 0 || visible(cell) <= room) {
+    // No room: the lead cells already overflow, so a cut saves no line.
+    if (
+      look.width === 0 ||
+      visible(cell) <= room ||
+      room <= 0 ||
+      options.overflow === "keep"
+    ) {
       const pad = right(last) ? " ".repeat(widest(last) - visible(cell)) : "";
       return [head + pad + render(spans(cell))];
-    }
-    if (room <= 0) {
-      return [head];
     }
     if (options.overflow === "wrap") {
       const [first, ...rest] = wrap(cell, room).map(render);
@@ -256,6 +270,12 @@ export const columns = (
     return [head + render(cut(cell, room, look))];
   });
 };
+
+export const columns = (
+  rows: ReadonlyArray<ReadonlyArray<Cell>>,
+  look: Look,
+  options: ColumnsOptions = {},
+): ReadonlyArray<string> => rowLines(rows, look, options).flat();
 
 export const clock = (t: DateTime.Utc, now: DateTime.Zoned): string => {
   const at = isoMinute(DateTime.setZone(t, now.zone));

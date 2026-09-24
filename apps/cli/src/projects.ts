@@ -47,7 +47,9 @@ export const printProjects = (
       projects.length === 0
         ? ["none"]
         : [
-            ...columns([header, ...projects.map(projectRow)], look),
+            ...columns([header, ...projects.map(projectRow)], look, {
+              overflow: "keep",
+            }),
             line(
               [
                 span(

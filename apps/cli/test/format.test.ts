@@ -9,6 +9,7 @@ import {
   duration,
   line,
   mark,
+  rowLines,
   Style,
   shellQuote,
   shortDuration,
@@ -227,11 +228,36 @@ describe("format", () => {
     expect(columns([["ab", "cdefghij"]], look)).toEqual(["ab  cdefghij"]);
   });
 
-  it("no room leaves the last cell empty", () => {
+  it("no room prints the last cell whole", () => {
     // Given
     const look = { color: false, unicode: true, width: 4 };
     // When / Then
-    expect(columns([["abcdef", "x"]], look)).toEqual(["abcdef  "]);
+    expect(columns([["abcdef", "x"]], look)).toEqual(["abcdef  x"]);
+  });
+
+  it("keep prints a too-wide last cell whole", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 8 };
+    // When / Then
+    expect(columns([["ab", "cdefghij"]], look, { overflow: "keep" })).toEqual([
+      "ab  cdefghij",
+    ]);
+  });
+
+  it("rowLines keeps each row's wrapped lines together", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 9 };
+    // When / Then
+    expect(
+      rowLines(
+        [
+          ["ab", "one two three"],
+          ["cd", "x"],
+        ],
+        look,
+        { overflow: "wrap" },
+      ),
+    ).toEqual([["ab  one", "    two", "    three"], ["cd  x"]]);
   });
 
   it("a too-wide last cell wraps onto lines indented to its column", () => {
@@ -250,6 +276,15 @@ describe("format", () => {
     expect(
       columns([["ab", "abcdefghijk"]], look, { overflow: "wrap" }),
     ).toEqual(["ab  abcde", "    fghij", "    k"]);
+  });
+
+  it("wrap keeps a run of spaces inside a line", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 9 };
+    // When / Then
+    expect(columns([["ab", "a  b cdefg"]], look, { overflow: "wrap" })).toEqual(
+      ["ab  a  b", "    cdefg"],
+    );
   });
 
   it("a wrapped cell keeps its tone on every line", () => {
@@ -279,12 +314,12 @@ describe("format", () => {
     ).toEqual(["ab  one two three"]);
   });
 
-  it("wrap with no room leaves the last cell empty", () => {
+  it("wrap with no room prints the last cell whole", () => {
     // Given
     const look = { color: false, unicode: true, width: 4 };
     // When / Then
     expect(columns([["abcdef", "x"]], look, { overflow: "wrap" })).toEqual([
-      "abcdef  ",
+      "abcdef  x",
     ]);
   });
 

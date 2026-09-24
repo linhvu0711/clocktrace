@@ -28,6 +28,7 @@ const EmptyStore = Layer.scoped(
 const runPrint = <A, E, ELayer>(
   layer: Layer.Layer<Store, ELayer, Scope.Scope>,
   body: Effect.Effect<A, E, Store | Prompt | Style>,
+  style: Layer.Layer<Style> = Style.Test,
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -43,7 +44,7 @@ const runPrint = <A, E, ELayer>(
                 terminal.layer,
                 Prompt.Default,
                 layer,
-                Style.Test,
+                style,
               ),
             ),
           ),
@@ -74,6 +75,43 @@ describe("categories", () => {
         yield* printCategories(false);
         return { coding, social };
       }),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    if (Exit.isSuccess(exit)) {
+      const { coding, social } = exit.value;
+      expect(output).toEqual([
+        "  name    productive      id",
+        `  Coding  productive      ${coding.id}`,
+        `  Social  not productive  ${social.id}`,
+        "  2 categories",
+      ]);
+    }
+  });
+
+  it("list on a narrow terminal prints the id whole", async () => {
+    // Given: two Categories, a terminal 30 columns wide
+    const { exit, output } = await runPrint(
+      EmptyStore,
+      Effect.gen(function* () {
+        const coding = yield* setCategory({
+          id: null,
+          name: "Coding",
+          productive: true,
+        });
+        const social = yield* setCategory({
+          id: null,
+          name: "Social",
+          productive: false,
+        });
+        // When
+        yield* printCategories(false);
+        return { coding, social };
+      }),
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 30 }),
+      ),
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
