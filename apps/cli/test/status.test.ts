@@ -656,6 +656,161 @@ describe("status", () => {
     ]);
   });
 
+  // A stale iPad, and an iPhone that synced an hour ago with one Activity.
+  // The suite runs on the real clock, so the sync is relative to it.
+  const syncedAt = new Date(Date.now() - 3_600_000).toISOString();
+  const seedSynced = (progress: boolean) =>
+    Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openStore(path);
+          yield* store.upsertDevice({
+            kind: "ipad",
+            name: "Linh's iPad",
+            externalId: "P3",
+          });
+          const iphone = yield* store.upsertDevice({
+            kind: "iphone",
+            name: "iPhone",
+            externalId: "P2",
+          });
+          yield* store.insertActivity({
+            deviceId: iphone.id,
+            bundleId: "com.apple.mobilesafari",
+            appName: "com.apple.mobilesafari",
+            title: null,
+            url: null,
+            startedAt: DateTime.unsafeMake("2026-09-19T16:01:00.000Z"),
+            endedAt: DateTime.unsafeMake("2026-09-19T16:06:00.000Z"),
+          });
+          yield* store.setSetting(
+            "importer.status",
+            JSON.stringify({
+              state: "ok",
+              at: "2026-09-19T17:30:00.000Z",
+              devices: [
+                { externalId: "P3", lastSync: "2026-09-17T17:00:00.000Z" },
+                { externalId: "P2", lastSync: syncedAt },
+              ],
+            }),
+          );
+          if (progress) {
+            // 1789826400 is 2026-09-19 14:00Z, 07:00 in Los Angeles.
+            yield* store.setSetting(
+              "importer.progress.P2",
+              JSON.stringify({ segment: "s1", offset: 10, ts: 1789826400 }),
+            );
+          }
+        }),
+      ),
+    );
+
+  it("status prints data up to for a synced iPhone and the late hint", async () => {
+    // Given: a stale iPad, a synced iPhone with Progress at 07:00
+    await seedSynced(true);
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Collector      ✔ running",
+      "Permissions    2 of 3 granted",
+      "  ✔ Accessibility     window titles",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation        no browser used yet",
+      "iOS import     ✔ ok · 2026-09-19 10:30",
+      "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
+      "  ✔ iPhone       data up to 2026-09-19 07:00 · last activity 2026-09-19 09:06",
+      "  iPhone and iPad data comes from Apple a few hours late.",
+      "Last activity  2026-09-19 09:06",
+      `Database       ${path}`,
+    ]);
+  });
+
+  it("status prints no data yet for a synced iPhone with no Progress", async () => {
+    // Given: a stale iPad, a synced iPhone with no Progress
+    await seedSynced(false);
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toEqual([
+      "Collector      ✔ running",
+      "Permissions    2 of 3 granted",
+      "  ✔ Accessibility     window titles",
+      "  ✔ Full Disk Access  iPhone and iPad import",
+      "  ○ Automation        no browser used yet",
+      "iOS import     ✔ ok · 2026-09-19 10:30",
+      "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
+      "  ✔ iPhone       no data yet · last activity 2026-09-19 09:06",
+      "  iPhone and iPad data comes from Apple a few hours late.",
+      "Last activity  2026-09-19 09:06",
+      `Database       ${path}`,
+    ]);
+  });
+
+  it("status wraps the late hint on a narrow terminal", async () => {
+    // Given: a synced iPhone with Progress, a terminal 40 columns wide
+    await seedSynced(true);
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(),
+      App.Test,
+      Layer.succeed(
+        Style,
+        new Style({ color: false, unicode: true, width: 40 }),
+      ),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    const at = output.indexOf("  iPhone and iPad data comes from Apple");
+    expect(output.slice(at, at + 2)).toEqual([
+      "  iPhone and iPad data comes from Apple",
+      "  a few hours late.",
+    ]);
+  });
+
+  it("status --json carries dataUpTo", async () => {
+    // Given: a stale iPad, a synced iPhone with Progress at 14:00Z
+    await seedSynced(true);
+    // When
+    const { exit, output } = await run(
+      allGranted,
+      { installed: true, running: true, plist: null, installs: 0 },
+      status(true),
+    );
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(JSON.parse(output[0] ?? "").devices).toEqual([
+      {
+        name: "Linh's iPad",
+        kind: "ipad",
+        lastSync: "2026-09-17T17:00:00.000Z",
+        sync: "stale",
+        dataUpTo: null,
+        lastActivity: null,
+      },
+      {
+        name: "iPhone",
+        kind: "iphone",
+        lastSync: syncedAt,
+        sync: "synced",
+        dataUpTo: "2026-09-19T14:00:00.000Z",
+        lastActivity: "2026-09-19T16:06:00.000Z",
+      },
+    ]);
+  });
+
   it("status prints a closed browser's Saved grant with last checked", async () => {
     // Given: Safari closed with a saved granted Grant checked 2026-09-19 18:00Z
     await Effect.runPromise(

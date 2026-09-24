@@ -10,6 +10,7 @@ import {
   type HelperExitedError,
   type Launchd,
   type LaunchdError,
+  lateHint,
   type PermissionLine,
   readStatus,
   Status,
@@ -66,11 +67,13 @@ const deviceRow = (
 ): ReadonlyArray<Cell> => {
   const tone = d.sync === "synced" ? "ok" : d.sync === "stale" ? "bad" : "warn";
   const sync =
-    d.sync === "synced" && d.lastSync !== null
-      ? `last synced ${clock(d.lastSync, now)}`
-      : d.sync === "stale" && d.lastSync !== null
-        ? `not syncing since ${clock(d.lastSync, now)}`
-        : "never synced";
+    d.sync === "synced" && d.dataUpTo !== null
+      ? `data up to ${clock(d.dataUpTo, now)}`
+      : d.sync === "synced"
+        ? "no data yet"
+        : d.sync === "stale" && d.lastSync !== null
+          ? `not syncing since ${clock(d.lastSync, now)}`
+          : "never synced";
   const activity =
     d.lastActivity === null ? "none yet" : clock(d.lastActivity, now);
   return [
@@ -152,6 +155,10 @@ const statusScreen = (
             look,
             wrap,
           ),
+          // The empty lead cell indents the hint under the device rows.
+          ...(s.devices.some((d) => d.sync === "synced")
+            ? columns([["", span("dim", lateHint)]], look, wrap)
+            : []),
         ]
       : []),
     ...(gLast ?? []),
