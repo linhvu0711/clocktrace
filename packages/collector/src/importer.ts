@@ -201,12 +201,16 @@ export const importOnce = (
         progress.set(externalId, decoded.value);
       }
     }
-    const since = new Map([...progress].map(([id, p]) => [id, p.ts] as const));
+    // The Helper reads each Device from its Progress segment on; the offset
+    // check below drops the records of that segment already written.
+    const from = new Map(
+      [...progress].map(([id, p]) => [id, p.segment] as const),
+    );
 
     let records: ReadonlyArray<BiomeLine>;
     let reason: string | null = null;
     const recordLines = yield* Effect.either(
-      helper.biomeRecords(helperPath, since),
+      helper.biomeRecords(helperPath, from),
     );
     if (Either.isLeft(recordLines)) {
       const e = recordLines.left;

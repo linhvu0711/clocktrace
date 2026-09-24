@@ -20,13 +20,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   decodePermissions,
+  fromArgs,
   Helper,
   HelperExitedError,
   HelperFailedError,
   openArgs,
   Permissions,
   requestArgs,
-  sinceArgs,
 } from "../src/helper.js";
 
 describe("HelperExitedError", () => {
@@ -42,27 +42,27 @@ describe("HelperExitedError", () => {
     expect(message.length).toBeGreaterThan(0);
   });
 
-  it("sinceArgs writes one --since per Device", () => {
-    // Given: Progress for two devices, one with a fractional ts
+  it("fromArgs writes one --from per Device", () => {
+    // Given: the Progress segment of two devices, out of order
     const map = new Map([
-      ["b-device", 200.7],
-      ["a-device", 150],
+      ["b-device", "000000000000009"],
+      ["a-device", "000000000000001"],
     ]);
     // When
-    const args = sinceArgs(map);
+    const args = fromArgs(map);
     // Then
     expect(args).toEqual([
-      "--since",
-      "a-device=150",
-      "--since",
-      "b-device=200",
+      "--from",
+      "a-device=000000000000001",
+      "--from",
+      "b-device=000000000000009",
     ]);
   });
 
-  it("sinceArgs is empty without Progress", () => {
+  it("fromArgs is empty without Progress", () => {
     // Given: no Progress
     // When
-    const args = sinceArgs(new Map());
+    const args = fromArgs(new Map());
     // Then
     expect(args).toEqual([]);
   });

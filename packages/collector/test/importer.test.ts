@@ -6,6 +6,7 @@ import {
   Effect,
   Either,
   Layer,
+  Logger,
   Option,
   Ref,
   Schema,
@@ -207,7 +208,7 @@ type RecordsError =
 
 interface Ctx {
   calls: Ref.Ref<number>;
-  sinces: Ref.Ref<ReadonlyArray<ReadonlyMap<string, number>>>;
+  froms: Ref.Ref<ReadonlyArray<ReadonlyMap<string, string>>>;
   devicesRef: Ref.Ref<ReadonlyArray<DevicePeerLine>>;
   recordsRef: Ref.Ref<ReadonlyArray<BiomeLine>>;
 }
@@ -231,9 +232,9 @@ const run = <A, E>(
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);
       const calls = yield* Ref.make(0);
-      const sinces = yield* Ref.make<
-        ReadonlyArray<ReadonlyMap<string, number>>
-      >([]);
+      const froms = yield* Ref.make<ReadonlyArray<ReadonlyMap<string, string>>>(
+        [],
+      );
       const devicesRef = yield* Ref.make<ReadonlyArray<DevicePeerLine>>([]);
       const recordsRef = yield* Ref.make<ReadonlyArray<BiomeLine>>([]);
       const deviceEff: Effect.Effect<
@@ -255,8 +256,8 @@ const run = <A, E>(
       const stubHelper = Helper.Test({
         biomeDevices: () =>
           Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(deviceEff)),
-        biomeRecords: (_path, since) =>
-          Ref.update(sinces, (ss) => [...ss, since]).pipe(
+        biomeRecords: (_path, from) =>
+          Ref.update(froms, (fs) => [...fs, from]).pipe(
             Effect.andThen(recordEff),
           ),
       });
@@ -268,7 +269,7 @@ const run = <A, E>(
           macosVersion: Effect.succeed(macos),
         }),
       );
-      return yield* inside({ calls, sinces, devicesRef, recordsRef }).pipe(
+      return yield* inside({ calls, froms, devicesRef, recordsRef }).pipe(
         Effect.provide(
           Layer.mergeAll(
             stubHelper,
@@ -594,6 +595,36 @@ describe("importer", () => {
     expect(result.devices).toEqual([]);
   });
 
+  it("without Full Disk Access at biome records the run logs it and writes nothing", async () => {
+    // Given: biome devices lists an iPhone, biome records reports no Full Disk Access
+    const logs: Array<string> = [];
+    const testLogger = Logger.replace(
+      Logger.defaultLogger,
+      Logger.make(({ message }) => {
+        logs.push(String(message));
+      }),
+    );
+    // When
+    const status = await run(
+      {
+        devices: [D_PHONE],
+        records: Effect.fail(new NoFullDiskAccessError()),
+      },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* importOnce("/stub").pipe(Effect.provide(testLogger));
+          const store = yield* Store;
+          return yield* store.getSetting("importer.status");
+        }),
+    );
+    // Then
+    expect({ logs, status }).toEqual({
+      logs: ["full disk access missing, iOS import skipped"],
+      status: Option.none(),
+    });
+  });
+
   it("a missing remote folder records broken with the helper's reason", async () => {
     // Given: biome records finds no remote folder after the devices import
     // When
@@ -679,7 +710,7 @@ describe("importer", () => {
     });
   });
 
-  it("a second run imports nothing new and passes each Device's Progress", async () => {
+  it("a second run imports nothing new and passes each Device's Progress segment", async () => {
     // Given: the same devices and records imported twice
     // When
     const result = await run(
@@ -695,7 +726,7 @@ describe("importer", () => {
             progressP2: yield* store.getSetting(importProgressKey(P2)),
             progressP3: yield* store.getSetting(importProgressKey(P3)),
             since: yield* store.getSetting("importer.since"),
-            sinces: yield* Ref.get(ctx.sinces),
+            froms: yield* Ref.get(ctx.froms),
           };
         }),
     );
@@ -712,11 +743,11 @@ describe("importer", () => {
       ts: 1789834200,
     });
     expect(result.since).toEqual(Option.none());
-    expect(result.sinces).toEqual([
+    expect(result.froms).toEqual([
       new Map(),
       new Map([
-        [P2, 1789834260],
-        [P3, 1789834200],
+        [P2, S],
+        [P3, T],
       ]),
     ]);
   });
@@ -737,16 +768,16 @@ describe("importer", () => {
           yield* importOnce("/stub");
           const store = yield* Store;
           return {
-            sinces: yield* Ref.get(ctx.sinces),
+            froms: yield* Ref.get(ctx.froms),
             progressP3: yield* store.getSetting(importProgressKey(P3)),
           };
         }),
     );
     // Then
-    expect(result.sinces).toEqual([
+    expect(result.froms).toEqual([
       new Map(),
-      new Map([[P2, 1789834260]]),
-      new Map([[P2, 1789834260]]),
+      new Map([[P2, S]]),
+      new Map([[P2, S]]),
     ]);
     expect(result.progressP3).toEqual(Option.none());
   });
@@ -776,6 +807,46 @@ describe("importer", () => {
       url: null,
       startedAt: "2026-09-19T16:11:00.000Z",
       endedAt: "2026-09-19T16:16:00.000Z",
+    });
+  });
+
+  it("a record added to the Progress segment is written on the next run", async () => {
+    // Given: a run that leaves the iPhone's Progress in segment S, then the
+    // MobileSMS end synced into that same segment
+    // When
+    const result = await run(
+      { devices: [D_PHONE, D_PAD], records: "ref" },
+      "27.0",
+      (ctx) =>
+        Effect.gen(function* () {
+          yield* Ref.set(ctx.recordsRef, ALL);
+          yield* importOnce("/stub");
+          yield* Ref.set(ctx.recordsRef, [...ALL, R13]);
+          yield* importOnce("/stub");
+          return {
+            froms: yield* Ref.get(ctx.froms),
+            activities: yield* rows,
+          };
+        }),
+    );
+    // Then
+    expect({
+      from: result.froms[1],
+      last: result.activities[3],
+    }).toEqual({
+      from: new Map([
+        [P2, S],
+        [P3, T],
+      ]),
+      last: {
+        device: "iPhone",
+        appName: "com.apple.MobileSMS",
+        bundleId: "com.apple.MobileSMS",
+        title: null,
+        url: null,
+        startedAt: "2026-09-19T16:11:00.000Z",
+        endedAt: "2026-09-19T16:16:00.000Z",
+      },
     });
   });
 

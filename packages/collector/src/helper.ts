@@ -215,15 +215,12 @@ const recordsResult = ({
   }
 };
 
-export const sinceArgs = (
-  since: ReadonlyMap<string, number>,
+export const fromArgs = (
+  from: ReadonlyMap<string, string>,
 ): ReadonlyArray<string> =>
-  [...since.entries()]
+  [...from.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .flatMap(([device, seconds]) => [
-      "--since",
-      `${device}=${Math.floor(seconds)}`,
-    ]);
+    .flatMap(([device, segment]) => ["--from", `${device}=${segment}`]);
 
 // The `open` flags the Helper is always run under: wait for the app,
 // launch a fresh instance so its stdout is the app's own, and capture
@@ -322,9 +319,9 @@ export class Helper extends Effect.Service<Helper>()("Helper", {
         runBiome(Command.make(path, "biome", "devices")).pipe(
           Effect.flatMap(devicesResult),
         ),
-      biomeRecords: (path: string, since: ReadonlyMap<string, number>) =>
+      biomeRecords: (path: string, from: ReadonlyMap<string, string>) =>
         runBiome(
-          Command.make(path, "biome", "records", ...sinceArgs(since)),
+          Command.make(path, "biome", "records", ...fromArgs(from)),
         ).pipe(Effect.flatMap(recordsResult)),
     };
 
