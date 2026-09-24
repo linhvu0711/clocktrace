@@ -23,11 +23,11 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
   `{"outcome":"asked"}` to stdout and exit with the request's code. Browser not
   running: `<bundleId> is not running, open it and retry` to stderr,
   `{"outcome":"notRunning"}` to stdout, exit 3.
-- `clocktrace-helper biome records [--since <deviceId>=<unixSeconds>]...` — print one JSON line per iPhone and iPad focus record from the Biome App.InFocus stream, ordered by device, segment file, and offset; each `--since` names one device folder and skips its segment files modified before that Unix time; a device folder with no flag is read in full. Each device's `tombstone/` subfolder holds deletion markers, not records, and is skipped. An entry whose payload does not match its header CRC32 prints the `parse` error line at its offset. Exit 3 without Full Disk Access, 4 without the remote folder, 6 when a device folder cannot be listed (the other devices still print).
+- `clocktrace-helper biome records [--from <deviceId>=<segment>]...` — print one JSON line per iPhone and iPad focus record from the Biome App.InFocus stream, ordered by device, segment file, and offset; each `--from` names one device folder and one segment file name, and skips that device's segment files whose name sorts before it, so the named file and every later one are read, also when the named file is gone; a device folder with no flag is read in full. Each device's `tombstone/` subfolder holds deletion markers, not records, and is skipped. An entry whose payload does not match its header CRC32 prints the `parse` error line at its offset. Exit 3 without Full Disk Access, 4 without the remote folder, 6 when a device folder cannot be listed (the other devices still print).
 - `clocktrace-helper biome devices` — print one JSON line per row of the Biome `DevicePeer` table. Exit 3 without Full Disk Access, 5 when the table cannot be read.
 - `clocktrace-helper spawn <program> [args...]` — run `<program>` with the args as a child of this binary, forward SIGTERM and SIGINT to it, and exit with its exit status (128 + signal when it dies on a signal). Prints `spawn: cannot start <program>` and exits 127 when the child does not start.
 - Anything else — print
-  `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--since <deviceId>=<unixSeconds>]... | biome devices | spawn <program> [args...])`
+  `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--from <deviceId>=<segment>]... | biome devices | spawn <program> [args...])`
   to stderr and exit 2.
 
 ## Lines
@@ -88,7 +88,7 @@ Run these by hand from a terminal at `packages/helper`, with
 `BIN="$(swift build -c release --show-bin-path)/clocktrace-helper"`:
 
 1. `"$BIN" --version` prints `0.0.0`; `"$BIN" bogus` prints
-   `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess))`
+   `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--from <deviceId>=<segment>]... | biome devices | spawn <program> [args...])`
    to stderr and exits 2.
 2. With Accessibility off for the terminal: `"$BIN" watch` prints a first line
    for the terminal with `"title":null,"missing":["accessibility"]`, repeats a

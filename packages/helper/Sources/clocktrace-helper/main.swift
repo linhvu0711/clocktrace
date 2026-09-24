@@ -21,8 +21,8 @@ case .requestFullDiskAccess:
   let code = requestFullDiskAccess()
   emit(requestOutcomeLine(exitCode: code))
   exit(code)
-case .biomeRecords(let since):
-  exit(biomeRecords(since: since))
+case .biomeRecords(let from):
+  exit(biomeRecords(from: from))
 case .biomeDevices:
   exit(biomeDevices())
 case .spawn(let program, let args):
