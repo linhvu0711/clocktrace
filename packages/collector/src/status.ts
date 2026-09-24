@@ -11,7 +11,7 @@ import {
   noAnswerNote,
 } from "./grant.js";
 import type { Helper, HelperExitedError } from "./helper.js";
-import { ImportResult, importStatusKey } from "./importer.js";
+import { ImportResult, importStatusKey, readProgress } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
 import type { CollectorPaths } from "./paths.js";
@@ -49,6 +49,7 @@ export const DeviceStatus = Schema.Struct({
   kind: Schema.Literal("iphone", "ipad"),
   lastSync: Schema.NullOr(Schema.DateTimeUtc),
   sync: Schema.Literal("synced", "stale", "never"),
+  dataUpTo: Schema.NullOr(Schema.DateTimeUtc),
   lastActivity: Schema.NullOr(Schema.DateTimeUtc),
 });
 
@@ -138,6 +139,7 @@ export const readStatus = (): Effect.Effect<
             }
             const lastSync = lastSyncs.get(device.externalId) ?? null;
             const lastActivity = yield* store.latestActivityEnd(device.id);
+            const progress = yield* readProgress(store, device.externalId);
             devices.push({
               name: device.name,
               kind: device.kind,
@@ -149,6 +151,9 @@ export const readStatus = (): Effect.Effect<
                       syncStaleAfterMillis
                     ? "stale"
                     : "synced",
+              dataUpTo: Option.getOrNull(
+                Option.map(progress, (p) => DateTime.unsafeMake(p.ts * 1000)),
+              ),
               lastActivity: Option.getOrNull(lastActivity),
             });
           }
@@ -165,6 +170,10 @@ export const readStatus = (): Effect.Effect<
       databasePath,
     };
   });
+
+/** Said under the device rows while one syncs: Apple sends App.InFocus records hours late (ADR 0004). */
+export const lateHint =
+  "iPhone and iPad data comes from Apple a few hours late.";
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 
@@ -206,17 +215,22 @@ export const statusLines = (
     }
     for (const d of s.devices) {
       lines.push(
-        d.sync === "synced" && d.lastSync !== null
-          ? `${d.name}: last synced ${yield* stamp(d.lastSync)}`
-          : d.sync === "stale" && d.lastSync !== null
-            ? `${d.name}: not syncing since ${yield* stamp(d.lastSync)}`
-            : `${d.name}: never synced`,
+        d.sync === "synced" && d.dataUpTo !== null
+          ? `${d.name}: data up to ${yield* stamp(d.dataUpTo)}`
+          : d.sync === "synced"
+            ? `${d.name}: no data yet`
+            : d.sync === "stale" && d.lastSync !== null
+              ? `${d.name}: not syncing since ${yield* stamp(d.lastSync)}`
+              : `${d.name}: never synced`,
       );
       lines.push(
         d.lastActivity === null
           ? `${d.name}: last activity none yet`
           : `${d.name}: last activity ${yield* stamp(d.lastActivity)}`,
       );
+    }
+    if (s.devices.some((d) => d.sync === "synced")) {
+      lines.push(lateHint);
     }
     if (s.lastActivity === null) {
       lines.push("last activity: none yet");

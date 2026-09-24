@@ -1468,6 +1468,10 @@ describe("server", () => {
             ],
           }),
         );
+        yield* store.setSetting(
+          "importer.progress.P2",
+          JSON.stringify({ segment: "s1", offset: 10, ts: 1789826400 }),
+        );
       });
     const { client, close } = await connect(withActivities(seedIos));
     // When
@@ -1511,6 +1515,7 @@ describe("server", () => {
           kind: "ipad",
           lastSync: "2026-09-17T17:00:00.000Z",
           sync: "stale",
+          dataUpTo: null,
           lastActivity: null,
         },
         {
@@ -1518,6 +1523,7 @@ describe("server", () => {
           kind: "iphone",
           lastSync: null,
           sync: "never",
+          dataUpTo: "2026-09-19T14:00:00.000Z",
           lastActivity: "2026-09-19T16:06:00.000Z",
         },
       ],
