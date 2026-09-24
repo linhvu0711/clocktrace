@@ -112,6 +112,9 @@ chmod 755 "$stage/helper/clocktrace-helper" "$app/Contents/MacOS/Clocktrace"
 node --input-type=module \
   -e 'import { infoPlist } from "./packages/collector/dist/index.js"; process.stdout.write(infoPlist());' \
   >"$app/Contents/Info.plist"
+mkdir -p "$app/Contents/Resources"
+cp packages/collector/assets/Assets.car packages/collector/assets/AppIcon.icns \
+  "$app/Contents/Resources/"
 
 if [[ "$sign" == "0" ]]; then
   codesign --force --sign - "$app"

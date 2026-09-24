@@ -6,7 +6,12 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!pnpm-lock.yaml", "!!repos"]
+    "includes": [
+      "**",
+      "!pnpm-lock.yaml",
+      "!!repos",
+      "!packages/collector/assets/AppIcon.icon"
+    ]
   },
   "formatter": {
     "enabled": true,

@@ -10,7 +10,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "assets/Assets.car",
+    "assets/AppIcon.icns"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

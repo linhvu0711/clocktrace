@@ -34,6 +34,8 @@ import {
   App,
   AppError,
   AppNotInstalledError,
+  appIconDir,
+  appIconFiles,
   hasDeveloperIdSignature,
   infoPlist,
   lsregisterPath,
@@ -196,6 +198,10 @@ describe("infoPlist", () => {
   <string>Clocktrace</string>
   <key>CFBundleExecutable</key>
   <string>Clocktrace</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -217,6 +223,25 @@ describe("infoPlist", () => {
     );
     // Then
     expect(has).toBe(false);
+  });
+});
+
+describe("appIconFiles", () => {
+  it("the published package carries every icon file", async () => {
+    // Given: the collector's package.json, which decides what pnpm deploy
+    // ships; a bare-Helper install reads the icons from there
+    const manifest = JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ) as { readonly files: ReadonlyArray<string> };
+    // When
+    const missing = appIconFiles.filter(
+      (file) => !manifest.files.includes(`assets/${file}`),
+    );
+    // Then
+    expect(missing).toEqual([]);
+    for (const file of appIconFiles) {
+      expect(existsSync(join(appIconDir, file))).toBe(true);
+    }
   });
 });
 
@@ -264,6 +289,11 @@ describe("App.install", () => {
     const mainFile = join(appHome, "Contents", "MacOS", "Clocktrace");
     expect(readFileSync(mainFile, "utf8")).toBe("helper-bytes");
     expect(statSync(mainFile).mode & 0o777).toBe(0o755);
+    for (const file of appIconFiles) {
+      expect(
+        readFileSync(join(appHome, "Contents", "Resources", file)),
+      ).toEqual(readFileSync(join(appIconDir, file)));
+    }
     const staging = `${appPath}.new`;
     expect(commands).toEqual([
       ["codesign", "-dv", join(staging, "Contents", "MacOS", "Clocktrace")],
