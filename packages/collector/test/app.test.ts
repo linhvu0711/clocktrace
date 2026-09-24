@@ -34,6 +34,8 @@ import {
   App,
   AppError,
   AppNotInstalledError,
+  appIconDir,
+  appIconFiles,
   hasDeveloperIdSignature,
   infoPlist,
   lsregisterPath,
@@ -196,6 +198,10 @@ describe("infoPlist", () => {
   <string>Clocktrace</string>
   <key>CFBundleExecutable</key>
   <string>Clocktrace</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -264,6 +270,11 @@ describe("App.install", () => {
     const mainFile = join(appHome, "Contents", "MacOS", "Clocktrace");
     expect(readFileSync(mainFile, "utf8")).toBe("helper-bytes");
     expect(statSync(mainFile).mode & 0o777).toBe(0o755);
+    for (const file of appIconFiles) {
+      expect(
+        readFileSync(join(appHome, "Contents", "Resources", file)),
+      ).toEqual(readFileSync(join(appIconDir, file)));
+    }
     const staging = `${appPath}.new`;
     expect(commands).toEqual([
       ["codesign", "-dv", join(staging, "Contents", "MacOS", "Clocktrace")],

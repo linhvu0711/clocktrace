@@ -1,4 +1,5 @@
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Command, CommandExecutor, FileSystem } from "@effect/platform";
 import { NodeContext } from "@effect/platform-node";
@@ -20,6 +21,10 @@ export const infoPlist = (): string => `<?xml version="1.0" encoding="UTF-8"?>
   <string>Clocktrace</string>
   <key>CFBundleExecutable</key>
   <string>Clocktrace</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -31,6 +36,12 @@ export const infoPlist = (): string => `<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>
 `;
+
+// The icon scripts/build-app-icon.sh compiles from AppIcon.icon: Assets.car
+// for macOS 26 and later, AppIcon.icns before. Both go in Contents/Resources,
+// where the plist's CFBundleIconName and CFBundleIconFile find them.
+export const appIconDir = fileURLToPath(new URL("../assets/", import.meta.url));
+export const appIconFiles = ["Assets.car", "AppIcon.icns"] as const;
 
 export const hasDeveloperIdSignature = (
   codesignLines: ReadonlyArray<string>,
@@ -218,6 +229,17 @@ export class App extends Effect.Service<App>()("App", {
                   infoPlist(),
                 )
                 .pipe(Effect.mapError(fsError(`write ${staging}`)));
+              const resources = join(staging, "Contents", "Resources");
+              yield* fs
+                .makeDirectory(resources, { recursive: true })
+                .pipe(Effect.mapError(fsError(`write ${staging}`)));
+              for (const file of appIconFiles) {
+                yield* fs
+                  .copyFile(join(appIconDir, file), join(resources, file))
+                  .pipe(
+                    Effect.mapError(fsError(`copy ${join(resources, file)}`)),
+                  );
+              }
               yield* fs
                 .copyFile(helperPath, stagingMain)
                 .pipe(Effect.mapError(fsError(`copy ${stagingMain}`)));

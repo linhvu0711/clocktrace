@@ -1,0 +1,45 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.96078,0.94118,0.90588,1.00000",
+      "srgb:0.89412,0.85490,0.79216,1.00000"
+    ]
+  },
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "hand.svg",
+          "name": "Hand"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name": "trail.svg",
+          "name": "Trail"
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": true,
+        "value": 0.5
+      }
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}
