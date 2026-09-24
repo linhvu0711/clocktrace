@@ -1,24 +1,14 @@
 import Foundation
 
-public struct BiomeSegment: Equatable {
-  public var name: String
-  public var modifiedAt: Double
-
-  public init(name: String, modifiedAt: Double) {
-    self.name = name
-    self.modifiedAt = modifiedAt
-  }
-}
-
 public enum DevicePeerRead: Equatable {
   case rows([DevicePeerLine])
   case failed(String)
 }
 
-/// The segment files of one device, or the folder that could not be listed
+/// The segment file names of one device, or the folder that could not be listed
 /// as `<folder>: <reason>`.
 public enum SegmentsRead: Equatable {
-  case listed([BiomeSegment])
+  case listed([String])
   case failed(String)
 }
 

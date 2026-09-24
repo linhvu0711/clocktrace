@@ -94,7 +94,7 @@ private func isDirectory(_ path: String) -> Bool {
   return exists && isDirectory.boolValue
 }
 
-/// The regular files in `folder` with each file's own modification time.
+/// The regular files in `folder`, by name.
 /// Subfolders are skipped: `tombstone/` holds deletion markers, not records.
 /// A folder that cannot be listed is `<folder>: <reason>`.
 private func segmentFiles(in folder: String) -> SegmentsRead {
@@ -105,14 +105,7 @@ private func segmentFiles(in folder: String) -> SegmentsRead {
         .filter { name in
           !name.hasPrefix(".") && !isDirectory(folder + "/" + name)
         }
-        .map { name in
-          let attributes = try? FileManager.default.attributesOfItem(
-            atPath: folder + "/" + name)
-          let modifiedAt =
-            (attributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-          return BiomeSegment(name: name, modifiedAt: modifiedAt)
-        }
-        .sorted { $0.name < $1.name })
+        .sorted())
   } catch {
     return .failed("\(folder): \(listingReason(error))")
   }

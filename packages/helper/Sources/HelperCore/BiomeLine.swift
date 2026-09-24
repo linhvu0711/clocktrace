@@ -64,10 +64,12 @@ extension BiomeRecordLine: Encodable {
 }
 
 public struct BiomeParseErrorLine: Equatable {
+  public var device: String
   public var segment: String
   public var offset: Int
 
-  public init(segment: String, offset: Int) {
+  public init(device: String, segment: String, offset: Int) {
+    self.device = device
     self.segment = segment
     self.offset = offset
   }
@@ -75,6 +77,7 @@ public struct BiomeParseErrorLine: Equatable {
 
 extension BiomeParseErrorLine: Encodable {
   private enum CodingKeys: String, CodingKey {
+    case device
     case error
     case segment
     case offset
@@ -82,6 +85,7 @@ extension BiomeParseErrorLine: Encodable {
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(device, forKey: .device)
     try container.encode("parse", forKey: .error)
     try container.encode(segment, forKey: .segment)
     try container.encode(offset, forKey: .offset)

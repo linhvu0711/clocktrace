@@ -13,6 +13,7 @@ export const BiomeRecordLine = Schema.Struct({
 });
 
 export const BiomeParseErrorLine = Schema.Struct({
+  device: Schema.String,
   error: Schema.Literal("parse"),
   segment: Schema.String,
   offset: Schema.Number,

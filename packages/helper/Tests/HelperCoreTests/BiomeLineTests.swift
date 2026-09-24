@@ -49,13 +49,14 @@ final class BiomeLineTests: XCTestCase {
 
   func testEncodesAParseError() {
     // Given: a parse error line
-    let line = BiomeLine.parseError(BiomeParseErrorLine(segment: "infocus.segb", offset: 148))
+    let line = BiomeLine.parseError(
+      BiomeParseErrorLine(device: "fixture-device", segment: "infocus.segb", offset: 148))
     // When
     let json = line.json()
     // Then
     XCTAssertEqual(
       json,
-      "{\"error\":\"parse\",\"offset\":148,\"segment\":\"infocus.segb\"}")
+      "{\"device\":\"fixture-device\",\"error\":\"parse\",\"offset\":148,\"segment\":\"infocus.segb\"}")
   }
 
   func testEncodesADevicePeerRowWithNulls() {

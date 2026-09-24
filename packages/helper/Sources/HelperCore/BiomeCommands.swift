@@ -2,11 +2,12 @@ import Foundation
 
 public func decodeSegment(_ data: Data, device: String, segment: String) -> [BiomeLine] {
   guard case .entries(let entries) = readSegb(data) else {
-    return [.parseError(BiomeParseErrorLine(segment: segment, offset: 0))]
+    return [.parseError(BiomeParseErrorLine(device: device, segment: segment, offset: 0))]
   }
   return entries.map { entry in
     guard let payload = entry.payload, let record = inFocusRecord(payload) else {
-      return .parseError(BiomeParseErrorLine(segment: segment, offset: entry.offset))
+      return .parseError(
+        BiomeParseErrorLine(device: device, segment: segment, offset: entry.offset))
     }
     return .record(
       BiomeRecordLine(
@@ -25,7 +26,7 @@ public func decodeSegment(_ data: Data, device: String, segment: String) -> [Bio
 
 public func biomeRecords(
   reads: BiomeReads = .live,
-  since: [String: Int],
+  from: [String: String],
   emit: (String) -> Void = HelperCore.emit,
   emitError: (String) -> Void = HelperCore.emitError
 ) -> Int32 {
@@ -39,7 +40,7 @@ public func biomeRecords(
   }
   var failed = false
   for device in devices.sorted() {
-    let segments: [BiomeSegment]
+    let segments: [String]
     switch reads.segments(device) {
     case .listed(let listed):
       segments = listed
@@ -48,13 +49,16 @@ public func biomeRecords(
       failed = true
       continue
     }
-    for segment in segments.sorted(by: { $0.name < $1.name }) {
-      if let since = since[device], segment.modifiedAt < Double(since) { continue }
-      guard let data = reads.segmentData(device, segment.name) else {
-        emit(BiomeLine.parseError(BiomeParseErrorLine(segment: segment.name, offset: 0)).json())
+    for segment in segments.sorted() {
+      // Biome appends to a segment without touching its modified time, so the skip is by name.
+      if let from = from[device], segment < from { continue }
+      guard let data = reads.segmentData(device, segment) else {
+        emit(
+          BiomeLine.parseError(BiomeParseErrorLine(device: device, segment: segment, offset: 0))
+            .json())
         continue
       }
-      for line in decodeSegment(data, device: device, segment: segment.name) {
+      for line in decodeSegment(data, device: device, segment: segment) {
         emit(line.json())
       }
     }

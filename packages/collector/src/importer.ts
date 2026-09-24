@@ -201,12 +201,16 @@ export const importOnce = (
         progress.set(externalId, decoded.value);
       }
     }
-    const since = new Map([...progress].map(([id, p]) => [id, p.ts] as const));
+    // The Helper reads each Device from its Progress segment on; the offset
+    // check below drops the records of that segment already written.
+    const from = new Map(
+      [...progress].map(([id, p]) => [id, p.segment] as const),
+    );
 
     let records: ReadonlyArray<BiomeLine>;
     let reason: string | null = null;
     const recordLines = yield* Effect.either(
-      helper.biomeRecords(helperPath, since),
+      helper.biomeRecords(helperPath, from),
     );
     if (Either.isLeft(recordLines)) {
       const e = recordLines.left;
@@ -250,23 +254,22 @@ export const importOnce = (
     const activities: Array<NewActivity> = [];
 
     for (const line of records) {
+      const p = progress.get(line.device);
+      const written =
+        p !== undefined &&
+        (line.segment < p.segment ||
+          (line.segment === p.segment && line.offset <= p.offset));
       if ("error" in line) {
-        if (reason === null) {
+        // A segment that cannot be read at all (offset 0) fails this run,
+        // even when it is the Progress segment.
+        if (reason === null && (!written || line.offset === 0)) {
           reason = `parse error in ${line.segment} at ${line.offset}`;
         }
         continue;
       }
       const entry = devices.get(line.device);
       const writer = writers.get(line.device);
-      if (entry === undefined || writer === undefined) {
-        continue;
-      }
-      const p = progress.get(line.device);
-      if (
-        p !== undefined &&
-        (line.segment < p.segment ||
-          (line.segment === p.segment && line.offset <= p.offset))
-      ) {
+      if (entry === undefined || writer === undefined || written) {
         continue;
       }
       const ts = DateTime.unsafeMake(line.ts * 1000);

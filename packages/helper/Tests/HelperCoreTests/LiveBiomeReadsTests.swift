@@ -17,16 +17,22 @@ final class LiveBiomeReadsTests: XCTestCase {
     try FileManager.default.removeItem(atPath: root)
   }
 
-  private func write(_ relative: String, mtime: Double) throws {
+  private var fixture: Data {
+    let url = Bundle.module.url(
+      forResource: "infocus", withExtension: "segb", subdirectory: "Fixtures")!
+    return try! Data(contentsOf: url)
+  }
+
+  private func write(_ relative: String, mtime: Double, contents: Data = Data("x".utf8)) throws {
     let path = root + "/" + relative
     try FileManager.default.createDirectory(
       atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-    FileManager.default.createFile(atPath: path, contents: Data("x".utf8))
+    FileManager.default.createFile(atPath: path, contents: contents)
     try FileManager.default.setAttributes(
       [.modificationDate: Date(timeIntervalSince1970: mtime)], ofItemAtPath: path)
   }
 
-  func testListsSegmentFilesByNameWithTheirOwnModificationTime() throws {
+  func testListsSegmentFilesByName() throws {
     // Given: two segment files out of order, a dot file, and a tombstone/ subfolder
     try write("a-device/2", mtime: 200)
     try write("a-device/1", mtime: 100)
@@ -35,12 +41,7 @@ final class LiveBiomeReadsTests: XCTestCase {
     // When
     let read = BiomeReads.live(remotePath: root).segments("a-device")
     // Then
-    XCTAssertEqual(
-      read,
-      .listed([
-        BiomeSegment(name: "1", modifiedAt: 100),
-        BiomeSegment(name: "2", modifiedAt: 200),
-      ]))
+    XCTAssertEqual(read, .listed(["1", "2"]))
   }
 
   func testReadsASegmentsBytes() throws {
@@ -81,5 +82,25 @@ final class LiveBiomeReadsTests: XCTestCase {
     let read = BiomeReads.live(remotePath: root).segments("a-device")
     // Then
     XCTAssertEqual(read, .failed("\(root)/a-device: Permission denied"))
+  }
+
+  func testReadsEveryRecordOfTheFromSegmentWhateverItsModifiedTime() throws {
+    // Given: the fixture segment "1" modified in 1970, older than any Progress,
+    // and a sync.db check that never opens the real one
+    try write("a-device/1", mtime: 100, contents: fixture)
+    var reads = BiomeReads.live(remotePath: root)
+    reads.canOpenSyncDb = { true }
+    var out: [String] = []
+    var err: [String] = []
+    // When
+    let code = biomeRecords(
+      reads: reads, from: ["a-device": "1"], emit: { out.append($0) }, emitError: { err.append($0) })
+    // Then
+    XCTAssertEqual(code, 0)
+    XCTAssertEqual(err, [])
+    XCTAssertEqual(out.count, 3)
+    XCTAssertEqual(
+      out.first,
+      "{\"appVersion\":\"1.2.3\",\"build\":\"456\",\"bundleId\":\"com.example.alpha\",\"device\":\"a-device\",\"focus\":\"start\",\"offset\":32,\"reason\":\"com.example.reason\",\"segment\":\"1\",\"ts\":1758307200.5}")
   }
 }
