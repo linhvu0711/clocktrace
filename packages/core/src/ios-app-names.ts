@@ -1,6 +1,6 @@
-// Common iOS bundle ids to display names; a miss falls to the App Store
-// lookup. `com.burbn.instagram` and `xyz.blueskyweb.app` stay out so the
-// lookup path runs for them.
+// Common iOS bundle ids and Apple system screens to display names; a miss
+// falls to the App Store lookup. `com.burbn.instagram` and
+// `xyz.blueskyweb.app` stay out so the lookup path runs for them.
 export const iosAppNames: Record<string, string> = {
   "com.apple.mobilesafari": "Safari",
   "com.apple.mobilenotes": "Notes",
@@ -60,4 +60,22 @@ export const iosAppNames: Record<string, string> = {
   "com.strava.stravaride": "Strava",
   "com.amazon.Amazon": "Amazon",
   "com.ubercab.UberClient": "Uber",
+  // Apple system screens with no App Store entry.
+  "com.apple.InCallService": "Phone call",
+  "com.apple.LocalAuthenticationUIService": "Face ID & passcode",
+  "com.apple.AppProtectionUIHost": "Hidden & locked apps",
+  "com.apple.AuthKitUIService": "Apple Account sign-in",
+  "com.apple.AuthenticationServicesUI": "Sign-in sheet",
+  "com.apple.ServicesPaymentAngel": "App Store purchase",
+  "com.apple.PassbookUIService": "Wallet & Apple Pay",
+  "com.apple.CTNotifyUIService": "Carrier message",
+  "com.apple.HeadphoneProxService": "Headphone connection",
+  "com.apple.PosterBoard": "Lock Screen & wallpaper",
+  "com.apple.ScreenshotServicesService": "Screenshot",
+  "com.apple.purplebuddy": "Setup Assistant",
+  "com.apple.webapp": "Web app",
+  "com.apple.CoreAuthUI": "Passcode",
+  "com.apple.WebSheet": "Wi-Fi login",
+  "com.apple.SafariViewService": "In-app Safari",
+  "com.apple.PhotosUIService": "Photos picker",
 };
