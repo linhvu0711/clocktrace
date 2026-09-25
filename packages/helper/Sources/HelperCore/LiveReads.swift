@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import IOKit.pwr_mgt
 
 extension Reads {
   public static let live = Reads(
@@ -48,6 +49,16 @@ extension Reads {
     idleSeconds: {
       CGEventSource.secondsSinceLastEventType(
         .combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+    },
+    screenHoldPids: {
+      var byProcess: Unmanaged<CFDictionary>?
+      guard IOPMCopyAssertionsByProcess(&byProcess) == kIOReturnSuccess,
+        let holds = byProcess?.takeRetainedValue() as? [NSNumber: [[String: Any]]]
+      else { return nil }
+      return HelperCore.screenHoldPids(
+        Dictionary(
+          holds.map { (pid_t($0.key.int32Value), $0.value) },
+          uniquingKeysWith: { first, second in first + second }))
     }
   )
 }

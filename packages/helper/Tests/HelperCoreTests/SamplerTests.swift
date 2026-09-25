@@ -22,7 +22,8 @@ final class SamplerTests: XCTestCase {
     title: String?,
     runScript: @escaping (String) -> String?,
     safariPrivateFormats: [String] = [],
-    automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 }
+    automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 },
+    screenHoldPids: Set<pid_t>? = []
   ) -> Reads {
     Reads(
       frontmost: { front },
@@ -31,7 +32,8 @@ final class SamplerTests: XCTestCase {
       automationStatus: automationStatus,
       runScript: runScript,
       safariPrivateFormats: { safariPrivateFormats },
-      idleSeconds: { 1 }
+      idleSeconds: { 1 },
+      screenHoldPids: { screenHoldPids }
     )
   }
 
@@ -299,6 +301,51 @@ final class SamplerTests: XCTestCase {
       Sample(
         app: "Finder", bundleId: "com.apple.finder", title: nil, url: nil,
         idleSeconds: 1, missing: ["accessibility"]))
+  }
+
+  func testAHoldByTheFrontAppIsAScreenHold() {
+    // Given: TextEdit (pid 2) front and holding the screen on
+    let r = reads(
+      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil },
+      screenHoldPids: [2])
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: "TextEdit", bundleId: "com.apple.TextEdit", title: "Untitled",
+        url: nil, idleSeconds: 1, missing: [], screenHold: true))
+  }
+
+  func testAHoldByAnAppNotInFrontIsNoScreenHold() {
+    // Given: TextEdit front; caffeinate holds the screen on for One Switch
+    let r = reads(
+      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil },
+      screenHoldPids: [4398, 2739])
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: "TextEdit", bundleId: "com.apple.TextEdit", title: "Untitled",
+        url: nil, idleSeconds: 1, missing: [], screenHold: false))
+  }
+
+  func testAFailedHoldReadIsNoScreenHold() {
+    // Given: TextEdit front; the hold read fails
+    let r = reads(
+      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil },
+      screenHoldPids: nil)
+    // When
+    let result = line(r)
+    // Then: a line still prints, with no Screen hold
+    XCTAssertEqual(
+      result,
+      Line(
+        ts: ts0, app: "TextEdit", bundleId: "com.apple.TextEdit", title: "Untitled",
+        url: nil, idleSeconds: 1, missing: [], screenHold: false))
   }
 
   func testTitleFromTheFocusedWindowWhenTrusted() {

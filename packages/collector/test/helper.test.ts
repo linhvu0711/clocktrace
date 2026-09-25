@@ -230,6 +230,37 @@ describe("Helper watch", () => {
       logs: ["helper line rejected"],
     });
   });
+
+  it("a line with no screenHold reads as no Screen hold", async () => {
+    // Given: an older Helper's line with no screenHold, then a line with one
+    const stdout = [
+      '{"ts":"2026-01-01T00:00:00Z","app":"Safari","bundleId":"com.apple.Safari","title":null,"url":null,"idleSeconds":0,"missing":[]}',
+      '{"ts":"2026-01-01T00:00:10Z","app":"Safari","bundleId":"com.apple.Safari","title":null,"url":null,"idleSeconds":0,"missing":[],"screenHold":true}',
+    ].join("\n");
+    // When
+    const { exit, logs } = await runHelperProcess(
+      (helper) =>
+        helper.lines("/h").pipe(
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.map((chunk) =>
+            Chunk.toReadonlyArray(chunk).map((line) => ({
+              ts: DateTime.formatIso(line.ts),
+              screenHold: line.screenHold,
+            })),
+          ),
+        ),
+      stdout,
+    );
+    // Then
+    expect({ readings: Exit.isSuccess(exit) && exit.value, logs }).toEqual({
+      readings: [
+        { ts: "2026-01-01T00:00:00.000Z", screenHold: false },
+        { ts: "2026-01-01T00:00:10.000Z", screenHold: true },
+      ],
+      logs: [],
+    });
+  });
 });
 
 // The failure a Helper call ended with, or null when it succeeded.

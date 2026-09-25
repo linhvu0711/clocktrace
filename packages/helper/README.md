@@ -35,7 +35,7 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
 `watch` prints one JSON object per line:
 
 ```json
-{"app":"Safari","bundleId":"com.apple.Safari","idleSeconds":12.4,"missing":[],"title":"Example Domain","ts":"2026-09-17T10:13:31.628Z","url":"https://example.com/"}
+{"app":"Safari","bundleId":"com.apple.Safari","idleSeconds":12.4,"missing":[],"screenHold":false,"title":"Example Domain","ts":"2026-09-17T10:13:31.628Z","url":"https://example.com/"}
 ```
 
 | field | source |
@@ -47,6 +47,7 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
 | `url` | Apple Event read for Safari and the Chrome family; `null` for other apps, when the read fails, for a Private window, and for Safari when the Helper cannot tell (Accessibility off or no private text loaded) |
 | `idleSeconds` | `CGEventSource` seconds since last input |
 | `missing` | grants the line needed but did not have: `accessibility`, `automation:<bundleId>` |
+| `screenHold` | `IOPMCopyAssertionsByProcess`: `true` when the frontmost app holds `PreventUserIdleDisplaySleep`, itself or through a process acting for it; `false` otherwise and when the read fails |
 
 A line prints on every change of app, title, or URL, and at least every 10
 seconds as a heartbeat. `idleSeconds` and `ts` alone never trigger a line.

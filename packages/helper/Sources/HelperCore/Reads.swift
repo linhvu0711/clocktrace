@@ -8,6 +8,8 @@ public struct Reads {
   public var runScript: (String) -> String?
   public var safariPrivateFormats: () -> [String]
   public var idleSeconds: () -> Double
+  /// The pids a Screen hold counts for; nil when the read fails.
+  public var screenHoldPids: () -> Set<pid_t>?
 
   public init(
     frontmost: @escaping () -> FrontApp?,
@@ -16,7 +18,8 @@ public struct Reads {
     automationStatus: @escaping (String, Bool) -> OSStatus,
     runScript: @escaping (String) -> String?,
     safariPrivateFormats: @escaping () -> [String],
-    idleSeconds: @escaping () -> Double
+    idleSeconds: @escaping () -> Double,
+    screenHoldPids: @escaping () -> Set<pid_t>? = { [] }
   ) {
     self.frontmost = frontmost
     self.axTrusted = axTrusted
@@ -25,5 +28,6 @@ public struct Reads {
     self.runScript = runScript
     self.safariPrivateFormats = safariPrivateFormats
     self.idleSeconds = idleSeconds
+    self.screenHoldPids = screenHoldPids
   }
 }

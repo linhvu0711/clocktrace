@@ -145,4 +145,24 @@ final class TrackerTests: XCTestCase {
     XCTAssertEqual(line?.grant, "noAnswer")
     XCTAssertEqual(line?.ts, "2026-01-01T00:00:01.000Z")
   }
+
+  func testAScreenHoldChangeAlonePrintsNoLine() {
+    // Given: the tracker after the first line; the same sample, now with a Screen hold
+    var tracker = Tracker()
+    _ = tracker.observe(finderSample, at: t0)
+    var held = finderSample
+    held.screenHold = true
+    // When
+    let within = tracker.observe(held, at: t0.addingTimeInterval(1))
+    let heartbeat = tracker.observe(held, at: t0.addingTimeInterval(10))
+    // Then
+    XCTAssertEqual(
+      [within, heartbeat],
+      [
+        nil,
+        Line(
+          ts: "2026-01-01T00:00:10.000Z", app: "Finder", bundleId: "com.apple.finder",
+          title: "Desktop", url: nil, idleSeconds: 2, missing: [], screenHold: true),
+      ])
+  }
 }

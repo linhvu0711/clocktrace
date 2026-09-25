@@ -11,12 +11,29 @@ import { makeActivityWriter } from "./activity-writer.js";
 import { deleteSavedGrant, saveGrant } from "./grant.js";
 import type { HelperLine } from "./helper-line.js";
 
-export const idleAfterSeconds = 300;
+export const idleAfterSeconds = 900;
+// A Screen hold keeps time for at most this long after the last input
+// (ADR 0014).
+export const screenHoldCapSeconds = 3 * 60 * 60;
 
 interface State {
   readonly lastTs: DateTime.Utc | null;
   readonly idleClosed: boolean;
+  readonly holdSeenAt: DateTime.Utc | null;
 }
+
+// Where the time at the Mac ends: the last input, or the last line with a
+// Screen hold when that came later, at most screenHoldCapSeconds on.
+const quietSince = (
+  lastInput: DateTime.Utc,
+  holdSeenAt: DateTime.Utc | null,
+): DateTime.Utc =>
+  holdSeenAt === null || DateTime.lessThanOrEqualTo(holdSeenAt, lastInput)
+    ? lastInput
+    : DateTime.min(
+        holdSeenAt,
+        DateTime.add(lastInput, { seconds: screenHoldCapSeconds }),
+      );
 
 export const collect = <E, R>(
   lines: Stream.Stream<HelperLine, E, R>,
@@ -27,6 +44,7 @@ export const collect = <E, R>(
     const state = yield* Ref.make<State>({
       lastTs: null,
       idleClosed: false,
+      holdSeenAt: null,
     });
     // The Rules are read at each write, so a new Private rule applies to the
     // next Activity.
@@ -129,20 +147,29 @@ export const collect = <E, R>(
       Effect.gen(function* () {
         const s = yield* Ref.get(state);
         const open = yield* writer.open;
-        yield* Ref.set(state, { ...s, lastTs: line.ts });
-        if (line.idleSeconds >= idleAfterSeconds) {
+        const holdSeenAt = line.screenHold ? line.ts : s.holdSeenAt;
+        const since = quietSince(
+          DateTime.subtract(line.ts, { seconds: line.idleSeconds }),
+          holdSeenAt,
+        );
+        yield* Ref.set(state, { ...s, lastTs: line.ts, holdSeenAt });
+        if (DateTime.distance(since, line.ts) >= idleAfterSeconds * 1000) {
           if (Option.isSome(open)) {
-            yield* Ref.set(state, { lastTs: line.ts, idleClosed: true });
-            yield* write(
-              yield* writer.stop(
-                DateTime.subtract(line.ts, { seconds: line.idleSeconds }),
-              ),
-            );
+            yield* Ref.set(state, {
+              lastTs: line.ts,
+              idleClosed: true,
+              holdSeenAt,
+            });
+            yield* write(yield* writer.stop(since));
           }
           return;
         }
         if (line.app === null || line.app.trim() === "") {
-          yield* Ref.set(state, { lastTs: line.ts, idleClosed: false });
+          yield* Ref.set(state, {
+            lastTs: line.ts,
+            idleClosed: false,
+            holdSeenAt,
+          });
           yield* write(yield* writer.stop(line.ts));
           return;
         }
@@ -150,7 +177,11 @@ export const collect = <E, R>(
         // Stand-in id (ADR 0012).
         const bundleId = line.bundleId ?? `noid:${line.app}`;
         if (Option.isNone(open)) {
-          yield* Ref.set(state, { lastTs: line.ts, idleClosed: false });
+          yield* Ref.set(state, {
+            lastTs: line.ts,
+            idleClosed: false,
+            holdSeenAt,
+          });
           yield* writer.start({
             deviceId,
             bundleId,
@@ -169,7 +200,11 @@ export const collect = <E, R>(
           open.value.title !== line.title ||
           open.value.url !== line.url
         ) {
-          yield* Ref.set(state, { lastTs: line.ts, idleClosed: false });
+          yield* Ref.set(state, {
+            lastTs: line.ts,
+            idleClosed: false,
+            holdSeenAt,
+          });
           yield* write(
             yield* writer.start({
               deviceId,
