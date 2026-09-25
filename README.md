@@ -7,7 +7,7 @@ Clocktrace records where your time goes on your Mac, and on your iPhone and iPad
 - The app in front on your Mac, its window title, and the URL in Safari, Chrome, Brave, and Edge.
 - The apps you use on your iPhone and iPad, through Apple's Screen Time sync. Only app names and times arrive, no URLs.
 
-All data stays in one file on your Mac, `~/Library/Application Support/clocktrace/clocktrace.db`. Nothing is sent anywhere. Private browser windows get no title and no URL. After 15 minutes with no keyboard or mouse input, the time is not counted, unless the app in front keeps the screen on, as a video or a call does.
+All data stays in one file on your Mac, `~/Library/Application Support/clocktrace/clocktrace.db`. Clocktrace sends only one thing out: the ID of an iPhone or iPad app, to Apple's App Store, to look up its name. When you ask a question, your AI app sends the answer to its model, as it does with any chat. Private browser windows get no title and no URL. After 15 minutes with no keyboard or mouse input, the time is not counted, unless the app in front keeps the screen on, as a video or a call does, for at most 3 hours.
 
 ## What you need
 
@@ -67,7 +67,7 @@ clocktrace status
 - **Collector**: `running` means your time is being recorded.
 - **Permissions**: each one is `granted`, or it says what is missing.
 - **iOS import**: one line per iPhone and iPad, with the time its data reaches. `not syncing` means Apple has not sent new data from that device for a long time. An old device you no longer use shows this too, and you can ignore it.
-- **Last activity**: the last time the Mac recorded something.
+- **Last activity**: the newest recorded time from any device, the Mac or an iPhone or iPad.
 
 ## Make it yours
 
@@ -83,7 +83,7 @@ Change any of this by asking your AI app, or with `clocktrace rules`, `clocktrac
 
 **Some iPhone apps show a raw ID, like `com.example.app`.** Clocktrace looks up app names in the App Store. An app that is not in the store, or a lookup that failed, shows the ID. A failed lookup is tried again after one day.
 
-**Time is missing while I read.** After 15 minutes with no input, the time is not counted. Videos and calls keep it counted while they are in front.
+**Time is missing while I read.** After 15 minutes with no input, the time is not counted. A video or a call in front keeps it counted, for at most 3 hours after your last input.
 
 **Remove Clocktrace.** `clocktrace uninstall` removes the Collector, the app, and the AI app registrations, and keeps your data. `clocktrace uninstall --purge` also deletes the database and the logs. Then run `pnpm unlink --global` in `apps/cli`.
 
