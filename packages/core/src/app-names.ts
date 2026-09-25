@@ -4,6 +4,7 @@ import { AppStore } from "./app-store.js";
 import type { StoreError } from "./errors.js";
 import { iosAppNames } from "./ios-app-names.js";
 import { Store } from "./store.js";
+import { storeCountry } from "./store-country.js";
 
 export const ResolvedApp = Schema.Struct({
   name: Schema.String,
@@ -51,19 +52,33 @@ export const classifyAppName = (
     return Either.right(bundleId);
   });
 
+// The US store first, so names cached before the fallback stay the same. A
+// clean US miss is asked again in the store of the time zone country; a US
+// error is not, so a short outage never names an app from another store.
 export const lookupAndCache = (
   bundleId: string,
-): Effect.Effect<Option.Option<ResolvedApp>, StoreError, Store | AppStore> =>
+): Effect.Effect<
+  Option.Option<ResolvedApp>,
+  StoreError,
+  Store | AppStore | DateTime.CurrentTimeZone
+> =>
   Effect.gen(function* () {
     const store = yield* Store;
     const appStore = yield* AppStore;
-    const found = yield* appStore
-      .lookup(bundleId)
-      .pipe(
-        Effect.catchTag("AppStoreError", () =>
-          Effect.succeed(Option.none<ResolvedApp>()),
-        ),
-      );
+    const fallback = Option.filter(
+      storeCountry(yield* DateTime.CurrentTimeZone),
+      (country) => country !== "us",
+    );
+    const found = yield* appStore.lookup(bundleId, "us").pipe(
+      Effect.flatMap((us) =>
+        Option.isNone(us) && Option.isSome(fallback)
+          ? appStore.lookup(bundleId, fallback.value)
+          : Effect.succeed(us),
+      ),
+      Effect.catchTag("AppStoreError", () =>
+        Effect.succeed(Option.none<ResolvedApp>()),
+      ),
+    );
     if (Option.isNone(found)) {
       // A concurrent resolver may have stored a name while this lookup was
       // in flight; a failed attempt must not erase it.
@@ -89,7 +104,11 @@ export const lookupAndCache = (
 
 export const resolveAppName = (
   bundleId: string,
-): Effect.Effect<Option.Option<ResolvedApp>, StoreError, Store | AppStore> =>
+): Effect.Effect<
+  Option.Option<ResolvedApp>,
+  StoreError,
+  Store | AppStore | DateTime.CurrentTimeZone
+> =>
   Effect.gen(function* () {
     const decision = yield* classifyAppName(bundleId);
     if (Either.isLeft(decision)) {

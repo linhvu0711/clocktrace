@@ -29,10 +29,13 @@ const EmptyStore = Layer.scoped(
 
 const run = <A, E>(
   lookup: Layer.Layer<AppStore>,
-  body: Effect.Effect<A, E, AppStore | Store>,
+  body: Effect.Effect<A, E, AppStore | Store | DateTime.CurrentTimeZone>,
 ): Promise<A> =>
   Effect.runPromise(
-    body.pipe(Effect.provide(Layer.mergeAll(EmptyStore, lookup))),
+    body.pipe(
+      DateTime.withCurrentZoneNamed("America/Los_Angeles"),
+      Effect.provide(Layer.mergeAll(EmptyStore, lookup)),
+    ),
   );
 
 const countingLookup = (
@@ -47,6 +50,27 @@ const countingLookup = (
     new AppStore({
       lookup: () =>
         Ref.update(calls, (n) => n + 1).pipe(Effect.andThen(answer)),
+    }),
+  );
+
+// Answers per store country and records which countries were asked, in order.
+const storeLookup = (
+  asked: Ref.Ref<ReadonlyArray<string>>,
+  answers: Record<
+    string,
+    Effect.Effect<
+      Option.Option<{ name: string; genre: string | null }>,
+      AppStoreError
+    >
+  >,
+) =>
+  Layer.succeed(
+    AppStore,
+    new AppStore({
+      lookup: (_, country) =>
+        Ref.update(asked, (xs) => [...xs, country]).pipe(
+          Effect.andThen(answers[country] ?? Effect.succeed(Option.none())),
+        ),
     }),
   );
 
@@ -397,5 +421,170 @@ describe("resolveAppName", () => {
     expect(results).toEqual([Option.none(), Option.none()]);
     expect(count).toBe(1);
     expect(Option.isSome(row) && row.value.name === null).toBe(true);
+  });
+});
+
+describe("lookupAndCache store fallback", () => {
+  it("a US miss is found in the store of the time zone country", async () => {
+    // Given: zone Asia/Saigon, the US store misses, the vn store has CGV
+    const asked = Ref.unsafeMake<ReadonlyArray<string>>([]);
+    const lookup = storeLookup(asked, {
+      us: Effect.succeed(Option.none()),
+      vn: Effect.succeed(
+        Option.some({ name: "CGV Cinemas", genre: "Entertainment" }),
+      ),
+    });
+    // When
+    const outcome = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const result = yield* resolveAppName("cinema.cgv.vn");
+        const row = yield* store.getAppName("cinema.cgv.vn");
+        return {
+          result,
+          asked: yield* Ref.get(asked),
+          stored: Option.map(row, (r) => [r.name, r.genre]),
+        };
+      }).pipe(DateTime.withCurrentZoneNamed("Asia/Saigon")),
+    );
+    // Then
+    expect(outcome).toEqual({
+      result: Option.some({ name: "CGV Cinemas", genre: "Entertainment" }),
+      asked: ["us", "vn"],
+      stored: Option.some(["CGV Cinemas", "Entertainment"]),
+    });
+  });
+
+  it("a US hit makes one request", async () => {
+    // Given: zone Asia/Saigon, both stores have an answer
+    const asked = Ref.unsafeMake<ReadonlyArray<string>>([]);
+    const lookup = storeLookup(asked, {
+      us: Effect.succeed(
+        Option.some({ name: "Bluesky", genre: "Social Networking" }),
+      ),
+      vn: Effect.succeed(Option.some({ name: "Other", genre: "News" })),
+    });
+    // When
+    const outcome = await run(
+      lookup,
+      Effect.gen(function* () {
+        const result = yield* resolveAppName("xyz.blueskyweb.app");
+        return { result, asked: yield* Ref.get(asked) };
+      }).pipe(DateTime.withCurrentZoneNamed("Asia/Saigon")),
+    );
+    // Then
+    expect(outcome).toEqual({
+      result: Option.some({ name: "Bluesky", genre: "Social Networking" }),
+      asked: ["us"],
+    });
+  });
+
+  it("a miss in both stores is stored as a failed lookup", async () => {
+    // Given: zone Asia/Saigon, both stores miss
+    const asked = Ref.unsafeMake<ReadonlyArray<string>>([]);
+    const lookup = storeLookup(asked, {});
+    // When
+    const outcome = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const result = yield* resolveAppName("com.example.notanapp");
+        const row = yield* store.getAppName("com.example.notanapp");
+        return {
+          result,
+          asked: yield* Ref.get(asked),
+          storedName: Option.map(row, (r) => r.name),
+        };
+      }).pipe(DateTime.withCurrentZoneNamed("Asia/Saigon")),
+    );
+    // Then
+    expect(outcome).toEqual({
+      result: Option.none(),
+      asked: ["us", "vn"],
+      storedName: Option.some(null),
+    });
+  });
+
+  it("a failing second lookup fails soft", async () => {
+    // Given: zone Asia/Saigon, the US store misses, the vn lookup fails
+    const asked = Ref.unsafeMake<ReadonlyArray<string>>([]);
+    const lookup = storeLookup(asked, {
+      us: Effect.succeed(Option.none()),
+      vn: Effect.fail(new AppStoreError({ cause: "offline" })),
+    });
+    // When
+    const outcome = await run(
+      lookup,
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const result = yield* resolveAppName("com.example.notanapp");
+        const row = yield* store.getAppName("com.example.notanapp");
+        return {
+          result,
+          asked: yield* Ref.get(asked),
+          storedName: Option.map(row, (r) => r.name),
+        };
+      }).pipe(DateTime.withCurrentZoneNamed("Asia/Saigon")),
+    );
+    // Then
+    expect(outcome).toEqual({
+      result: Option.none(),
+      asked: ["us", "vn"],
+      storedName: Option.some(null),
+    });
+  });
+
+  it("a failing US lookup skips the second store", async () => {
+    // Given: zone Asia/Saigon, the US lookup fails, the vn store has CGV
+    const asked = Ref.unsafeMake<ReadonlyArray<string>>([]);
+    const lookup = storeLookup(asked, {
+      us: Effect.fail(new AppStoreError({ cause: "offline" })),
+      vn: Effect.succeed(
+        Option.some({ name: "CGV Cinemas", genre: "Entertainment" }),
+      ),
+    });
+    // When
+    const outcome = await run(
+      lookup,
+      Effect.gen(function* () {
+        const result = yield* resolveAppName("cinema.cgv.vn");
+        return { result, asked: yield* Ref.get(asked) };
+      }).pipe(DateTime.withCurrentZoneNamed("Asia/Saigon")),
+    );
+    // Then
+    expect(outcome).toEqual({ result: Option.none(), asked: ["us"] });
+  });
+
+  it("a time zone with no country makes one request", async () => {
+    // Given: zone UTC, both stores miss
+    const asked = Ref.unsafeMake<ReadonlyArray<string>>([]);
+    const lookup = storeLookup(asked, {});
+    // When
+    const outcome = await run(
+      lookup,
+      Effect.gen(function* () {
+        const result = yield* resolveAppName("com.example.notanapp");
+        return { result, asked: yield* Ref.get(asked) };
+      }).pipe(DateTime.withCurrentZoneNamed("UTC")),
+    );
+    // Then
+    expect(outcome).toEqual({ result: Option.none(), asked: ["us"] });
+  });
+
+  it("a US time zone makes one request", async () => {
+    // Given: the run default zone America/Los_Angeles, both stores miss
+    const asked = Ref.unsafeMake<ReadonlyArray<string>>([]);
+    const lookup = storeLookup(asked, {});
+    // When
+    const outcome = await run(
+      lookup,
+      Effect.gen(function* () {
+        const result = yield* resolveAppName("com.example.notanapp");
+        return { result, asked: yield* Ref.get(asked) };
+      }),
+    );
+    // Then
+    expect(outcome).toEqual({ result: Option.none(), asked: ["us"] });
   });
 });

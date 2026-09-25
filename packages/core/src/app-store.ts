@@ -17,12 +17,13 @@ export class AppStore extends Effect.Service<AppStore>()("AppStore", {
   sync: () => ({
     lookup: (
       bundleId: string,
+      country: string,
     ): Effect.Effect<Option.Option<ResolvedApp>, AppStoreError> =>
       Effect.gen(function* () {
         const response = yield* Effect.tryPromise({
           try: (signal) =>
             fetch(
-              `https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(bundleId)}&country=us`,
+              `https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(bundleId)}&country=${country}`,
               {
                 signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]),
               },
