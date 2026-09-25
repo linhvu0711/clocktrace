@@ -55,7 +55,7 @@ The state after 15 minutes with no keyboard or mouse input and no Screen hold. T
 _Avoid_: AFK, away, break
 
 **Screen hold**:
-The app in front asks macOS to keep the screen on, as a video, a video call, or a slideshow does. While it lasts, time with no input is not Idle, for at most 2 hours after the last input. A hold by an app that is not in front does not count.
+The app in front asks macOS to keep the screen on, as a video, a video call, or a slideshow does. While it lasts, time with no input is not Idle, for at most 3 hours after the last input. A hold by an app that is not in front does not count.
 _Avoid_: Wake lock, display assertion, keep-awake, playback
 
 **Device**:

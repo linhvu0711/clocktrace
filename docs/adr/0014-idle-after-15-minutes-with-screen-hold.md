@@ -13,7 +13,7 @@ Idle now starts after 15 minutes with no input and no Screen hold. A Screen
 hold is the app in front asking macOS to keep the screen on
 (`PreventUserIdleDisplaySleep`), as a video, a video call, or a slideshow
 does. The Activity still ends at the last input, or at the end of the Screen
-hold when that came later, and a Screen hold keeps time for at most 2 hours
+hold when that came later, and a Screen hold keeps time for at most 3 hours
 after the last input.
 
 - 15 minutes, not the 3 to 5 that other trackers use: Timing uses 3
@@ -25,8 +25,8 @@ after the last input.
 - Only the app in front counts. On the first user's Mac, One Switch holds the
   screen on through `caffeinate` for days at a time. A hold by any app would
   mean the user is never Idle.
-- 2 hours is long enough for a film, and a forgotten autoplay adds no more
-  than that.
+- 3 hours, because many films run longer than 2. A forgotten autoplay adds no
+  more than that.
 - The end stays at the last input, not the last input plus 15 minutes, so a
   real break adds no time.
 
