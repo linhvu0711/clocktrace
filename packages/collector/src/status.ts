@@ -178,9 +178,9 @@ export const readStatus = (): Effect.Effect<
     };
   });
 
-/** Said under the device rows while one syncs: Apple sends App.InFocus records hours late (ADR 0004). */
+/** Said under the device rows while one syncs: Apple sends App.InFocus records hours late, sometimes more than a day (ADR 0004). */
 export const lateHint =
-  "iPhone and iPad data comes from Apple a few hours late.";
+  "iPhone and iPad data comes from Apple's sync. It is often hours late, and sometimes more than a day.";
 
 const pad = (n: number): string => String(n).padStart(2, "0");
 

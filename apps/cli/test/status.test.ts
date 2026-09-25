@@ -728,7 +728,7 @@ describe("status", () => {
       "iOS import     ✔ ok · 2026-09-19 10:30",
       "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
       "  ✔ iPhone       data up to 2026-09-19 10:00 · last activity 2026-09-19 09:06",
-      "  iPhone and iPad data comes from Apple a few hours late.",
+      "  iPhone and iPad data comes from Apple's sync. It is often hours late, and sometimes more than a day.",
       "Last activity  2026-09-19 09:06",
       `Database       ${path}`,
     ]);
@@ -754,7 +754,7 @@ describe("status", () => {
       "iOS import     ✔ ok · 2026-09-19 10:30",
       "  ✘ Linh's iPad  not syncing since 2026-09-17 10:00 · last activity none yet",
       "  ✔ iPhone       no data yet · last activity none yet",
-      "  iPhone and iPad data comes from Apple a few hours late.",
+      "  iPhone and iPad data comes from Apple's sync. It is often hours late, and sometimes more than a day.",
       "Last activity  none yet",
       `Database       ${path}`,
     ]);
@@ -776,10 +776,11 @@ describe("status", () => {
     );
     // Then
     expect(Exit.isSuccess(exit)).toBe(true);
-    const at = output.indexOf("  iPhone and iPad data comes from Apple");
-    expect(output.slice(at, at + 2)).toEqual([
-      "  iPhone and iPad data comes from Apple",
-      "  a few hours late.",
+    const at = output.indexOf("  iPhone and iPad data comes from");
+    expect(output.slice(at, at + 3)).toEqual([
+      "  iPhone and iPad data comes from",
+      "  Apple's sync. It is often hours late,",
+      "  and sometimes more than a day.",
     ]);
   });
 
