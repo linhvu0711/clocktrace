@@ -67,6 +67,7 @@ describe("starter set", () => {
     );
     // Then: Coding is gone from this database
     expect(afterRemove.map((c) => c.name)).toEqual([
+      "AI",
       "Communication",
       "Design",
       "Entertainment",
@@ -85,6 +86,7 @@ describe("starter set", () => {
     rmSync(freshDir, { recursive: true, force: true });
     // Then: the full Starter set is seeded again
     expect(seeded.map((c) => c.name)).toEqual([
+      "AI",
       "Coding",
       "Communication",
       "Design",
@@ -94,7 +96,7 @@ describe("starter set", () => {
     ]);
   });
 
-  it("a fresh store gets six Categories and the Starter Rules", async () => {
+  it("a fresh store gets seven Categories and the Starter Rules", async () => {
     // Given: a temp path with no file
     // When
     const { categories, rules, flag } = await open(
@@ -108,6 +110,7 @@ describe("starter set", () => {
     );
     // Then
     expect(categories.map((c) => c.name)).toEqual([
+      "AI",
       "Coding",
       "Communication",
       "Design",
@@ -118,6 +121,7 @@ describe("starter set", () => {
     expect(
       categories.map((c) => ({ name: c.name, productive: c.productive })),
     ).toEqual([
+      { name: "AI", productive: true },
       { name: "Coding", productive: true },
       { name: "Communication", productive: true },
       { name: "Design", productive: true },
@@ -144,7 +148,7 @@ describe("starter set", () => {
       }),
     );
     // Then
-    expect(counts).toEqual([6, starterRules.length]);
+    expect(counts).toEqual([7, starterRules.length]);
   });
 
   it("a deleted rule stays deleted after a reopen", async () => {
@@ -219,7 +223,7 @@ describe("starter set", () => {
       }),
     );
     // Then: the full Starter set is there
-    expect(categories).toHaveLength(6);
+    expect(categories).toHaveLength(7);
     expect(rules).toHaveLength(starterRules.length);
     expect(flag).toEqual(Option.some("1"));
   });
@@ -274,13 +278,50 @@ describe("starter set", () => {
     expect(site("https://api.x.com/2/tweets")).toBe("Social");
   });
 
-  it("the Starter set covers 30 apps and 20 sites", () => {
+  it("the Starter set puts claude.ai and Grok in AI, and web Telegram in Communication", async () => {
+    // Given: a fresh open; its Categories and Rules
+    const { categories, rules } = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return {
+          categories: yield* store.listCategories(),
+          rules: yield* store.listRules(),
+        };
+      }),
+    );
+    const name = (id: string | null) =>
+      categories.find((c) => c.id === id)?.name ?? null;
+    const site = (url: string) =>
+      name(resolve({ ...chrome, url }, rules, device).categoryId);
+    const app = (bundleId: string) =>
+      name(
+        resolve({ ...chrome, bundleId, url: null }, rules, device).categoryId,
+      );
+    // When
+    const resolved = {
+      claude: site("https://claude.ai/new"),
+      grok: site("https://grok.com/c/x"),
+      webTelegram: site("https://web.telegram.org/k/"),
+      grokApp: app("ai.x.GrokApp"),
+      telegramIos: app("ph.telegra.Telegraph"),
+    };
+    // Then
+    expect(resolved).toEqual({
+      claude: "AI",
+      grok: "AI",
+      webTelegram: "Communication",
+      grokApp: "AI",
+      telegramIos: "Communication",
+    });
+  });
+
+  it("the Starter set covers 51 apps and 35 sites", () => {
     // Given: the Starter rules
     // When
     const apps = starterRules.filter((r) => r.field === "app").length;
     const sites = starterRules.filter((r) => r.field === "domain").length;
     // Then
-    expect([apps, sites]).toEqual([40, 27]);
+    expect([apps, sites]).toEqual([51, 35]);
   });
 
   it("the Starter set marks a Chrome incognito title Private", async () => {
