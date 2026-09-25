@@ -11,7 +11,7 @@ import { makeActivityWriter } from "./activity-writer.js";
 import { deleteSavedGrant, saveGrant } from "./grant.js";
 import type { HelperLine } from "./helper-line.js";
 
-export const idleAfterSeconds = 300;
+export const idleAfterSeconds = 900;
 
 interface State {
   readonly lastTs: DateTime.Utc | null;

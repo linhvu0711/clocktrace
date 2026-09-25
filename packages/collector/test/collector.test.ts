@@ -349,8 +349,42 @@ describe("collector", () => {
     ]);
   });
 
+  it("ten quiet minutes with no Screen hold stay in the Activity", async () => {
+    // Given: ten minutes pass with no input and no Screen hold inside Safari
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:10:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 600,
+      }),
+      line({
+        ts: "2026-01-01T00:10:10.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:10:10.000Z",
+      },
+    ]);
+  });
+
   it("idle ends the open Activity at now minus idleSeconds and the return starts a fresh one at the return time", async () => {
-    // Given: five idle minutes pass inside a Safari stretch
+    // Given: fifteen idle minutes pass inside a Safari stretch
     const lines = [
       line({
         ts: "2026-01-01T00:00:00.000Z",
@@ -363,19 +397,19 @@ describe("collector", () => {
         bundleId: "com.apple.Safari",
       }),
       line({
-        ts: "2026-01-01T00:06:10.000Z",
+        ts: "2026-01-01T00:16:10.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
-        idleSeconds: 310,
+        idleSeconds: 910,
       }),
       line({
-        ts: "2026-01-01T00:06:20.000Z",
+        ts: "2026-01-01T00:16:20.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
         idleSeconds: 2,
       }),
       line({
-        ts: "2026-01-01T00:06:30.000Z",
+        ts: "2026-01-01T00:16:30.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
       }),
@@ -395,8 +429,8 @@ describe("collector", () => {
         appName: "Safari",
         title: null,
         url: null,
-        startedAt: "2026-01-01T00:06:18.000Z",
-        endedAt: "2026-01-01T00:06:30.000Z",
+        startedAt: "2026-01-01T00:16:18.000Z",
+        endedAt: "2026-01-01T00:16:30.000Z",
       },
     ]);
   });
@@ -415,20 +449,20 @@ describe("collector", () => {
         bundleId: "com.apple.Safari",
       }),
       line({
-        ts: "2026-01-01T00:05:15.000Z",
+        ts: "2026-01-01T00:15:15.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
-        idleSeconds: 305,
+        idleSeconds: 905,
       }),
-      line({ ts: "2026-01-01T00:05:20.000Z" }),
+      line({ ts: "2026-01-01T00:15:20.000Z" }),
       line({
-        ts: "2026-01-01T00:05:30.000Z",
+        ts: "2026-01-01T00:15:30.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
         idleSeconds: 5,
       }),
       line({
-        ts: "2026-01-01T00:05:40.000Z",
+        ts: "2026-01-01T00:15:40.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
       }),
@@ -448,8 +482,8 @@ describe("collector", () => {
         appName: "Safari",
         title: null,
         url: null,
-        startedAt: "2026-01-01T00:05:30.000Z",
-        endedAt: "2026-01-01T00:05:40.000Z",
+        startedAt: "2026-01-01T00:15:30.000Z",
+        endedAt: "2026-01-01T00:15:40.000Z",
       },
     ]);
   });
@@ -458,19 +492,19 @@ describe("collector", () => {
     // Given: idle resolves before any focus line
     const lines = [
       line({
-        ts: "2026-01-01T00:06:10.000Z",
+        ts: "2026-01-01T00:16:10.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
-        idleSeconds: 310,
+        idleSeconds: 910,
       }),
       line({
-        ts: "2026-01-01T00:06:20.000Z",
+        ts: "2026-01-01T00:16:20.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
         idleSeconds: 2,
       }),
       line({
-        ts: "2026-01-01T00:06:30.000Z",
+        ts: "2026-01-01T00:16:30.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
       }),
@@ -483,8 +517,8 @@ describe("collector", () => {
         appName: "Safari",
         title: null,
         url: null,
-        startedAt: "2026-01-01T00:06:20.000Z",
-        endedAt: "2026-01-01T00:06:30.000Z",
+        startedAt: "2026-01-01T00:16:20.000Z",
+        endedAt: "2026-01-01T00:16:30.000Z",
       },
     ]);
   });
@@ -574,7 +608,7 @@ describe("collector", () => {
   });
 
   it("an idle end before the start writes nothing", async () => {
-    // Given: the only line after the open reports 320 idle seconds
+    // Given: the only line after the open reports 920 idle seconds
     const lines = [
       line({
         ts: "2026-01-01T00:00:00.000Z",
@@ -585,7 +619,7 @@ describe("collector", () => {
         ts: "2026-01-01T00:00:10.000Z",
         app: "Safari",
         bundleId: "com.apple.Safari",
-        idleSeconds: 320,
+        idleSeconds: 920,
       }),
     ];
     // When
