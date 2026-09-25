@@ -64,7 +64,9 @@ public enum Sampler {
       title: title,
       url: url,
       idleSeconds: r.idleSeconds(),
-      missing: missing
+      missing: missing,
+      // Only a hold by the app in front is a Screen hold; a failed read is none.
+      screenHold: front.map { r.screenHoldPids()?.contains($0.pid) ?? false } ?? false
     )
   }
 
