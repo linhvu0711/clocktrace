@@ -848,7 +848,7 @@ describe("server", () => {
     // Then
     const description =
       tools.find((t) => t.name === "status")?.description ?? "";
-    expect(description).toContain("lags hours behind Apple's Screen Time");
+    expect(description).toContain("sometimes by more than a day");
     expect(description).toContain("dataUpTo is how far it goes");
   });
 

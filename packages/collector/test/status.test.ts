@@ -177,7 +177,7 @@ const NO_DATA_LINES = [
   "Linh's iPad: last activity none yet",
   "iPhone: no data yet",
   "iPhone: last activity none yet",
-  "iPhone and iPad data comes from Apple a few hours late.",
+  "iPhone and iPad data comes from Apple's sync. It is often hours late, and sometimes more than a day.",
   "last activity: none yet",
   `database: ${dbPath}`,
 ];
@@ -192,7 +192,7 @@ const DATA_UP_TO_LAST_ACTIVITY_LINES = [
   "Linh's iPad: last activity none yet",
   "iPhone: data up to 2026-09-19 09:06",
   "iPhone: last activity 2026-09-19 09:06",
-  "iPhone and iPad data comes from Apple a few hours late.",
+  "iPhone and iPad data comes from Apple's sync. It is often hours late, and sometimes more than a day.",
   "last activity: 2026-09-19 09:06",
   `database: ${dbPath}`,
 ];
@@ -367,7 +367,7 @@ describe("status", () => {
       "Linh's iPad: last activity none yet",
       "iPhone: data up to 2026-09-19 10:00",
       "iPhone: last activity 2026-09-19 09:06",
-      "iPhone and iPad data comes from Apple a few hours late.",
+      "iPhone and iPad data comes from Apple's sync. It is often hours late, and sometimes more than a day.",
       "last activity: 2026-09-19 09:06",
       `database: ${dbPath}`,
     ]);
