@@ -51,8 +51,12 @@ The Helper's `watch` loop. It reads the Mac every second and on app activation, 
 _Avoid_: Poller, run loop, daemon
 
 **Idle**:
-The state after 5 minutes with no keyboard or mouse input. The current Activity ends at the last input. Idle time is not stored, it shows as a gap.
+The state after 15 minutes with no keyboard or mouse input and no Screen hold. The current Activity ends at the last input, or at the end of the Screen hold when that came later. Idle time is not stored, it shows as a gap.
 _Avoid_: AFK, away, break
+
+**Screen hold**:
+The app in front asks macOS to keep the screen on, as a video, a video call, or a slideshow does. While it lasts, time with no input is not Idle, for at most 3 hours after the last input. A hold by an app that is not in front does not count.
+_Avoid_: Wake lock, display assertion, keep-awake, playback
 
 **Device**:
 One source of Activities: this Mac, or an iPhone or iPad synced through Apple. Every Activity belongs to one Device.
