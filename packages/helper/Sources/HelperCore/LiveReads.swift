@@ -77,7 +77,7 @@ func automationStatus(bundleId: String, askUser: Bool) -> OSStatus {
 
 /// Sends one `get` Apple Event per property chain with `AESendMessage`, which
 /// Apple documents as thread-safe when the event names its own reply port.
-/// `NSAppleScript` is main-thread only and hung off it (ADR 0015).
+/// The AppleScript runner is main-thread only and hung off it (ADR 0015).
 func sendEvents(_ events: BrowserEvents) -> String? {
   let target = NSAppleEventDescriptor(bundleIdentifier: events.bundleId)
   var answers: [String] = []
