@@ -278,13 +278,50 @@ describe("starter set", () => {
     expect(site("https://api.x.com/2/tweets")).toBe("Social");
   });
 
-  it("the Starter set covers 30 apps and 20 sites", () => {
+  it("the Starter set puts claude.ai and Grok in AI, and web Telegram in Communication", async () => {
+    // Given: a fresh open; its Categories and Rules
+    const { categories, rules } = await open(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        return {
+          categories: yield* store.listCategories(),
+          rules: yield* store.listRules(),
+        };
+      }),
+    );
+    const name = (id: string | null) =>
+      categories.find((c) => c.id === id)?.name ?? null;
+    const site = (url: string) =>
+      name(resolve({ ...chrome, url }, rules, device).categoryId);
+    const app = (bundleId: string) =>
+      name(
+        resolve({ ...chrome, bundleId, url: null }, rules, device).categoryId,
+      );
+    // When
+    const resolved = {
+      claude: site("https://claude.ai/new"),
+      grok: site("https://grok.com/c/x"),
+      webTelegram: site("https://web.telegram.org/k/"),
+      grokApp: app("ai.x.GrokApp"),
+      telegramIos: app("ph.telegra.Telegraph"),
+    };
+    // Then
+    expect(resolved).toEqual({
+      claude: "AI",
+      grok: "AI",
+      webTelegram: "Communication",
+      grokApp: "AI",
+      telegramIos: "Communication",
+    });
+  });
+
+  it("the Starter set covers 51 apps and 35 sites", () => {
     // Given: the Starter rules
     // When
     const apps = starterRules.filter((r) => r.field === "app").length;
     const sites = starterRules.filter((r) => r.field === "domain").length;
     // Then
-    expect([apps, sites]).toEqual([40, 27]);
+    expect([apps, sites]).toEqual([51, 35]);
   });
 
   it("the Starter set marks a Chrome incognito title Private", async () => {

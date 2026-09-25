@@ -391,7 +391,7 @@ describe("server", () => {
     const rules = result.structuredContent?.rules as ReadonlyArray<
       Record<string, unknown>
     >;
-    expect(rules).toHaveLength(70);
+    expect(rules).toHaveLength(89);
     const { id: _id, ...first } = rules[0] as Record<string, unknown>;
     expect(first).toEqual({
       position: 0,
