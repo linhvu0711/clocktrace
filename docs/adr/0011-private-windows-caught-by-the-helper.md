@@ -43,6 +43,17 @@ read.
 - Safari's Window menu (`Move Tab to New Private Window`): rejected, it is
   display text and changes with the language.
 
+## Exception: a slow read on the same page
+
+A URL read that is slow or still busy cannot tell a Private window from a normal
+one. When the app and window title are the same as at the last read that
+answered, the Helper sends that read's URL again instead of no URL (ADR 0015).
+Built in #231.
+That URL came from a read that saw a normal window, so no Private URL can reach
+the Store. A normal and a Private window with the same title can give the
+Private time the normal window's URL; the `(Incognito)` and `(Private)` title
+suffixes make this rare.
+
 ## Consequences
 
 - Safari without Accessibility records no URLs, only app and time.
