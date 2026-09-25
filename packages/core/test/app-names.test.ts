@@ -216,6 +216,65 @@ describe("resolveAppName", () => {
     expect(result).toEqual(Option.some({ name: "Safari", genre: null }));
   });
 
+  it("each system screen resolves to its built-in name without a lookup", async () => {
+    // Given: a counting lookup and the system screen bundle IDs
+    const calls = Ref.unsafeMake(0);
+    const lookup = countingLookup(
+      calls,
+      Effect.succeed(Option.some({ name: "Other", genre: "News" })),
+    );
+    const ids = [
+      "com.apple.InCallService",
+      "com.apple.LocalAuthenticationUIService",
+      "com.apple.AppProtectionUIHost",
+      "com.apple.AuthKitUIService",
+      "com.apple.AuthenticationServicesUI",
+      "com.apple.ServicesPaymentAngel",
+      "com.apple.PassbookUIService",
+      "com.apple.CTNotifyUIService",
+      "com.apple.HeadphoneProxService",
+      "com.apple.PosterBoard",
+      "com.apple.ScreenshotServicesService",
+      "com.apple.purplebuddy",
+      "com.apple.webapp",
+      "com.apple.CoreAuthUI",
+      "com.apple.WebSheet",
+      "com.apple.SafariViewService",
+      "com.apple.PhotosUIService",
+    ];
+    // When
+    const { results, count } = await run(
+      lookup,
+      Effect.gen(function* () {
+        const results = yield* Effect.forEach(ids, resolveAppName);
+        return { results, count: yield* Ref.get(calls) };
+      }),
+    );
+    // Then
+    expect({ results, count }).toEqual({
+      results: [
+        "Phone call",
+        "Face ID & passcode",
+        "Hidden & locked apps",
+        "Apple Account sign-in",
+        "Sign-in sheet",
+        "App Store purchase",
+        "Wallet & Apple Pay",
+        "Carrier message",
+        "Headphone connection",
+        "Lock Screen & wallpaper",
+        "Screenshot",
+        "Setup Assistant",
+        "Web app",
+        "Passcode",
+        "Wi-Fi login",
+        "In-app Safari",
+        "Photos picker",
+      ].map((name) => Option.some({ name, genre: null })),
+      count: 0,
+    });
+  });
+
   it("a miss is looked up once and cached", async () => {
     // Given: an in-memory store and a lookup stub returning Bluesky
     const calls = Ref.unsafeMake(0);
