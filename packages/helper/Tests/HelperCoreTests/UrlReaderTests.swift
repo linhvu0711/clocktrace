@@ -266,6 +266,183 @@ final class UrlReaderTests: XCTestCase {
     XCTAssertEqual(askCount, 0)
   }
 
+  private let brave = browserEvents(bundleId: "com.brave.Browser")!
+  private let page = "Example Domain - Brave"
+
+  /// A granted reader whose reads answer `answers` at once, in order, and
+  /// after that sleep past the 50 ms limit.
+  private func reader(
+    answers: [String?] = ["normal\nhttps://example.com/"],
+    automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 },
+    checkLimit: DispatchTimeInterval = .seconds(2)
+  ) -> UrlReader {
+    let lock = NSLock()
+    var calls = 0
+    return UrlReader(
+      reads: reads(
+        automationStatus: automationStatus,
+        sendEvents: { _ in
+          lock.lock()
+          calls += 1
+          let call = calls
+          lock.unlock()
+          if call <= answers.count {
+            return answers[call - 1]
+          }
+          Thread.sleep(forTimeInterval: 0.5)
+          return "normal\nhttps://example.org/"
+        }),
+      checkLimit: checkLimit,
+      readLimit: .milliseconds(50))
+  }
+
+  /// A Grant check that answers 0 on its first call and `later` after.
+  private func grantedOnce(then later: @escaping () -> OSStatus) -> (String, Bool) -> OSStatus {
+    let lock = NSLock()
+    var calls = 0
+    return { _, _ in
+      lock.lock()
+      calls += 1
+      let call = calls
+      lock.unlock()
+      return call == 1 ? 0 : later()
+    }
+  }
+
+  func testASlowReadOnTheSamePageSendsTheLastUrl() {
+    // Given: read 1 of Brave at t0 answered
+    let reader = reader()
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2, same title, slow
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .granted("normal\nhttps://example.com/"))
+  }
+
+  func testABusyReadOnTheSamePageSendsTheLastUrl() {
+    // Given: read 1 answered; read 2 timed out and still sleeps
+    let reader = reader()
+    _ = reader.read(brave, title: page, at: t0)
+    _ = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // When: read 3, same title, at once (busy)
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(2))
+    // Then
+    XCTAssertEqual(result, .granted("normal\nhttps://example.com/"))
+  }
+
+  func testASlowReadAfterTheTitleChangedSendsNoUrl() {
+    // Given: read 1 answered
+    let reader = reader()
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2 on another title, slow
+    let result = reader.read(
+      brave, title: "Other Page - Brave", at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .granted(nil))
+  }
+
+  func testABusyReadAfterTheTitleChangedSendsNoUrl() {
+    // Given: read 1 answered; read 2, same title, timed out and still sleeps
+    let reader = reader()
+    _ = reader.read(brave, title: page, at: t0)
+    _ = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // When: read 3 on another title, at once (busy)
+    let result = reader.read(
+      brave, title: "Other Page - Brave", at: t0.addingTimeInterval(2))
+    // Then
+    XCTAssertEqual(result, .granted(nil))
+  }
+
+  func testASlowReadInAnotherAppSendsNoUrl() {
+    // Given: read 1 of Brave answered
+    let reader = reader()
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2 of Chrome, same title, slow
+    let result = reader.read(
+      browserEvents(bundleId: "com.google.Chrome")!, title: page,
+      at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .granted(nil))
+  }
+
+  func testTheLastUrlHasNoTimeLimit() {
+    // Given: read 1 of Brave at t0 answered
+    let reader = reader()
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2 a day later, same title, slow
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(86_400))
+    // Then
+    XCTAssertEqual(result, .granted("normal\nhttps://example.com/"))
+  }
+
+  func testANewAnswerReplacesTheLastUrl() {
+    // Given: reads 1 and 2 answered, the second with another URL
+    let reader = reader(answers: ["normal\nhttps://example.com/", "normal\nhttps://example.org/"])
+    _ = reader.read(brave, title: page, at: t0)
+    _ = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // When: read 3, same title, slow
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(2))
+    // Then
+    XCTAssertEqual(result, .granted("normal\nhttps://example.org/"))
+  }
+
+  func testASlowReadAfterAnErrorAnswerSendsNoUrl() {
+    // Given: read 1 answered with an error (no window)
+    let reader = reader(answers: [nil])
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2, same title, slow
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .granted(nil))
+  }
+
+  func testASlowReadWithNoTitleSendsNoUrl() {
+    // Given: read 1 with no title (Accessibility off) answered
+    let reader = reader()
+    _ = reader.read(brave, title: nil, at: t0)
+    // When: read 2, no title, slow
+    let result = reader.read(brave, title: nil, at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .granted(nil))
+  }
+
+  func testADeniedGrantAfterAnAnswerSendsNoUrl() {
+    // Given: the Grant check answers 0, then denied; read 1 answered
+    let reader = reader(automationStatus: grantedOnce(then: { -1743 }))
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2, same title
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .missing(.denied))
+  }
+
+  func testANotAskedGrantAfterAnAnswerSendsNoUrl() {
+    // Given: the Grant check answers 0, then not asked (the ask too); read 1
+    // answered
+    let reader = reader(automationStatus: grantedOnce(then: { -1744 }))
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2, same title
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .missing(.notAsked))
+  }
+
+  func testAGrantCheckThatStopsAnsweringAfterAnAnswerSendsNoUrl() {
+    // Given: the Grant check answers 0, then sleeps past its limit; read 1
+    // answered
+    let reader = reader(
+      automationStatus: grantedOnce(then: {
+        Thread.sleep(forTimeInterval: 0.5)
+        return 0
+      }),
+      checkLimit: .milliseconds(50))
+    _ = reader.read(brave, title: page, at: t0)
+    // When: read 2, same title
+    let result = reader.read(brave, title: page, at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(result, .missing(.noAnswer))
+  }
+
   func testLogsOnceWhenTheCheckStopsAnswering() {
     // Given: every check sleeps past the limit; the log appends to an array
     var lines: [String] = []

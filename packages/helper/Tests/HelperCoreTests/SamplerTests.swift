@@ -137,6 +137,49 @@ final class SamplerTests: XCTestCase {
       result, braveLine(title: "Example Domain - Brave", url: nil, missing: []))
   }
 
+  /// Brave front on one page, Accessibility on; the read answers `first` at
+  /// once, and every later read sleeps past the 50 ms limit.
+  private func braveSlowAfter(_ first: String) -> (Reads, UrlReader) {
+    let lock = NSLock()
+    var calls = 0
+    let r = reads(
+      front: brave, axTrusted: true, title: "Example Domain - Brave",
+      sendEvents: { _ in
+        lock.lock()
+        calls += 1
+        let call = calls
+        lock.unlock()
+        if call == 1 {
+          return first
+        }
+        Thread.sleep(forTimeInterval: 0.5)
+        return "normal\nhttps://example.org/"
+      })
+    return (r, UrlReader(reads: r, readLimit: .milliseconds(50)))
+  }
+
+  func testASlowChromeReadOnTheSamePageKeepsTheUrl() {
+    // Given: sample 1 answered with a normal window
+    let (r, urls) = braveSlowAfter("normal\nhttps://example.com/")
+    _ = Sampler.sample(r, urls: urls, at: t0)
+    // When: sample 2, slow
+    let result = line(r, urls: urls)
+    // Then
+    XCTAssertEqual(
+      result,
+      braveLine(title: "Example Domain - Brave", url: "https://example.com/", missing: []))
+  }
+
+  func testASlowReadAfterAnIncognitoAnswerHasNoTitleOrUrl() {
+    // Given: sample 1 answered with an incognito window
+    let (r, urls) = braveSlowAfter("incognito\nhttps://example.com/")
+    _ = Sampler.sample(r, urls: urls, at: t0)
+    // When: sample 2, slow
+    let result = line(r, urls: urls)
+    // Then
+    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: []))
+  }
+
   private let safariFormats = ["%@, Private Browsing", "%@, navigation privée"]
 
   private func safariReads(
