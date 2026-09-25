@@ -13,6 +13,8 @@ export const HelperLine = Schema.parseJson(
     ),
     title: Schema.NullOr(Schema.String),
     url: Schema.NullOr(Schema.String),
+    // An older Helper sends no screenHold: that is no Screen hold.
+    screenHold: Schema.optionalWith(Schema.Boolean, { default: () => false }),
     idleSeconds: Schema.Number,
     missing: Schema.Array(Schema.String),
   }),

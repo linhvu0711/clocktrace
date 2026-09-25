@@ -22,6 +22,7 @@ const line = (
   grant: null,
   title: null,
   url: null,
+  screenHold: false,
   idleSeconds: 0,
   missing: [],
   ...o,
