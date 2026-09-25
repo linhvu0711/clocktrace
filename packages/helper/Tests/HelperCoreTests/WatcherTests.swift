@@ -14,7 +14,7 @@ final class WatcherTests: XCTestCase {
       axTrusted: { true },
       focusedTitle: focusedTitle,
       automationStatus: { _, _ in 0 },
-      runScript: { _ in nil },
+      sendEvents: { _ in nil },
       safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
@@ -98,7 +98,7 @@ final class WatcherTests: XCTestCase {
         return "tab"
       },
       automationStatus: { _, _ in -1743 },
-      runScript: { _ in nil },
+      sendEvents: { _ in nil },
       safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )

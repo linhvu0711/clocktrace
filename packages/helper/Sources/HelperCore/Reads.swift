@@ -5,7 +5,9 @@ public struct Reads {
   public var axTrusted: () -> Bool
   public var focusedTitle: (pid_t) -> String?
   public var automationStatus: (String, Bool) -> OSStatus
-  public var runScript: (String) -> String?
+  /// The answers to the events, in order, joined by a line feed; nil when any
+  /// event fails.
+  public var sendEvents: (BrowserEvents) -> String?
   public var safariPrivateFormats: () -> [String]
   public var idleSeconds: () -> Double
   /// The pids a Screen hold counts for; nil when the read fails.
@@ -16,7 +18,7 @@ public struct Reads {
     axTrusted: @escaping () -> Bool,
     focusedTitle: @escaping (pid_t) -> String?,
     automationStatus: @escaping (String, Bool) -> OSStatus,
-    runScript: @escaping (String) -> String?,
+    sendEvents: @escaping (BrowserEvents) -> String?,
     safariPrivateFormats: @escaping () -> [String],
     idleSeconds: @escaping () -> Double,
     screenHoldPids: @escaping () -> Set<pid_t>? = { [] }
@@ -25,7 +27,7 @@ public struct Reads {
     self.axTrusted = axTrusted
     self.focusedTitle = focusedTitle
     self.automationStatus = automationStatus
-    self.runScript = runScript
+    self.sendEvents = sendEvents
     self.safariPrivateFormats = safariPrivateFormats
     self.idleSeconds = idleSeconds
     self.screenHoldPids = screenHoldPids

@@ -15,6 +15,8 @@ public final class UrlReader {
     var asking = false
   }
   private var states: [String: State] = [:]
+  /// The last read that answered, on a page with a title.
+  private var lastAnswer: (bundleId: String, title: String, output: String?)?
   private let lock = NSLock()
 
   public init(
@@ -31,7 +33,8 @@ public final class UrlReader {
     self.log = log
   }
 
-  public func read(bundleId: String, script: String, at now: Date) -> UrlRead {
+  public func read(_ events: BrowserEvents, title: String?, at now: Date) -> UrlRead {
+    let bundleId = events.bundleId
     guard let status = check(bundleId: bundleId, at: now) else {
       return .missing(.noAnswer)
     }
@@ -42,7 +45,7 @@ public final class UrlReader {
       }
       return .missing(state)
     }
-    return readUrl(bundleId: bundleId, script: script)
+    return readUrl(events, title: title)
   }
 
   private func startAsk(bundleId: String) {
@@ -104,13 +107,26 @@ public final class UrlReader {
     }
   }
 
-  private func readUrl(bundleId: String, script: String) -> UrlRead {
-    let answer = urlReads.run(bundleId, within: readLimit) { self.reads.runScript(script) }
+  private func readUrl(_ events: BrowserEvents, title: String?) -> UrlRead {
+    let answer = urlReads.run(events.bundleId, within: readLimit) {
+      self.reads.sendEvents(events)
+    }
     switch answer {
-    case .value(let url):
-      return .granted(url)
+    case .value(let output):
+      lock.lock()
+      lastAnswer = title.map { (events.bundleId, $0, output) }
+      lock.unlock()
+      return .granted(output)
     case .busy, .timedOut:
-      return .granted(nil)
+      // A slow or busy read on the same page sends the last answer again, with
+      // no time limit (ADR 0015). It goes through the same Private window check
+      // (ADR 0011).
+      lock.lock()
+      defer { lock.unlock() }
+      guard let last = lastAnswer, let title,
+        last.bundleId == events.bundleId, last.title == title
+      else { return .granted(nil) }
+      return .granted(last.output)
     }
   }
 }
