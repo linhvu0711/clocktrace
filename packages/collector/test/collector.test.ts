@@ -436,6 +436,141 @@ describe("collector", () => {
     ]);
   });
 
+  it("an hour of Screen hold with no input stays in the Activity", async () => {
+    // Given: Safari holds the screen on for an hour with no input
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:30:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 1800,
+        screenHold: true,
+      }),
+      line({
+        ts: "2026-01-01T01:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 3600,
+        screenHold: true,
+      }),
+      line({
+        ts: "2026-01-01T01:00:10.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T01:00:10.000Z",
+      },
+    ]);
+  });
+
+  it("the Activity ends at the last Screen hold line once 15 quiet minutes follow it", async () => {
+    // Given: a Screen hold last seen at 00:40, then no input and no hold
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T00:40:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 2400,
+        screenHold: true,
+      }),
+      line({
+        ts: "2026-01-01T00:54:50.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 3290,
+      }),
+      line({
+        ts: "2026-01-01T00:55:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 3300,
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T00:40:00.000Z",
+      },
+    ]);
+  });
+
+  it("a Screen hold counts for at most 3 hours after the last input", async () => {
+    // Given: a Screen hold that goes on for 3.5 hours with no input
+    const lines = [
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+      }),
+      line({
+        ts: "2026-01-01T02:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 7200,
+        screenHold: true,
+      }),
+      line({
+        ts: "2026-01-01T03:14:50.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 11690,
+        screenHold: true,
+      }),
+      line({
+        ts: "2026-01-01T03:15:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 11700,
+        screenHold: true,
+      }),
+      line({
+        ts: "2026-01-01T03:30:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        idleSeconds: 12600,
+        screenHold: true,
+      }),
+    ];
+    // When
+    const rows = await run(lines);
+    // Then
+    expect(rows).toEqual([
+      {
+        appName: "Safari",
+        title: null,
+        url: null,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        endedAt: "2026-01-01T03:00:00.000Z",
+      },
+    ]);
+  });
+
   it("a no-app line after an idle close stops the resume backdate", async () => {
     // Given: idle closes Safari, a login-window line intervenes, Safari returns
     const lines = [
