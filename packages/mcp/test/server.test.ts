@@ -364,6 +364,7 @@ describe("server", () => {
       productive: boolean;
     }>;
     expect(categories.map((c) => [c.name, c.productive])).toEqual([
+      ["AI", true],
       ["Coding", true],
       ["Communication", true],
       ["Design", true],

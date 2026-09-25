@@ -67,6 +67,7 @@ describe("starter set", () => {
     );
     // Then: Coding is gone from this database
     expect(afterRemove.map((c) => c.name)).toEqual([
+      "AI",
       "Communication",
       "Design",
       "Entertainment",
@@ -85,6 +86,7 @@ describe("starter set", () => {
     rmSync(freshDir, { recursive: true, force: true });
     // Then: the full Starter set is seeded again
     expect(seeded.map((c) => c.name)).toEqual([
+      "AI",
       "Coding",
       "Communication",
       "Design",
@@ -94,7 +96,7 @@ describe("starter set", () => {
     ]);
   });
 
-  it("a fresh store gets six Categories and the Starter Rules", async () => {
+  it("a fresh store gets seven Categories and the Starter Rules", async () => {
     // Given: a temp path with no file
     // When
     const { categories, rules, flag } = await open(
@@ -108,6 +110,7 @@ describe("starter set", () => {
     );
     // Then
     expect(categories.map((c) => c.name)).toEqual([
+      "AI",
       "Coding",
       "Communication",
       "Design",
@@ -118,6 +121,7 @@ describe("starter set", () => {
     expect(
       categories.map((c) => ({ name: c.name, productive: c.productive })),
     ).toEqual([
+      { name: "AI", productive: true },
       { name: "Coding", productive: true },
       { name: "Communication", productive: true },
       { name: "Design", productive: true },
@@ -144,7 +148,7 @@ describe("starter set", () => {
       }),
     );
     // Then
-    expect(counts).toEqual([6, starterRules.length]);
+    expect(counts).toEqual([7, starterRules.length]);
   });
 
   it("a deleted rule stays deleted after a reopen", async () => {
@@ -219,7 +223,7 @@ describe("starter set", () => {
       }),
     );
     // Then: the full Starter set is there
-    expect(categories).toHaveLength(6);
+    expect(categories).toHaveLength(7);
     expect(rules).toHaveLength(starterRules.length);
     expect(flag).toEqual(Option.some("1"));
   });

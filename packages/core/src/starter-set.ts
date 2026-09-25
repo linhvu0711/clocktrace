@@ -10,6 +10,7 @@ export const starterCategories: ReadonlyArray<NewCategory> = [
   { name: "Writing", productive: true },
   { name: "Communication", productive: true },
   { name: "Design", productive: true },
+  { name: "AI", productive: true },
   { name: "Social", productive: false },
   { name: "Entertainment", productive: false },
 ];
