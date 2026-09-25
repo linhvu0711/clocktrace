@@ -7,14 +7,14 @@ final class UrlReaderTests: XCTestCase {
 
   private func reads(
     automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 },
-    runScript: @escaping (String) -> String? = { _ in nil }
+    sendEvents: @escaping (BrowserEvents) -> String? = { _ in nil }
   ) -> Reads {
     Reads(
       frontmost: { nil },
       axTrusted: { true },
       focusedTitle: { _ in nil },
       automationStatus: automationStatus,
-      runScript: runScript,
+      sendEvents: sendEvents,
       safariPrivateFormats: { [] },
       idleSeconds: { 0 }
     )
@@ -37,8 +37,8 @@ final class UrlReaderTests: XCTestCase {
     // When
     let (result, elapsed) = timed {
       reader.read(
-        bundleId: "com.google.Chrome",
-        script: browserScript(bundleId: "com.google.Chrome")!, at: t0)
+        browserEvents(bundleId: "com.google.Chrome")!,
+        title: nil, at: t0)
     }
     // Then
     XCTAssertEqual(result, .missing(.noAnswer))
@@ -55,11 +55,11 @@ final class UrlReaderTests: XCTestCase {
         return 0
       }),
       checkLimit: .milliseconds(50))
-    let script = browserScript(bundleId: "com.google.Chrome")!
+    let events = browserEvents(bundleId: "com.google.Chrome")!
     // When: the first check still sleeps at the second read
-    let first = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    let first = reader.read(events, title: nil, at: t0)
     let second = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(31))
     // Then
     XCTAssertEqual(first, .missing(.noAnswer))
@@ -79,17 +79,17 @@ final class UrlReaderTests: XCTestCase {
           }
           return 0
         },
-        runScript: { _ in "https://mail.google.com/" }),
+        sendEvents: { _ in "https://mail.google.com/" }),
       checkLimit: .milliseconds(50))
-    let script = browserScript(bundleId: "com.google.Chrome")!
+    let events = browserEvents(bundleId: "com.google.Chrome")!
     // When
-    let first = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    let first = reader.read(events, title: nil, at: t0)
     Thread.sleep(forTimeInterval: 0.3)
     let second = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(29))
     let third = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(30))
     // Then
     XCTAssertEqual(first, .missing(.noAnswer))
@@ -101,7 +101,7 @@ final class UrlReaderTests: XCTestCase {
   func testASlowReadHasNoUrl() {
     // Given: a granted browser whose URL read sleeps past the limit
     let reader = UrlReader(
-      reads: reads(runScript: { _ in
+      reads: reads(sendEvents: { _ in
         Thread.sleep(forTimeInterval: 0.5)
         return "https://example.com/"
       }),
@@ -109,8 +109,8 @@ final class UrlReaderTests: XCTestCase {
     // When
     let (result, elapsed) = timed {
       reader.read(
-        bundleId: "com.apple.Safari",
-        script: browserScript(bundleId: "com.apple.Safari")!, at: t0)
+        browserEvents(bundleId: "com.apple.Safari")!,
+        title: nil, at: t0)
     }
     // Then
     XCTAssertEqual(result, .granted(nil))
@@ -121,7 +121,7 @@ final class UrlReaderTests: XCTestCase {
     // Given: the first read sleeps past the limit; later reads pass, counted
     var calls = 0
     let reader = UrlReader(
-      reads: reads(runScript: { _ in
+      reads: reads(sendEvents: { _ in
         calls += 1
         if calls == 1 {
           Thread.sleep(forTimeInterval: 0.2)
@@ -129,15 +129,15 @@ final class UrlReaderTests: XCTestCase {
         return "https://example.com/"
       }),
       readLimit: .milliseconds(50))
-    let script = browserScript(bundleId: "com.apple.Safari")!
+    let events = browserEvents(bundleId: "com.apple.Safari")!
     // When
-    let first = reader.read(bundleId: "com.apple.Safari", script: script, at: t0)
+    let first = reader.read(events, title: nil, at: t0)
     let second = reader.read(
-      bundleId: "com.apple.Safari", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(1))
     Thread.sleep(forTimeInterval: 0.3)
     let third = reader.read(
-      bundleId: "com.apple.Safari", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(2))
     // Then
     XCTAssertEqual(first, .granted(nil))
@@ -162,12 +162,12 @@ final class UrlReaderTests: XCTestCase {
         }
         return -1744
       }))
-    let script = browserScript(bundleId: "com.google.Chrome")!
+    let events = browserEvents(bundleId: "com.google.Chrome")!
     // When
     let results = [0, 1, 2].map { offset -> (UrlRead, TimeInterval) in
       timed {
         reader.read(
-          bundleId: "com.google.Chrome", script: script,
+          events, title: nil,
           at: t0.addingTimeInterval(TimeInterval(offset)))
       }
     }
@@ -200,14 +200,14 @@ final class UrlReaderTests: XCTestCase {
           answeredLock.unlock()
           return done ? 0 : -1744
         },
-        runScript: { _ in "https://example.com/" }))
-    let script = browserScript(bundleId: "com.google.Chrome")!
+        sendEvents: { _ in "https://example.com/" }))
+    let events = browserEvents(bundleId: "com.google.Chrome")!
     // When
-    let first = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    let first = reader.read(events, title: nil, at: t0)
     askDone.signal()
     Thread.sleep(forTimeInterval: 0.1)
     let second = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(1))
     // Then
     XCTAssertEqual(first, .missing(.notAsked))
@@ -233,15 +233,15 @@ final class UrlReaderTests: XCTestCase {
         stateLock.unlock()
         return done ? -1743 : -1744
       }))
-    let script = browserScript(bundleId: "com.google.Chrome")!
+    let events = browserEvents(bundleId: "com.google.Chrome")!
     // When
-    _ = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    _ = reader.read(events, title: nil, at: t0)
     Thread.sleep(forTimeInterval: 0.1)
     let second = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(1))
     let third = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(2))
     // Then
     XCTAssertEqual(second, .missing(.denied))
@@ -259,8 +259,8 @@ final class UrlReaderTests: XCTestCase {
       }))
     // When
     let result = reader.read(
-      bundleId: "com.google.Chrome",
-      script: browserScript(bundleId: "com.google.Chrome")!, at: t0)
+      browserEvents(bundleId: "com.google.Chrome")!,
+      title: nil, at: t0)
     // Then
     XCTAssertEqual(result, .missing(.denied))
     XCTAssertEqual(askCount, 0)
@@ -276,16 +276,16 @@ final class UrlReaderTests: XCTestCase {
       }),
       checkLimit: .milliseconds(50),
       log: { lines.append($0) })
-    let script = browserScript(bundleId: "com.google.Chrome")!
+    let events = browserEvents(bundleId: "com.google.Chrome")!
     // When
-    _ = reader.read(bundleId: "com.google.Chrome", script: script, at: t0)
+    _ = reader.read(events, title: nil, at: t0)
     Thread.sleep(forTimeInterval: 0.3)
     _ = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(30))
     Thread.sleep(forTimeInterval: 0.3)
     _ = reader.read(
-      bundleId: "com.google.Chrome", script: script,
+      events, title: nil,
       at: t0.addingTimeInterval(60))
     // Then
     XCTAssertEqual(

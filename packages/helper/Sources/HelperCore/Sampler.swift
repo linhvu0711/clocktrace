@@ -10,8 +10,8 @@ public enum Sampler {
     var title = (ax && front != nil) ? r.focusedTitle(front!.pid) : nil
 
     var read: UrlRead
-    if let front, let script = browserScript(bundleId: front.bundleId ?? "") {
-      read = urls.read(bundleId: front.bundleId ?? "", script: script, at: now)
+    if let front, let events = browserEvents(bundleId: front.bundleId ?? "") {
+      read = urls.read(events, title: title, at: now)
     } else {
       read = .notBrowser
     }

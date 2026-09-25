@@ -31,7 +31,8 @@ public final class UrlReader {
     self.log = log
   }
 
-  public func read(bundleId: String, script: String, at now: Date) -> UrlRead {
+  public func read(_ events: BrowserEvents, title: String?, at now: Date) -> UrlRead {
+    let bundleId = events.bundleId
     guard let status = check(bundleId: bundleId, at: now) else {
       return .missing(.noAnswer)
     }
@@ -42,7 +43,7 @@ public final class UrlReader {
       }
       return .missing(state)
     }
-    return readUrl(bundleId: bundleId, script: script)
+    return readUrl(events)
   }
 
   private func startAsk(bundleId: String) {
@@ -104,8 +105,10 @@ public final class UrlReader {
     }
   }
 
-  private func readUrl(bundleId: String, script: String) -> UrlRead {
-    let answer = urlReads.run(bundleId, within: readLimit) { self.reads.runScript(script) }
+  private func readUrl(_ events: BrowserEvents) -> UrlRead {
+    let answer = urlReads.run(events.bundleId, within: readLimit) {
+      self.reads.sendEvents(events)
+    }
     switch answer {
     case .value(let url):
       return .granted(url)

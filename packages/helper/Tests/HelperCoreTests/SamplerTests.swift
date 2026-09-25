@@ -20,7 +20,7 @@ final class SamplerTests: XCTestCase {
     front: FrontApp?,
     axTrusted: Bool,
     title: String?,
-    runScript: @escaping (String) -> String?,
+    sendEvents: @escaping (BrowserEvents) -> String?,
     safariPrivateFormats: [String] = [],
     automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 },
     screenHoldPids: Set<pid_t>? = []
@@ -30,7 +30,7 @@ final class SamplerTests: XCTestCase {
       axTrusted: { axTrusted },
       focusedTitle: { _ in title },
       automationStatus: automationStatus,
-      runScript: runScript,
+      sendEvents: sendEvents,
       safariPrivateFormats: { safariPrivateFormats },
       idleSeconds: { 1 },
       screenHoldPids: { screenHoldPids }
@@ -53,7 +53,7 @@ final class SamplerTests: XCTestCase {
     // Given: Brave front, Accessibility on, an incognito window
     let r = reads(
       front: brave, axTrusted: true, title: "Example Domain - Brave (Private)",
-      runScript: { _ in "incognito\nhttps://example.com/" })
+      sendEvents: { _ in "incognito\nhttps://example.com/" })
     // When
     let result = line(r)
     // Then
@@ -64,7 +64,7 @@ final class SamplerTests: XCTestCase {
     // Given: Brave front, Accessibility off, an incognito window
     let r = reads(
       front: brave, axTrusted: false, title: "Example Domain - Brave (Private)",
-      runScript: { _ in "incognito\nhttps://example.com/" })
+      sendEvents: { _ in "incognito\nhttps://example.com/" })
     // When
     let result = line(r)
     // Then
@@ -75,7 +75,7 @@ final class SamplerTests: XCTestCase {
     // Given: Brave front, Accessibility on, a normal window
     let r = reads(
       front: brave, axTrusted: true, title: "Example Domain - Brave",
-      runScript: { _ in "normal\nhttps://example.com/" })
+      sendEvents: { _ in "normal\nhttps://example.com/" })
     // When
     let result = line(r)
     // Then
@@ -88,7 +88,7 @@ final class SamplerTests: XCTestCase {
     // Given: Brave front, Accessibility off, a normal window
     let r = reads(
       front: brave, axTrusted: false, title: "Example Domain - Brave",
-      runScript: { _ in "normal\nhttps://example.com/" })
+      sendEvents: { _ in "normal\nhttps://example.com/" })
     // When
     let result = line(r)
     // Then
@@ -101,7 +101,7 @@ final class SamplerTests: XCTestCase {
     // Given: Brave front, Accessibility on, the script fails
     let r = reads(
       front: brave, axTrusted: true, title: "Example Domain - Brave",
-      runScript: { _ in nil })
+      sendEvents: { _ in nil })
     // When
     let result = line(r)
     // Then
@@ -113,7 +113,7 @@ final class SamplerTests: XCTestCase {
     // Given: Brave front, Accessibility on, the script gives a URL with no mode
     let r = reads(
       front: brave, axTrusted: true, title: "Example Domain - Brave",
-      runScript: { _ in "https://example.com/" })
+      sendEvents: { _ in "https://example.com/" })
     // When
     let result = line(r)
     // Then
@@ -125,7 +125,7 @@ final class SamplerTests: XCTestCase {
     // Given: Brave front, Accessibility on, the read sleeps past the limit
     let r = reads(
       front: brave, axTrusted: true, title: "Example Domain - Brave",
-      runScript: { _ in
+      sendEvents: { _ in
         Thread.sleep(forTimeInterval: 0.5)
         return "normal\nhttps://example.com/"
       })
@@ -144,7 +144,7 @@ final class SamplerTests: XCTestCase {
   ) -> Reads {
     reads(
       front: safari, axTrusted: axTrusted, title: title,
-      runScript: { _ in "https://example.com/" },
+      sendEvents: { _ in "https://example.com/" },
       safariPrivateFormats: safariPrivateFormats ?? safariFormats)
   }
 
@@ -207,7 +207,7 @@ final class SamplerTests: XCTestCase {
   func testTheLoginWindowLineIsEmpty() {
     // Given: the login window front, Accessibility on
     let r = reads(
-      front: loginWindow, axTrusted: true, title: "Login", runScript: { _ in nil })
+      front: loginWindow, axTrusted: true, title: "Login", sendEvents: { _ in nil })
     // When
     let result = line(r)
     // Then
@@ -221,7 +221,7 @@ final class SamplerTests: XCTestCase {
   func testTheNoAccessibilityLineHasNoTitle() {
     // Given: TextEdit front, Accessibility off
     let r = reads(
-      front: textEdit, axTrusted: false, title: "Untitled", runScript: { _ in nil })
+      front: textEdit, axTrusted: false, title: "Untitled", sendEvents: { _ in nil })
     // When
     let result = line(r)
     // Then
@@ -236,7 +236,7 @@ final class SamplerTests: XCTestCase {
     // Given: Safari front, Accessibility on, Automation denied
     let r = reads(
       front: safari, axTrusted: true, title: "Example Domain",
-      runScript: { _ in "https://example.com/" },
+      sendEvents: { _ in "https://example.com/" },
       safariPrivateFormats: safariFormats,
       automationStatus: { _, _ in -1743 })
     // When
@@ -255,7 +255,7 @@ final class SamplerTests: XCTestCase {
     let chrome = FrontApp(
       name: "Google Chrome", bundleId: "com.google.Chrome", pid: 3)
     let r = reads(
-      front: chrome, axTrusted: true, title: "Inbox", runScript: { _ in nil },
+      front: chrome, axTrusted: true, title: "Inbox", sendEvents: { _ in nil },
       automationStatus: { _, _ in
         Thread.sleep(forTimeInterval: 0.5)
         return 0
@@ -275,7 +275,7 @@ final class SamplerTests: XCTestCase {
   func testTheWineAppLineKeepsItsName() {
     // Given: a Wine app with no bundle id front, Accessibility on, no title
     let wine = FrontApp(name: "QSanguosha.exe", bundleId: nil, pid: 5)
-    let r = reads(front: wine, axTrusted: true, title: nil, runScript: { _ in nil })
+    let r = reads(front: wine, axTrusted: true, title: nil, sendEvents: { _ in nil })
     // When
     let result = line(r)
     // Then
@@ -292,7 +292,7 @@ final class SamplerTests: XCTestCase {
 
   func testTitleNullAndMissingAccessibilityWhenNotTrusted() {
     // Given: Finder front, Accessibility not granted
-    let r = reads(front: finder, axTrusted: false, title: "Desktop", runScript: { _ in nil })
+    let r = reads(front: finder, axTrusted: false, title: "Desktop", sendEvents: { _ in nil })
     // When
     let result = sample(r)
     // Then
@@ -306,7 +306,7 @@ final class SamplerTests: XCTestCase {
   func testAHoldByTheFrontAppIsAScreenHold() {
     // Given: TextEdit (pid 2) front and holding the screen on
     let r = reads(
-      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil },
+      front: textEdit, axTrusted: true, title: "Untitled", sendEvents: { _ in nil },
       screenHoldPids: [2])
     // When
     let result = line(r)
@@ -321,7 +321,7 @@ final class SamplerTests: XCTestCase {
   func testAHoldByAnAppNotInFrontIsNoScreenHold() {
     // Given: TextEdit front; caffeinate holds the screen on for One Switch
     let r = reads(
-      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil },
+      front: textEdit, axTrusted: true, title: "Untitled", sendEvents: { _ in nil },
       screenHoldPids: [4398, 2739])
     // When
     let result = line(r)
@@ -336,7 +336,7 @@ final class SamplerTests: XCTestCase {
   func testAFailedHoldReadIsNoScreenHold() {
     // Given: TextEdit front; the hold read fails
     let r = reads(
-      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil },
+      front: textEdit, axTrusted: true, title: "Untitled", sendEvents: { _ in nil },
       screenHoldPids: nil)
     // When
     let result = line(r)
@@ -350,7 +350,7 @@ final class SamplerTests: XCTestCase {
 
   func testTitleFromTheFocusedWindowWhenTrusted() {
     // Given: Finder front, Accessibility granted, title available
-    let r = reads(front: finder, axTrusted: true, title: "Desktop", runScript: { _ in nil })
+    let r = reads(front: finder, axTrusted: true, title: "Desktop", sendEvents: { _ in nil })
     // When
     let result = sample(r)
     // Then
@@ -362,7 +362,7 @@ final class SamplerTests: XCTestCase {
     // Given: Safari front, Automation denied
     let r = reads(
       front: safari, axTrusted: true, title: "Example Domain",
-      runScript: { _ in "https://example.com/" },
+      sendEvents: { _ in "https://example.com/" },
       automationStatus: { _, _ in -1743 })
     // When
     let result = sample(r)
@@ -378,7 +378,7 @@ final class SamplerTests: XCTestCase {
   func testUrlNullAndNothingMissingForANonBrowser() {
     // Given: a non-browser app is front
     let r = reads(
-      front: textEdit, axTrusted: true, title: "Untitled", runScript: { _ in nil })
+      front: textEdit, axTrusted: true, title: "Untitled", sendEvents: { _ in nil })
     // When
     let result = sample(r)
     // Then
@@ -388,7 +388,7 @@ final class SamplerTests: XCTestCase {
 
   func testAppNullWhenThereIsNoFrontmostApp() {
     // Given: no frontmost app
-    let r = reads(front: nil, axTrusted: true, title: nil, runScript: { _ in nil })
+    let r = reads(front: nil, axTrusted: true, title: nil, sendEvents: { _ in nil })
     // When
     let result = sample(r)
     // Then
@@ -400,7 +400,7 @@ final class SamplerTests: XCTestCase {
   func testAppNullForTheLoginWindow() {
     // Given: the login window is front
     let r = reads(
-      front: loginWindow, axTrusted: true, title: "Login", runScript: { _ in nil })
+      front: loginWindow, axTrusted: true, title: "Login", sendEvents: { _ in nil })
     // When
     let result = sample(r)
     // Then
@@ -413,7 +413,7 @@ final class SamplerTests: XCTestCase {
     // Given: Safari front with a granted URL read
     let r = reads(
       front: safari, axTrusted: true, title: "Example Domain",
-      runScript: { _ in "https://example.com/" },
+      sendEvents: { _ in "https://example.com/" },
       safariPrivateFormats: safariFormats)
     // When
     let result = sample(r)
@@ -425,7 +425,7 @@ final class SamplerTests: XCTestCase {
     // Given: Safari front with a denied Grant
     let r = reads(
       front: safari, axTrusted: true, title: "Example Domain",
-      runScript: { _ in "https://example.com/" },
+      sendEvents: { _ in "https://example.com/" },
       automationStatus: { _, _ in -1743 })
     // When
     let result = sample(r)
@@ -436,23 +436,23 @@ final class SamplerTests: XCTestCase {
 
   func testGrantNullForANonBrowser() {
     // Given: a non-browser front
-    let r = reads(front: finder, axTrusted: true, title: "Desktop", runScript: { _ in nil })
+    let r = reads(front: finder, axTrusted: true, title: "Desktop", sendEvents: { _ in nil })
     // When
     let result = sample(r)
     // Then
     XCTAssertNil(result.grant)
   }
 
-  func testRunsTheScriptWhenAutomationIsGranted() {
+  func testSendsTheEventsWhenAutomationIsGranted() {
     // Given: Reads for a Safari frontmost with Automation granted
-    var scripts: [String] = []
+    var sent: [BrowserEvents] = []
     let reads = Reads(
       frontmost: { self.safari },
       axTrusted: { true },
       focusedTitle: { _ in "Example Domain" },
       automationStatus: { _, _ in 0 },
-      runScript: { script in
-        scripts.append(script)
+      sendEvents: { events in
+        sent.append(events)
         return "https://example.com/"
       },
       safariPrivateFormats: { ["%@, Private Browsing"] },
@@ -468,20 +468,20 @@ final class SamplerTests: XCTestCase {
         title: "Example Domain", url: "https://example.com/", idleSeconds: 1,
         missing: []))
     XCTAssertEqual(
-      scripts,
-      ["tell application \"Safari\" to get URL of current tab of front window"])
+      sent,
+      [BrowserEvents(bundleId: "com.apple.Safari", properties: [["cTab", "pURL"]])])
   }
 
   func testDoesNotRunTheScriptWhenAutomationIsNotGranted() {
     // Given: the same Reads with Automation denied
-    var scripts: [String] = []
+    var sent: [BrowserEvents] = []
     let reads = Reads(
       frontmost: { self.safari },
       axTrusted: { true },
       focusedTitle: { _ in "Example Domain" },
       automationStatus: { _, _ in -1743 },
-      runScript: { script in
-        scripts.append(script)
+      sendEvents: { events in
+        sent.append(events)
         return "https://example.com/"
       },
       safariPrivateFormats: { [] },
@@ -492,13 +492,13 @@ final class SamplerTests: XCTestCase {
     // Then
     XCTAssertEqual(sample.grant, "denied")
     XCTAssertNil(sample.url)
-    XCTAssertEqual(scripts, [])
+    XCTAssertEqual(sent, [])
   }
 
   func testAsksNothingForANonBrowser() {
     // Given: Reads for a non-browser frontmost; everything records calls
     var automationCalls: [String] = []
-    var scripts: [String] = []
+    var sent: [BrowserEvents] = []
     let reads = Reads(
       frontmost: { self.textEdit },
       axTrusted: { true },
@@ -507,8 +507,8 @@ final class SamplerTests: XCTestCase {
         automationCalls.append(id)
         return 0
       },
-      runScript: { script in
-        scripts.append(script)
+      sendEvents: { events in
+        sent.append(events)
         return nil
       },
       safariPrivateFormats: { [] },
@@ -520,7 +520,7 @@ final class SamplerTests: XCTestCase {
     XCTAssertNil(sample.grant)
     XCTAssertNil(sample.url)
     XCTAssertEqual(automationCalls, [])
-    XCTAssertEqual(scripts, [])
+    XCTAssertEqual(sent, [])
   }
 
   func testAStuckCheckKeepsTheTitle() {
@@ -535,7 +535,7 @@ final class SamplerTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.5)
         return 0
       },
-      runScript: { _ in nil },
+      sendEvents: { _ in nil },
       safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
@@ -567,7 +567,7 @@ final class SamplerTests: XCTestCase {
         }
         return -1744
       },
-      runScript: { _ in nil },
+      sendEvents: { _ in nil },
       safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
@@ -595,7 +595,7 @@ final class SamplerTests: XCTestCase {
         return "Untitled"
       },
       automationStatus: { _, _ in 0 },
-      runScript: { _ in nil },
+      sendEvents: { _ in nil },
       safariPrivateFormats: { [] },
       idleSeconds: { 1 }
     )
