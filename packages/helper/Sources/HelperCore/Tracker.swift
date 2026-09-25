@@ -22,7 +22,8 @@ public struct Tracker {
       title: s.title,
       url: s.url,
       idleSeconds: s.idleSeconds,
-      missing: s.missing
+      missing: s.missing,
+      screenHold: s.screenHold
     )
 
     let changed: Bool

@@ -19,7 +19,7 @@ final class LineTests: XCTestCase {
     // Then
     XCTAssertEqual(
       json,
-      "{\"app\":null,\"bundleId\":null,\"grant\":null,\"idleSeconds\":1.5,\"missing\":[],\"title\":null,\"ts\":\"2026-01-01T00:00:00.000Z\",\"url\":null}"
+      "{\"app\":null,\"bundleId\":null,\"grant\":null,\"idleSeconds\":1.5,\"missing\":[],\"screenHold\":false,\"title\":null,\"ts\":\"2026-01-01T00:00:00.000Z\",\"url\":null}"
     )
   }
 
@@ -39,7 +39,7 @@ final class LineTests: XCTestCase {
     // Then
     XCTAssertEqual(
       json,
-      "{\"app\":\"Safari\",\"bundleId\":\"com.apple.Safari\",\"grant\":null,\"idleSeconds\":0,\"missing\":[],\"title\":\"Example Domain\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"url\":\"https://example.com/a?b=1\"}"
+      "{\"app\":\"Safari\",\"bundleId\":\"com.apple.Safari\",\"grant\":null,\"idleSeconds\":0,\"missing\":[],\"screenHold\":false,\"title\":\"Example Domain\",\"ts\":\"2026-01-01T00:00:00.000Z\",\"url\":\"https://example.com/a?b=1\"}"
     )
   }
 
@@ -60,7 +60,28 @@ final class LineTests: XCTestCase {
     // Then
     XCTAssertEqual(
       json,
-      "{\"app\":\"Safari\",\"bundleId\":\"com.apple.Safari\",\"grant\":\"denied\",\"idleSeconds\":0,\"missing\":[],\"title\":null,\"ts\":\"2026-01-01T00:00:00.000Z\",\"url\":null}"
+      "{\"app\":\"Safari\",\"bundleId\":\"com.apple.Safari\",\"grant\":\"denied\",\"idleSeconds\":0,\"missing\":[],\"screenHold\":false,\"title\":null,\"ts\":\"2026-01-01T00:00:00.000Z\",\"url\":null}"
+    )
+  }
+
+  func testEncodesScreenHold() {
+    // Given: a line whose front app holds the screen on
+    let line = Line(
+      ts: "2026-01-01T00:00:00.000Z",
+      app: "Safari",
+      bundleId: "com.apple.Safari",
+      title: nil,
+      url: nil,
+      idleSeconds: 0,
+      missing: [],
+      screenHold: true
+    )
+    // When
+    let json = line.json()
+    // Then
+    XCTAssertEqual(
+      json,
+      "{\"app\":\"Safari\",\"bundleId\":\"com.apple.Safari\",\"grant\":null,\"idleSeconds\":0,\"missing\":[],\"screenHold\":true,\"title\":null,\"ts\":\"2026-01-01T00:00:00.000Z\",\"url\":null}"
     )
   }
 
@@ -84,7 +105,8 @@ final class LineTests: XCTestCase {
         title: "Example Domain",
         url: "https://example.com/a?b=1",
         idleSeconds: 0,
-        missing: []
+        missing: [],
+        screenHold: true
       ),
       Line(
         ts: "2026-01-01T00:00:10.000Z",
