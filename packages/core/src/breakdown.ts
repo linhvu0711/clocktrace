@@ -271,7 +271,7 @@ const group = (
   }));
 };
 
-// Each line rounds once, as summary does. Two or more siblings under `min`
+// Each line rounds once. Two or more siblings under `min`
 // merge into one line that sorts last; one alone keeps its name.
 const finish = (
   groups: ReadonlyArray<Group>,

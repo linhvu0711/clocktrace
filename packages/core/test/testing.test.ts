@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   AppStore,
   activities,
+  type BreakdownReply,
+  breakdown,
   openStore,
   Store,
-  summary,
 } from "../src/index.js";
 import {
   seedBreakdown,
@@ -33,6 +34,14 @@ const run = <A, E>(
 
 const day = { from: "2026-09-18", to: "2026-09-18" };
 
+// The app-level lines of a one-Block breakdown, as { key, name, seconds }.
+const appRows = (reply: BreakdownReply) =>
+  (reply.blocks[0]?.nodes ?? []).map(({ key, name, seconds }) => ({
+    key,
+    name,
+    seconds,
+  }));
+
 describe("testing", () => {
   it("seedDay, seedTwoDevices, and seedMany store the shared test day", async () => {
     // Given: one store with seedTwoDevices, which holds seedDay, and one with seedMany
@@ -41,7 +50,8 @@ describe("testing", () => {
         const store = yield* Store;
         yield* seedTwoDevices(store);
         // When
-        return yield* summary({ range: day, groupBy: "app" });
+        const reply = yield* breakdown({ range: day, groupBy: ["app"] });
+        return appRows(reply);
       }),
     );
     const many = await run(
@@ -53,7 +63,7 @@ describe("testing", () => {
       }),
     );
     // Then
-    expect({ rows: twoDevices.rows, total: many.total }).toEqual({
+    expect({ rows: twoDevices, total: many.total }).toEqual({
       rows: [
         { key: "com.microsoft.VSCode", name: "Code", seconds: 5400 },
         { key: "com.google.Chrome", name: "Google Chrome", seconds: 600 },
@@ -109,11 +119,11 @@ describe("testing", () => {
           ["a", "2026-09-18T08:00:00.000Z", "2026-09-18T08:10:00.000Z"],
           ["b", "2026-09-18T09:00:00.000Z", "2026-09-18T09:05:00.000Z"],
         ]);
-        return yield* summary({ range: day, groupBy: "app" });
+        return appRows(yield* breakdown({ range: day, groupBy: ["app"] }));
       }),
     );
     // Then
-    expect(reply.rows).toEqual([
+    expect(reply).toEqual([
       { key: "com.microsoft.VSCode", name: "Code", seconds: 900 },
     ]);
   });
