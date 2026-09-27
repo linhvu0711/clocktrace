@@ -455,11 +455,31 @@ export const breakdown = (
       decoded.block,
       zone,
     );
-    const blocks = cut(rows, blockEdges).map((blockRows, i) =>
+    // A run of Blocks with no activity is one Block from the first start to
+    // the last end.
+    const spans: Array<{
+      startMs: number;
+      endMs: number;
+      rows: ReadonlyArray<Row>;
+    }> = [];
+    cut(rows, blockEdges).forEach((blockRows, i) => {
+      const endMs = blockEdges[i + 1] ?? 0;
+      const last = spans[spans.length - 1];
+      if (
+        blockRows.length === 0 &&
+        last !== undefined &&
+        last.rows.length === 0
+      ) {
+        last.endMs = endMs;
+      } else {
+        spans.push({ startMs: blockEdges[i] ?? 0, endMs, rows: blockRows });
+      }
+    });
+    const blocks = spans.map((span) =>
       blockOf(
-        blockEdges[i] ?? 0,
-        blockEdges[i + 1] ?? 0,
-        blockRows,
+        span.startMs,
+        span.endMs,
+        span.rows,
         decoded.groupBy,
         decoded.min,
         lookups,

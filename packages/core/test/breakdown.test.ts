@@ -925,4 +925,89 @@ describe("breakdown", () => {
     // Then
     expect(message).toBe("block: must be one of total, hour, 15min");
   });
+
+  it("a run of Blocks with no activity is one empty Block", async () => {
+    // Given: Code 17:50 to 18:00 and 21:30 to 21:40 local on 2026-09-26
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-27T00:50:00.000Z", "2026-09-27T01:00:00.000Z"],
+          ["a", "2026-09-27T04:30:00.000Z", "2026-09-27T04:40:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-26T17:45", to: "2026-09-26T21:45" },
+          block: "15min",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-26T17:45-07:00",
+        end: "2026-09-26T18:00-07:00",
+        first: "2026-09-26T17:50-07:00",
+        last: "2026-09-26T18:00-07:00",
+        seconds: 600,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 600,
+            children: [],
+          },
+        ],
+      },
+      {
+        start: "2026-09-26T18:00-07:00",
+        end: "2026-09-26T21:30-07:00",
+        seconds: 0,
+        nodes: [],
+      },
+      {
+        start: "2026-09-26T21:30-07:00",
+        end: "2026-09-26T21:45-07:00",
+        first: "2026-09-26T21:30-07:00",
+        last: "2026-09-26T21:40-07:00",
+        seconds: 600,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 600,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("an empty window in hour Blocks is one empty Block with the note", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-01", to: "2026-09-01" },
+          block: "hour",
+        });
+      }),
+    );
+    // Then
+    expect({ blocks: result.blocks, notes: result.notes }).toEqual({
+      blocks: [
+        {
+          start: "2026-09-01T00:00-07:00",
+          end: "2026-09-02T00:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
+      notes: ["no activity in this range"],
+    });
+  });
 });
