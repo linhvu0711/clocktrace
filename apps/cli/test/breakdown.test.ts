@@ -7,7 +7,7 @@ import {
   openStore,
   Store,
 } from "@clocktrace/core";
-import { seedBreakdown } from "@clocktrace/core/testing";
+import { seedBreakdown, seedPrivate } from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import {
   Cause,
@@ -352,6 +352,70 @@ describe("breakdown", () => {
       "30m 00s  |- main.ts",
       "    <1m  \u0060- 3 small items",
       "30m 45s  total",
+    ]);
+  });
+
+  it("breakdown prints a Private line beside the domains", async () => {
+    // Given: seedPrivate, Brave 6m on wellfound.com and 20m Private
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedPrivate(store);
+        // When
+        yield* printBreakdown(
+          { range: day, groupBy: ["app", "domain", "title"] },
+          false,
+        );
+      }),
+    );
+    // Then
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    expect(output).toEqual([
+      `${window} · by app, domain, title`,
+      "26m 00s  Brave",
+      "20m 00s  ├─ (private)",
+      " 6m 00s  └─ wellfound.com",
+      " 6m 00s     └─ Jobs",
+      "26m 00s  total",
+    ]);
+  });
+
+  it("breakdown --json names the Private line and marks it private", async () => {
+    // Given: seedPrivate
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedPrivate(store);
+        // When
+        yield* printBreakdown({ range: day, groupBy: ["app", "domain"] }, true);
+      }),
+    );
+    // Then
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    expect(JSON.parse(output[0] ?? "").blocks).toEqual([
+      {
+        seconds: 1560,
+        nodes: [
+          {
+            name: "Brave",
+            key: "com.brave.Browser",
+            seconds: 1560,
+            children: [
+              {
+                name: "(private)",
+                seconds: 1200,
+                private: true,
+                children: [],
+              },
+              { name: "wellfound.com", seconds: 360, children: [] },
+            ],
+          },
+        ],
+      },
     ]);
   });
 });

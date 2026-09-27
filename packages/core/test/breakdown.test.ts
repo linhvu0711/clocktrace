@@ -8,7 +8,7 @@ import {
   openStore,
   Store,
 } from "../src/index.js";
-import { seedBreakdown } from "../src/testing.js";
+import { seedBreakdown, seedPrivate } from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -471,5 +471,168 @@ describe("breakdown", () => {
       ],
       notes: [],
     });
+  });
+
+  it("a Private Activity shows as (private) beside the domains", async () => {
+    // Given: seedPrivate, Brave 6m on wellfound.com and 20m Private
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedPrivate(store);
+        // When
+        return yield* breakdown({
+          range: day,
+          groupBy: ["app", "domain", "title"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        seconds: 1560,
+        nodes: [
+          {
+            name: "Brave",
+            key: "com.brave.Browser",
+            seconds: 1560,
+            children: [
+              {
+                name: "(private)",
+                private: true,
+                seconds: 1200,
+                children: [],
+              },
+              {
+                name: "wellfound.com",
+                seconds: 360,
+                children: [{ name: "Jobs", seconds: 360, children: [] }],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("an app with only Private time shows (private) as its only line", async () => {
+    // Given: Studio with one Private Brave Activity, 20m
+    const { result, studio } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.brave.Browser",
+          appName: "Brave",
+          title: null,
+          url: null,
+          private: true,
+          startedAt: DateTime.unsafeMake("2026-09-18T09:20:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T09:40:00.000Z"),
+        });
+        // When
+        const result = yield* breakdown({ range: day });
+        return { result, studio };
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        seconds: 1200,
+        nodes: [
+          {
+            name: "Studio",
+            key: studio.id,
+            kind: "mac",
+            seconds: 1200,
+            children: [
+              {
+                name: "Brave",
+                key: "com.brave.Browser",
+                seconds: 1200,
+                children: [
+                  {
+                    name: "(private)",
+                    private: true,
+                    seconds: 1200,
+                    children: [],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("unmarked rows with no title and no URL keep the (no domain) rule beside (private)", async () => {
+    // Given: seedPrivate, plus unmarked Brave and Code rows with no title and no URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* seedPrivate(store);
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.brave.Browser",
+          appName: "Brave",
+          title: null,
+          url: null,
+          startedAt: DateTime.unsafeMake("2026-09-18T09:10:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T09:12:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.microsoft.VSCode",
+          appName: "Code",
+          title: null,
+          url: null,
+          startedAt: DateTime.unsafeMake("2026-09-18T11:00:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T11:30:00.000Z"),
+        });
+        // When
+        return yield* breakdown({
+          range: day,
+          groupBy: ["app", "domain", "title"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        seconds: 3480,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 1800,
+            children: [],
+          },
+          {
+            name: "Brave",
+            key: "com.brave.Browser",
+            seconds: 1680,
+            children: [
+              {
+                name: "(private)",
+                private: true,
+                seconds: 1200,
+                children: [],
+              },
+              {
+                name: "wellfound.com",
+                seconds: 360,
+                children: [{ name: "Jobs", seconds: 360, children: [] }],
+              },
+              { name: "(no domain)", seconds: 120, children: [] },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 });

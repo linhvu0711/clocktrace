@@ -87,7 +87,7 @@ The CLI command that pairs with an MCP tool: `clocktrace rules add` is the Twin 
 _Avoid_: Alias, wrapper, mirror, subcommand
 
 **Breakdown**:
-The query that sums time in a window as a tree, one level per item of an ordered list, such as Device, then app, then domain, then title. It replaces `summary` and `timeline`; `clocktrace breakdown` is its Twin. Built in #237; `summary` and `timeline` still ship until #243.
+The query that sums time in a window as a tree, one level per item of an ordered list, such as Device, then app, then domain, then title. An Activity marked Private shows as one `(private)` line at the first level with no value, in place of `(no domain)` or `(no title)`, with no level under it. It replaces `summary` and `timeline`; `clocktrace breakdown` is its Twin. Built in #237; `summary` and `timeline` still ship until #243.
 _Avoid_: Report, summary, totals, timeline
 
 **Block**:

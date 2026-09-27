@@ -78,6 +78,8 @@ const nodeFields = {
   productive: Schema.optionalWith(Schema.Boolean, { exact: true }),
   /** On an "N small items" line: how many lines it merges. */
   small: Schema.optionalWith(Schema.Int, { exact: true }),
+  /** On a "(private)" line: its Activities are marked Private. */
+  private: Schema.optionalWith(Schema.Boolean, { exact: true }),
 };
 
 // Schema.suspend needs a declared type; it takes every field from the
@@ -133,6 +135,9 @@ interface Part {
   readonly empty: boolean;
 }
 
+// No domain or title holds a NUL, so a Private line never merges with a real value.
+const privateId = "\u0000private";
+
 const partOf = (level: Level, { activity, resolution }: Row, l: Lookups) => {
   const part = (id: string, line: Line, empty = false): Part => ({
     id,
@@ -177,12 +182,18 @@ const partOf = (level: Level, { activity, resolution }: Row, l: Lookups) => {
         key: activity.bundleId,
       });
     case "domain": {
+      if (activity.private) {
+        return part(privateId, { name: "(private)", private: true });
+      }
       const domain = domainOf(activity.url) ?? "";
       return domain === ""
         ? part("", { name: "(no domain)" }, true)
         : part(domain, { name: domain });
     }
     case "title": {
+      if (activity.private) {
+        return part(privateId, { name: "(private)", private: true });
+      }
       const title = activity.title ?? "";
       return title === ""
         ? part("", { name: "(no title)" }, true)
@@ -227,7 +238,8 @@ const group = (
   return parts.map(({ part, rows }) => ({
     line: part.line,
     ms: rows.reduce((sum, row) => sum + row.ms, 0),
-    children: group(rows, rest, l, true),
+    // A Private line has no detail under it.
+    children: part.line.private === true ? [] : group(rows, rest, l, true),
   }));
 };
 
