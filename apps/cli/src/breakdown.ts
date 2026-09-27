@@ -1,5 +1,6 @@
 import {
   type AppStore,
+  type BlockSize,
   type BreakdownBlock,
   type BreakdownInput,
   type BreakdownNode,
@@ -91,6 +92,61 @@ export const breakdownScreen = (
 export const noteLine = (note: string, look: Look): string =>
   line([span("warn", `! ${note}`)], look);
 
+/** `HH:mm` of a Block time, read at the offset `±hh:mm`. */
+const clockAt = (time: string, offset: string): string => {
+  const sign = offset.startsWith("-") ? -1 : 1;
+  const shift =
+    sign * (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4, 6)));
+  return new Date(Date.parse(time) + shift * 60_000)
+    .toISOString()
+    .slice(11, 16);
+};
+
+// One header per Block, then its tree; a date line when the day changes, as
+// the window line holds only the first date.
+export const blocksScreen = (
+  blocks: ReadonlyArray<BreakdownBlock>,
+  look: Look,
+): ReadonlyArray<string> => {
+  // When DST ends a clock time comes twice; those Blocks show their offset.
+  const offsets = new Map<string, Set<string>>();
+  for (const block of blocks) {
+    const seen = offsets.get(block.start.slice(0, 16)) ?? new Set<string>();
+    offsets.set(block.start.slice(0, 16), seen.add(block.start.slice(16)));
+  }
+  return blocks.flatMap((block, i) => {
+    const before = blocks[i - 1];
+    const day = block.start.slice(0, 10);
+    const offset = block.start.slice(16);
+    const repeats = (offsets.get(block.start.slice(0, 16))?.size ?? 0) > 1;
+    const label = repeats
+      ? `${block.start.slice(11, 16)}–${clockAt(block.end, offset)} ${offset}`
+      : `${block.start.slice(11, 16)}–${block.end.slice(11, 16)}`;
+    const lead = [
+      ...(before === undefined ? [] : [""]),
+      ...(before === undefined || before.start.slice(0, 10) === day
+        ? []
+        : [line([span("head", day)], look)]),
+    ];
+    if (
+      block.nodes.length === 0 ||
+      block.first === undefined ||
+      block.last === undefined
+    ) {
+      return [
+        ...lead,
+        line([span("head", label), "   ", span("dim", "no activity")], look),
+      ];
+    }
+    const times = `first ${block.first.slice(11, 16)} · last ${block.last.slice(11, 16)}`;
+    return [
+      ...lead,
+      line([span("head", label), "   ", span("dim", times)], look),
+      ...breakdownScreen(block, look),
+    ];
+  });
+};
+
 export const printBreakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
   json: boolean,
@@ -108,13 +164,29 @@ export const printBreakdown = (
     const reply = yield* breakdown(input);
     const encoded = yield* Schema.encode(BreakdownReply)(reply);
     const levels = (input.groupBy ?? defaultLevels).join(", ");
-    yield* report(json, encoded, (v) => [
-      windowLine(input.range, v.range.zone, look, `by ${levels}`),
-      ...v.notes.map((note) => noteLine(note, look)),
-      ...v.blocks.flatMap((block) =>
-        block.nodes.length === 0 ? [] : breakdownScreen(block, look),
-      ),
-    ]);
+    const block = input.block ?? "total";
+    yield* report(json, encoded, (v) =>
+      block === "total"
+        ? [
+            windowLine(input.range, v.range.zone, look, `by ${levels}`),
+            ...v.notes.map((note) => noteLine(note, look)),
+            ...v.blocks.flatMap((b) =>
+              b.nodes.length === 0 ? [] : breakdownScreen(b, look),
+            ),
+          ]
+        : [
+            windowLine(
+              input.range,
+              v.range.zone,
+              look,
+              `by ${levels} · per ${block}`,
+            ),
+            ...v.notes.map((note) => noteLine(note, look)),
+            ...(v.blocks.some((b) => b.nodes.length > 0)
+              ? blocksScreen(v.blocks, look)
+              : []),
+          ],
+    );
   });
 
 /** The items of a comma-separated flag value; empty items stay for core to reject. */
@@ -149,6 +221,13 @@ const search = Options.text("search").pipe(
   ),
 );
 
+const block = Options.text("block").pipe(
+  Options.optional,
+  Options.withDescription(
+    "total, hour, or 15min: one tree for the window, or one per clock hour or quarter-hour; default total",
+  ),
+);
+
 export const breakdownCommand = Command.make(
   "breakdown",
   {
@@ -158,9 +237,10 @@ export const breakdownCommand = Command.make(
     min,
     devices,
     search,
+    block,
     json: jsonOption,
   },
-  ({ from, to, groupBy, min, devices, search, json }) =>
+  ({ from, to, groupBy, min, devices, search, block, json }) =>
     Effect.gen(function* () {
       const range = yield* requireWindow("breakdown", from, to);
       return yield* whenSetUp(
@@ -174,6 +254,8 @@ export const breakdownCommand = Command.make(
             min: Option.getOrUndefined(min),
             devices: Option.getOrUndefined(Option.map(devices, commaList)),
             search: Option.getOrUndefined(search),
+            // Core checks the value and words the error.
+            block: Option.getOrUndefined(block) as BlockSize | undefined,
           },
           json,
         ),

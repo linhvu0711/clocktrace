@@ -268,3 +268,28 @@ export const seedMany = (store: StoreShape, count: number) =>
       });
     }
   });
+
+// Studio: one Code Activity per run, title and UTC start and end as given.
+export const seedRuns = (
+  store: StoreShape,
+  runs: ReadonlyArray<readonly [title: string, start: string, end: string]>,
+) =>
+  Effect.gen(function* () {
+    const studio = yield* store.upsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+    for (const [title, start, end] of runs) {
+      yield* store.insertActivity({
+        deviceId: studio.id,
+        bundleId: "com.microsoft.VSCode",
+        appName: "Code",
+        title,
+        url: null,
+        startedAt: t(start),
+        endedAt: t(end),
+      });
+    }
+    return studio;
+  });

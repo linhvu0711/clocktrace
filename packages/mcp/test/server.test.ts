@@ -1759,6 +1759,38 @@ describe("breakdown tool", () => {
     });
   });
 
+  it("breakdown takes block and answers each Block's start, end, first, and last", async () => {
+    // Given: a server over seedBreakdown
+    const { client, close } = await connect(withActivities(seedBreakdown));
+    // When
+    const result = await callTool(client, {
+      name: "breakdown",
+      arguments: { range: day, block: "hour" },
+    });
+    await close();
+    // Then
+    const reply = result.structuredContent as {
+      blocks: ReadonlyArray<Record<string, unknown>>;
+    };
+    const { nodes: _nodes, ...second } = reply.blocks[1] ?? {};
+    expect({
+      isError: result.isError,
+      second,
+      sameText:
+        JSON.stringify(JSON.parse(text(result))) === JSON.stringify(reply),
+    }).toEqual({
+      isError: undefined,
+      second: {
+        start: "2026-09-18T01:00-07:00",
+        end: "2026-09-18T02:00-07:00",
+        first: "2026-09-18T01:00-07:00",
+        last: "2026-09-18T01:30-07:00",
+        seconds: 1800,
+      },
+      sameText: true,
+    });
+  });
+
   it("a min that is not a duration gets core's text", async () => {
     // Given: the same
     const { client, close } = await connect(withActivities(seedBreakdown));

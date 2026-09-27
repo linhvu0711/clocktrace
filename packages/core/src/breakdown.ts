@@ -70,6 +70,13 @@ export const defaultLevels: ReadonlyArray<Level> = [
   "title",
 ];
 
+export const BlockSize = Schema.Literal("total", "hour", "15min").annotations({
+  message: () => ({
+    message: "must be one of total, hour, 15min",
+    override: true,
+  }),
+});
+
 const nodeFields = {
   name: Schema.String,
   seconds: Schema.Int,
@@ -97,6 +104,12 @@ export const BreakdownNode: Schema.Schema<BreakdownNode> = Schema.Struct({
 }).annotations({ identifier: "BreakdownNode" });
 
 export const BreakdownBlock = Schema.Struct({
+  /** Local time with offset, YYYY-MM-DDTHH:mm±hh:mm. */
+  start: Schema.String,
+  end: Schema.String,
+  /** The first activity start and the last activity end in the Block, cut to it; left out when it has none. */
+  first: Schema.optionalWith(Schema.String, { exact: true }),
+  last: Schema.optionalWith(Schema.String, { exact: true }),
   seconds: Schema.Int,
   nodes: Schema.Array(BreakdownNode),
 });
@@ -111,6 +124,7 @@ export const BreakdownInput = Schema.Struct({
   range: Range,
   groupBy: Schema.optionalWith(Levels, { default: () => defaultLevels }),
   min: Schema.optionalWith(Min, { default: () => 60 }),
+  block: Schema.optionalWith(BlockSize, { default: () => "total" as const }),
   devices: Schema.optional(
     Schema.Array(DeviceSelector).pipe(
       Schema.minItems(1, { message: () => "must name at least one Device" }),
@@ -336,6 +350,122 @@ const lateNotes = (
     return notes;
   });
 
+// Local wall clock plus offset, so the two 01:00 hours of the day DST ends differ.
+const stamp = (ms: number, zone: DateTime.TimeZone): string => {
+  const zoned = DateTime.setZone(DateTime.unsafeMake(ms), zone);
+  return `${isoMinute(zoned)}${DateTime.zonedOffsetIso(zoned)}`;
+};
+
+const stepMinutes = { hour: 60, "15min": 15 } as const;
+
+// Block edges on the local clock. Every zone's offset is a whole number of
+// quarter-hours, so each clock quarter-hour is a UTC quarter-hour: walk those
+// and keep the ones whose local minute is on the step. A DST jump of an hour
+// or of 30 minutes then still lands on the clock.
+const edges = (
+  fromMs: number,
+  toMs: number,
+  size: BlockSize,
+  zone: DateTime.TimeZone,
+): ReadonlyArray<number> => {
+  // An empty window is one empty Block in every size, as it is in total.
+  if (size === "total" || fromMs >= toMs) {
+    return [fromMs, toMs];
+  }
+  const minutes = stepMinutes[size];
+  const quarter = 15 * 60_000;
+  const out = [fromMs];
+  for (
+    let t = Math.floor(fromMs / quarter) * quarter + quarter;
+    t < toMs;
+    t += quarter
+  ) {
+    const local = DateTime.toParts(
+      DateTime.setZone(DateTime.unsafeMake(t), zone),
+    );
+    if (local.minutes % minutes === 0) {
+      out.push(t);
+    }
+  }
+  out.push(toMs);
+  return out;
+};
+
+/** The index of the Block that holds `ms`: the last edge at or before it. */
+const blockIndex = (edges: ReadonlyArray<number>, ms: number): number => {
+  let lo = 0;
+  let hi = edges.length - 2;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if ((edges[mid] ?? 0) <= ms) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo;
+};
+
+// An Activity across an edge is cut there; a zero-length one stays in the
+// Block of its start.
+const cut = (
+  rows: ReadonlyArray<Row>,
+  edges: ReadonlyArray<number>,
+): ReadonlyArray<ReadonlyArray<Row>> => {
+  const buckets = edges.slice(1).map((): Array<Row> => []);
+  const fromMs = edges[0] ?? 0;
+  const toMs = edges[edges.length - 1] ?? 0;
+  for (const row of rows) {
+    const start = Math.max(row.activity.startedAt.epochMillis, fromMs);
+    const end = Math.min(row.activity.endedAt.epochMillis, toMs);
+    let i = blockIndex(edges, start);
+    if (end <= start) {
+      buckets[i]?.push({ ...row, ms: 0 });
+      continue;
+    }
+    for (; i < buckets.length && (edges[i] ?? 0) < end; i++) {
+      const ms =
+        Math.min(end, edges[i + 1] ?? 0) - Math.max(start, edges[i] ?? 0);
+      if (ms > 0) {
+        buckets[i]?.push({ ...row, ms });
+      }
+    }
+  }
+  return buckets;
+};
+
+const blockOf = (
+  startMs: number,
+  endMs: number,
+  rows: ReadonlyArray<Row>,
+  levels: ReadonlyArray<Level>,
+  min: number,
+  lookups: Lookups,
+  zone: DateTime.TimeZone,
+): BreakdownBlock => {
+  const ms = rows.reduce((sum, row) => sum + row.ms, 0);
+  // A reduce, not a spread: a year of rows is past the argument limit.
+  const first = rows.reduce(
+    (earliest, row) =>
+      Math.min(earliest, Math.max(row.activity.startedAt.epochMillis, startMs)),
+    Number.POSITIVE_INFINITY,
+  );
+  const last = rows.reduce(
+    (latest, row) =>
+      Math.max(latest, Math.min(row.activity.endedAt.epochMillis, endMs)),
+    Number.NEGATIVE_INFINITY,
+  );
+  return {
+    start: stamp(startMs, zone),
+    end: stamp(endMs, zone),
+    ...(rows.length === 0
+      ? {}
+      : { first: stamp(first, zone), last: stamp(last, zone) }),
+    seconds: Math.round(ms / 1000),
+    nodes: finish(group(rows, levels, lookups, false), min),
+  };
+};
+
 export const breakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
 ): Effect.Effect<
@@ -351,8 +481,9 @@ export const breakdown = (
       asked === undefined
         ? undefined
         : yield* pickDevices(asked, yield* store.listDevices());
+    const zone = yield* DateTime.CurrentTimeZone;
     const loaded = yield* loadRange({ range: decoded.range, deviceIds });
-    const { range, categories, projects, devices } = loaded;
+    const { range, from, to, categories, projects, devices } = loaded;
     const search = decoded.search;
     const rows =
       search === undefined
@@ -363,11 +494,43 @@ export const breakdown = (
       projectById: new Map(projects.map((p) => [p.id, p])),
       deviceById: new Map(devices.map((d) => [d.id, d])),
     };
-    const nodes = finish(
-      group(rows, decoded.groupBy, lookups, false),
-      decoded.min,
+    const blockEdges = edges(
+      from.epochMillis,
+      to.epochMillis,
+      decoded.block,
+      zone,
     );
-    const ms = rows.reduce((sum, row) => sum + row.ms, 0);
+    // A run of Blocks with no activity is one Block from the first start to
+    // the last end.
+    const spans: Array<{
+      startMs: number;
+      endMs: number;
+      rows: ReadonlyArray<Row>;
+    }> = [];
+    cut(rows, blockEdges).forEach((blockRows, i) => {
+      const endMs = blockEdges[i + 1] ?? 0;
+      const last = spans[spans.length - 1];
+      if (
+        blockRows.length === 0 &&
+        last !== undefined &&
+        last.rows.length === 0
+      ) {
+        last.endMs = endMs;
+      } else {
+        spans.push({ startMs: blockEdges[i] ?? 0, endMs, rows: blockRows });
+      }
+    });
+    const blocks = spans.map((span) =>
+      blockOf(
+        span.startMs,
+        span.endMs,
+        span.rows,
+        decoded.groupBy,
+        decoded.min,
+        lookups,
+        zone,
+      ),
+    );
     // Before search: a kind whose Activities only miss the word still has activity.
     const kindNotes = [...new Set(asked ?? [])]
       .filter(isKind)
@@ -388,10 +551,10 @@ export const breakdown = (
     );
     return {
       range,
-      blocks: [{ seconds: Math.round(ms / 1000), nodes }],
+      blocks,
       notes: [
         ...late,
-        ...(nodes.length === 0 && kindNotes.length === 0
+        ...(rows.length === 0 && kindNotes.length === 0
           ? ["no activity in this range"]
           : kindNotes),
       ],
@@ -399,6 +562,7 @@ export const breakdown = (
   });
 
 export type Level = Schema.Schema.Type<typeof Level>;
+export type BlockSize = Schema.Schema.Type<typeof BlockSize>;
 export type BreakdownBlock = Schema.Schema.Type<typeof BreakdownBlock>;
 export type BreakdownReply = Schema.Schema.Type<typeof BreakdownReply>;
 export type BreakdownInput = Schema.Schema.Type<typeof BreakdownInput>;

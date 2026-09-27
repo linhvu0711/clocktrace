@@ -9,7 +9,7 @@ import {
   openStore,
   Store,
 } from "../src/index.js";
-import { seedBreakdown, seedPrivate } from "../src/testing.js";
+import { seedBreakdown, seedPrivate, seedRuns } from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -49,6 +49,10 @@ describe("breakdown", () => {
       },
       blocks: [
         {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          first: "2026-09-18T01:00-07:00",
+          last: "2026-09-18T13:05-07:00",
           seconds: 6625,
           nodes: [
             {
@@ -143,6 +147,29 @@ describe("breakdown", () => {
     });
   });
 
+  it("a total Block carries the window and its first and last activity", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({ range: day });
+      }),
+    );
+    const { nodes: _nodes, ...block } = result.blocks[0] ?? {
+      nodes: [],
+    };
+    // Then
+    expect(block).toEqual({
+      start: "2026-09-18T00:00-07:00",
+      end: "2026-09-19T00:00-07:00",
+      first: "2026-09-18T01:00-07:00",
+      last: "2026-09-18T13:05-07:00",
+      seconds: 6625,
+    });
+  });
+
   it("breakdown of an empty window notes no activity", async () => {
     // Given: seedBreakdown
     const result = await run(
@@ -162,7 +189,14 @@ describe("breakdown", () => {
         to: "2026-09-02T00:00",
         zone: "America/Los_Angeles",
       },
-      blocks: [{ seconds: 0, nodes: [] }],
+      blocks: [
+        {
+          start: "2026-09-01T00:00-07:00",
+          end: "2026-09-02T00:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
       notes: ["no activity in this range"],
     });
   });
@@ -203,6 +237,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T01:00-07:00",
+        last: "2026-09-18T13:05-07:00",
         seconds: 6625,
         nodes: [
           { name: "Uncategorized", seconds: 3900, children: [] },
@@ -354,170 +392,6 @@ describe("breakdown", () => {
     ]);
   });
 
-  it("search wellfound and WellFound give the same tree of matching time", async () => {
-    // Given: seedBreakdown
-    const { lower, upper, studio } = await run(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        const { studio } = yield* seedBreakdown(store);
-        // When
-        const lower = yield* breakdown({ range: day, search: "wellfound" });
-        const upper = yield* breakdown({ range: day, search: "WellFound" });
-        return { lower, upper, studio };
-      }),
-    );
-    // Then
-    const tree = {
-      blocks: [
-        {
-          seconds: 360,
-          nodes: [
-            {
-              name: "Studio",
-              key: studio.id,
-              kind: "mac",
-              seconds: 360,
-              children: [
-                {
-                  name: "Brave",
-                  key: "com.brave.Browser",
-                  seconds: 360,
-                  children: [
-                    {
-                      name: "wellfound.com",
-                      seconds: 360,
-                      children: [{ name: "Jobs", seconds: 360, children: [] }],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-      notes: [],
-    };
-    expect([
-      { blocks: lower.blocks, notes: lower.notes },
-      { blocks: upper.blocks, notes: upper.notes },
-    ]).toEqual([tree, tree]);
-  });
-
-  it("search github.com/clocktrace matches the URL path", async () => {
-    // Given: seedBreakdown, a Pull request on github.com/clocktrace and an
-    // Effect page on github.com/Effect-TS
-    const { result, studio } = await run(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        const { studio } = yield* seedBreakdown(store);
-        yield* store.insertActivity({
-          deviceId: studio.id,
-          bundleId: "com.brave.Browser",
-          appName: "Brave",
-          title: "Pull request",
-          url: "https://github.com/clocktrace/clocktrace/pull/244",
-          startedAt: DateTime.unsafeMake("2026-09-18T10:30:00.000Z"),
-          endedAt: DateTime.unsafeMake("2026-09-18T10:40:00.000Z"),
-        });
-        yield* store.insertActivity({
-          deviceId: studio.id,
-          bundleId: "com.brave.Browser",
-          appName: "Brave",
-          title: "Effect",
-          url: "https://github.com/Effect-TS/effect",
-          startedAt: DateTime.unsafeMake("2026-09-18T10:40:00.000Z"),
-          endedAt: DateTime.unsafeMake("2026-09-18T10:45:00.000Z"),
-        });
-        // When
-        const result = yield* breakdown({
-          range: day,
-          search: "github.com/clocktrace",
-        });
-        return { result, studio };
-      }),
-    );
-    // Then
-    expect(result.blocks).toEqual([
-      {
-        seconds: 600,
-        nodes: [
-          {
-            name: "Studio",
-            key: studio.id,
-            kind: "mac",
-            seconds: 600,
-            children: [
-              {
-                name: "Brave",
-                key: "com.brave.Browser",
-                seconds: 600,
-                children: [
-                  {
-                    name: "github.com",
-                    seconds: 600,
-                    children: [
-                      { name: "Pull request", seconds: 600, children: [] },
-                    ],
-                  },
-                ],
-              },
-            ],
-          },
-        ],
-      },
-    ]);
-  });
-
-  it("a search with no match notes no activity", async () => {
-    // Given: seedBreakdown; the iPhone's Game row has no title and no URL
-    const result = await run(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        yield* seedBreakdown(store);
-        // When
-        return yield* breakdown({ range: day, search: "game" });
-      }),
-    );
-    // Then
-    expect({ blocks: result.blocks, notes: result.notes }).toEqual({
-      blocks: [{ seconds: 0, nodes: [] }],
-      notes: ["no activity in this range"],
-    });
-  });
-
-  it("a search with no iPhone match does not say the iPhone has no activity", async () => {
-    // Given: seedBreakdown; the iPhone has a Game Activity with no title or URL
-    const result = await run(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        yield* seedBreakdown(store);
-        // When
-        return yield* breakdown({
-          range: day,
-          devices: ["iphone"],
-          search: "github",
-        });
-      }),
-    );
-    // Then
-    expect(result.notes).toEqual(["no activity in this range"]);
-  });
-
-  it("search empty is rejected", async () => {
-    // Given: seedBreakdown
-    const message = await run(
-      Effect.gen(function* () {
-        const store = yield* Store;
-        yield* seedBreakdown(store);
-        // When
-        const error = yield* Effect.flip(breakdown({ range: day, search: "" }));
-        return error.message;
-      }),
-    );
-    // Then
-    expect(message).toBe("search: must not be empty");
-  });
-
   it("devices mac and iphone leave out the iPad", async () => {
     // Given: seedBreakdown
     const result = await run(
@@ -589,7 +463,14 @@ describe("breakdown", () => {
     );
     // Then
     expect({ blocks: result.blocks, notes: result.notes }).toEqual({
-      blocks: [{ seconds: 0, nodes: [] }],
+      blocks: [
+        {
+          start: "2026-09-18T01:00-07:00",
+          end: "2026-09-18T02:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
       notes: ["no iphone Device has activity in this range"],
     });
   });
@@ -630,6 +511,10 @@ describe("breakdown", () => {
     expect({ blocks: result.blocks, notes: result.notes }).toEqual({
       blocks: [
         {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          first: "2026-09-18T12:00-07:00",
+          last: "2026-09-18T12:30-07:00",
           seconds: 1800,
           nodes: [{ name: "(no domain)", seconds: 1800, children: [] }],
         },
@@ -654,6 +539,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T02:00-07:00",
+        last: "2026-09-18T02:40-07:00",
         seconds: 1560,
         nodes: [
           {
@@ -707,6 +596,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T02:20-07:00",
+        last: "2026-09-18T02:40-07:00",
         seconds: 1200,
         nodes: [
           {
@@ -769,6 +662,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T02:00-07:00",
+        last: "2026-09-18T04:30-07:00",
         seconds: 3480,
         nodes: [
           {
@@ -799,6 +696,519 @@ describe("breakdown", () => {
         ],
       },
     ]);
+  });
+
+  it("hour Blocks from 22:07 start short, then follow the clock", async () => {
+    // Given: Code 22:10 to 23:30 local on 2026-09-25
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-26T05:10:00.000Z", "2026-09-26T06:30:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-25T22:07", to: "2026-09-26T00:00" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-25T22:07-07:00",
+        end: "2026-09-25T23:00-07:00",
+        first: "2026-09-25T22:10-07:00",
+        last: "2026-09-25T23:00-07:00",
+        seconds: 3000,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 3000,
+            children: [],
+          },
+        ],
+      },
+      {
+        start: "2026-09-25T23:00-07:00",
+        end: "2026-09-26T00:00-07:00",
+        first: "2026-09-25T23:00-07:00",
+        last: "2026-09-25T23:30-07:00",
+        seconds: 1800,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 1800,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("an Activity across a Block edge is cut at the edge", async () => {
+    // Given: Code 09:14 to 09:17 local
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-26T16:14:00.000Z", "2026-09-26T16:17:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-26T09:00", to: "2026-09-26T09:30" },
+          block: "15min",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-26T09:00-07:00",
+        end: "2026-09-26T09:15-07:00",
+        first: "2026-09-26T09:14-07:00",
+        last: "2026-09-26T09:15-07:00",
+        seconds: 60,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 60,
+            children: [],
+          },
+        ],
+      },
+      {
+        start: "2026-09-26T09:15-07:00",
+        end: "2026-09-26T09:30-07:00",
+        first: "2026-09-26T09:15-07:00",
+        last: "2026-09-26T09:17-07:00",
+        seconds: 120,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 120,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("min merges small lines inside each Block", async () => {
+    // Given: b 09:14:00 to 09:14:30, a 09:14:30 to 09:15:30 local
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["b", "2026-09-26T16:14:00.000Z", "2026-09-26T16:14:30.000Z"],
+          ["a", "2026-09-26T16:14:30.000Z", "2026-09-26T16:15:30.000Z"],
+        ]);
+        // When: min 60s by default
+        return yield* breakdown({
+          range: { from: "2026-09-26T09:00", to: "2026-09-26T09:30" },
+          block: "15min",
+          groupBy: ["title"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.nodes)).toEqual([
+      [{ name: "2 small items", seconds: 60, small: 2, children: [] }],
+      [{ name: "a", seconds: 30, children: [] }],
+    ]);
+  });
+
+  it("hour Blocks follow the clock on the day DST ends", async () => {
+    // Given: Code over the whole 25-hour day
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-11-01T07:00:00.000Z", "2026-11-02T08:00:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-11-01", to: "2026-11-01" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.start)).toEqual([
+      "2026-11-01T00:00-07:00",
+      "2026-11-01T01:00-07:00",
+      "2026-11-01T01:00-08:00",
+      "2026-11-01T02:00-08:00",
+      "2026-11-01T03:00-08:00",
+      "2026-11-01T04:00-08:00",
+      "2026-11-01T05:00-08:00",
+      "2026-11-01T06:00-08:00",
+      "2026-11-01T07:00-08:00",
+      "2026-11-01T08:00-08:00",
+      "2026-11-01T09:00-08:00",
+      "2026-11-01T10:00-08:00",
+      "2026-11-01T11:00-08:00",
+      "2026-11-01T12:00-08:00",
+      "2026-11-01T13:00-08:00",
+      "2026-11-01T14:00-08:00",
+      "2026-11-01T15:00-08:00",
+      "2026-11-01T16:00-08:00",
+      "2026-11-01T17:00-08:00",
+      "2026-11-01T18:00-08:00",
+      "2026-11-01T19:00-08:00",
+      "2026-11-01T20:00-08:00",
+      "2026-11-01T21:00-08:00",
+      "2026-11-01T22:00-08:00",
+      "2026-11-01T23:00-08:00",
+    ]);
+  });
+
+  it("hour Blocks follow the clock on the day DST starts", async () => {
+    // Given: Code over the whole 23-hour day
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-03-08T08:00:00.000Z", "2026-03-09T07:00:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-03-08", to: "2026-03-08" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.start)).toEqual([
+      "2026-03-08T00:00-08:00",
+      "2026-03-08T01:00-08:00",
+      "2026-03-08T03:00-07:00",
+      "2026-03-08T04:00-07:00",
+      "2026-03-08T05:00-07:00",
+      "2026-03-08T06:00-07:00",
+      "2026-03-08T07:00-07:00",
+      "2026-03-08T08:00-07:00",
+      "2026-03-08T09:00-07:00",
+      "2026-03-08T10:00-07:00",
+      "2026-03-08T11:00-07:00",
+      "2026-03-08T12:00-07:00",
+      "2026-03-08T13:00-07:00",
+      "2026-03-08T14:00-07:00",
+      "2026-03-08T15:00-07:00",
+      "2026-03-08T16:00-07:00",
+      "2026-03-08T17:00-07:00",
+      "2026-03-08T18:00-07:00",
+      "2026-03-08T19:00-07:00",
+      "2026-03-08T20:00-07:00",
+      "2026-03-08T21:00-07:00",
+      "2026-03-08T22:00-07:00",
+      "2026-03-08T23:00-07:00",
+    ]);
+  });
+
+  it("a block outside total, hour, 15min is rejected", async () => {
+    // Given: an empty store
+    const message = await run(
+      // When
+      Effect.map(
+        Effect.flip(breakdown({ range: day, block: "5min" } as never)),
+        (error) => error.message,
+      ),
+    );
+    // Then
+    expect(message).toBe("block: must be one of total, hour, 15min");
+  });
+
+  it("a run of Blocks with no activity is one empty Block", async () => {
+    // Given: Code 17:50 to 18:00 and 21:30 to 21:40 local on 2026-09-26
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-27T00:50:00.000Z", "2026-09-27T01:00:00.000Z"],
+          ["a", "2026-09-27T04:30:00.000Z", "2026-09-27T04:40:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-26T17:45", to: "2026-09-26T21:45" },
+          block: "15min",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-26T17:45-07:00",
+        end: "2026-09-26T18:00-07:00",
+        first: "2026-09-26T17:50-07:00",
+        last: "2026-09-26T18:00-07:00",
+        seconds: 600,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 600,
+            children: [],
+          },
+        ],
+      },
+      {
+        start: "2026-09-26T18:00-07:00",
+        end: "2026-09-26T21:30-07:00",
+        seconds: 0,
+        nodes: [],
+      },
+      {
+        start: "2026-09-26T21:30-07:00",
+        end: "2026-09-26T21:45-07:00",
+        first: "2026-09-26T21:30-07:00",
+        last: "2026-09-26T21:40-07:00",
+        seconds: 600,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 600,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("an empty window in hour Blocks is one empty Block with the note", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-01", to: "2026-09-01" },
+          block: "hour",
+        });
+      }),
+    );
+    // Then
+    expect({ blocks: result.blocks, notes: result.notes }).toEqual({
+      blocks: [
+        {
+          start: "2026-09-01T00:00-07:00",
+          end: "2026-09-02T00:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
+      notes: ["no activity in this range"],
+    });
+  });
+
+  it("an empty window in hour Blocks is one empty Block, as in total", async () => {
+    // Given: an empty store
+    const result = await run(
+      // When
+      breakdown({
+        range: { from: "2026-09-26T09:00", to: "2026-09-26T09:00" },
+        block: "hour",
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-26T09:00-07:00",
+        end: "2026-09-26T09:00-07:00",
+        seconds: 0,
+        nodes: [],
+      },
+    ]);
+  });
+
+  it("search wellfound and WellFound give the same tree of matching time", async () => {
+    // Given: seedBreakdown
+    const { lower, upper, studio } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const { studio } = yield* seedBreakdown(store);
+        // When
+        const lower = yield* breakdown({ range: day, search: "wellfound" });
+        const upper = yield* breakdown({ range: day, search: "WellFound" });
+        return { lower, upper, studio };
+      }),
+    );
+    // Then
+    const tree = {
+      blocks: [
+        {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          first: "2026-09-18T02:00-07:00",
+          last: "2026-09-18T02:06-07:00",
+          seconds: 360,
+          nodes: [
+            {
+              name: "Studio",
+              key: studio.id,
+              kind: "mac",
+              seconds: 360,
+              children: [
+                {
+                  name: "Brave",
+                  key: "com.brave.Browser",
+                  seconds: 360,
+                  children: [
+                    {
+                      name: "wellfound.com",
+                      seconds: 360,
+                      children: [{ name: "Jobs", seconds: 360, children: [] }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      notes: [],
+    };
+    expect([
+      { blocks: lower.blocks, notes: lower.notes },
+      { blocks: upper.blocks, notes: upper.notes },
+    ]).toEqual([tree, tree]);
+  });
+
+  it("search github.com/clocktrace matches the URL path", async () => {
+    // Given: seedBreakdown, a Pull request on github.com/clocktrace and an
+    // Effect page on github.com/Effect-TS
+    const { result, studio } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const { studio } = yield* seedBreakdown(store);
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.brave.Browser",
+          appName: "Brave",
+          title: "Pull request",
+          url: "https://github.com/clocktrace/clocktrace/pull/244",
+          startedAt: DateTime.unsafeMake("2026-09-18T10:30:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T10:40:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.brave.Browser",
+          appName: "Brave",
+          title: "Effect",
+          url: "https://github.com/Effect-TS/effect",
+          startedAt: DateTime.unsafeMake("2026-09-18T10:40:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T10:45:00.000Z"),
+        });
+        // When
+        const result = yield* breakdown({
+          range: day,
+          search: "github.com/clocktrace",
+        });
+        return { result, studio };
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T03:30-07:00",
+        last: "2026-09-18T03:40-07:00",
+        seconds: 600,
+        nodes: [
+          {
+            name: "Studio",
+            key: studio.id,
+            kind: "mac",
+            seconds: 600,
+            children: [
+              {
+                name: "Brave",
+                key: "com.brave.Browser",
+                seconds: 600,
+                children: [
+                  {
+                    name: "github.com",
+                    seconds: 600,
+                    children: [
+                      { name: "Pull request", seconds: 600, children: [] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("a search with no match notes no activity", async () => {
+    // Given: seedBreakdown; the iPhone's Game row has no title and no URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({ range: day, search: "game" });
+      }),
+    );
+    // Then
+    expect({ blocks: result.blocks, notes: result.notes }).toEqual({
+      blocks: [
+        {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
+      notes: ["no activity in this range"],
+    });
+  });
+
+  it("a search with no iPhone match does not say the iPhone has no activity", async () => {
+    // Given: seedBreakdown; the iPhone has a Game Activity with no title or URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: day,
+          devices: ["iphone"],
+          search: "github",
+        });
+      }),
+    );
+    // Then
+    expect(result.notes).toEqual(["no activity in this range"]);
+  });
+
+  it("search empty is rejected", async () => {
+    // Given: seedBreakdown
+    const message = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        const error = yield* Effect.flip(breakdown({ range: day, search: "" }));
+        return error.message;
+      }),
+    );
+    // Then
+    expect(message).toBe("search: must not be empty");
   });
 
   it("a late iPhone gets one note and the Mac none", async () => {
@@ -838,5 +1248,49 @@ describe("breakdown", () => {
     );
     // Then
     expect(result.notes).toEqual([]);
+  });
+
+  it("hour Blocks follow the clock when DST moves it 30 minutes", async () => {
+    // Given: Code over the whole day DST starts on Lord Howe Island, 02:00 to 02:30
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-10-03T13:30:00.000Z", "2026-10-04T13:00:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-10-04", to: "2026-10-04" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }).pipe(DateTime.withCurrentZoneNamed("Australia/Lord_Howe")),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.start)).toEqual([
+      "2026-10-04T00:00+10:30",
+      "2026-10-04T01:00+10:30",
+      "2026-10-04T03:00+11:00",
+      "2026-10-04T04:00+11:00",
+      "2026-10-04T05:00+11:00",
+      "2026-10-04T06:00+11:00",
+      "2026-10-04T07:00+11:00",
+      "2026-10-04T08:00+11:00",
+      "2026-10-04T09:00+11:00",
+      "2026-10-04T10:00+11:00",
+      "2026-10-04T11:00+11:00",
+      "2026-10-04T12:00+11:00",
+      "2026-10-04T13:00+11:00",
+      "2026-10-04T14:00+11:00",
+      "2026-10-04T15:00+11:00",
+      "2026-10-04T16:00+11:00",
+      "2026-10-04T17:00+11:00",
+      "2026-10-04T18:00+11:00",
+      "2026-10-04T19:00+11:00",
+      "2026-10-04T20:00+11:00",
+      "2026-10-04T21:00+11:00",
+      "2026-10-04T22:00+11:00",
+      "2026-10-04T23:00+11:00",
+    ]);
   });
 });

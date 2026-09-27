@@ -12,6 +12,7 @@ import {
   seedBreakdown,
   seedMany,
   seedPrivate,
+  seedRuns,
   seedTwoDevices,
 } from "../src/testing.js";
 
@@ -96,5 +97,24 @@ describe("testing", () => {
       total: reply.total,
       marks: reply.rows.map((r) => r.private),
     }).toEqual({ total: 2, marks: [false, true] });
+  });
+
+  it("seedRuns stores one Code Activity per run", async () => {
+    // Given: an empty store
+    const reply = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        // When
+        yield* seedRuns(store, [
+          ["a", "2026-09-18T08:00:00.000Z", "2026-09-18T08:10:00.000Z"],
+          ["b", "2026-09-18T09:00:00.000Z", "2026-09-18T09:05:00.000Z"],
+        ]);
+        return yield* summary({ range: day, groupBy: "app" });
+      }),
+    );
+    // Then
+    expect(reply.rows).toEqual([
+      { key: "com.microsoft.VSCode", name: "Code", seconds: 900 },
+    ]);
   });
 });
