@@ -328,7 +328,8 @@ const edges = (
   size: BlockSize,
   zone: DateTime.TimeZone,
 ): ReadonlyArray<number> => {
-  if (size === "total") {
+  // An empty window is one empty Block in every size, as it is in total.
+  if (size === "total" || fromMs >= toMs) {
     return [fromMs, toMs];
   }
   const minutes = stepMinutes[size];
@@ -406,11 +407,16 @@ const blockOf = (
   zone: DateTime.TimeZone,
 ): BreakdownBlock => {
   const ms = rows.reduce((sum, row) => sum + row.ms, 0);
-  const first = Math.min(
-    ...rows.map((row) => Math.max(row.activity.startedAt.epochMillis, startMs)),
+  // A reduce, not a spread: a year of rows is past the argument limit.
+  const first = rows.reduce(
+    (earliest, row) =>
+      Math.min(earliest, Math.max(row.activity.startedAt.epochMillis, startMs)),
+    Number.POSITIVE_INFINITY,
   );
-  const last = Math.max(
-    ...rows.map((row) => Math.min(row.activity.endedAt.epochMillis, endMs)),
+  const last = rows.reduce(
+    (latest, row) =>
+      Math.max(latest, Math.min(row.activity.endedAt.epochMillis, endMs)),
+    Number.NEGATIVE_INFINITY,
   );
   return {
     start: stamp(startMs, zone),

@@ -1010,4 +1010,24 @@ describe("breakdown", () => {
       notes: ["no activity in this range"],
     });
   });
+
+  it("an empty window in hour Blocks is one empty Block, as in total", async () => {
+    // Given: an empty store
+    const result = await run(
+      // When
+      breakdown({
+        range: { from: "2026-09-26T09:00", to: "2026-09-26T09:00" },
+        block: "hour",
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-26T09:00-07:00",
+        end: "2026-09-26T09:00-07:00",
+        seconds: 0,
+        nodes: [],
+      },
+    ]);
+  });
 });
