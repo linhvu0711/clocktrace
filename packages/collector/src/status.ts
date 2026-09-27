@@ -1,4 +1,4 @@
-import { Store, type StoreError } from "@clocktrace/core";
+import { dataUpTo, Store, type StoreError } from "@clocktrace/core";
 import { DateTime, Effect, Option, Schema } from "effect";
 import type { ParseError } from "effect/ParseResult";
 import type { App } from "./app.js";
@@ -11,7 +11,7 @@ import {
   noAnswerNote,
 } from "./grant.js";
 import type { Helper, HelperExitedError } from "./helper.js";
-import { ImportResult, importStatusKey, readProgress } from "./importer.js";
+import { ImportResult, importStatusKey } from "./importer.js";
 import { syncStaleAfterMillis } from "./importer-rules.js";
 import { Launchd, type LaunchdError } from "./launchd.js";
 import type { CollectorPaths } from "./paths.js";
@@ -139,13 +139,7 @@ export const readStatus = (): Effect.Effect<
             }
             const lastSync = lastSyncs.get(device.externalId) ?? null;
             const lastActivity = yield* store.latestActivityEnd(device.id);
-            const progress = yield* readProgress(store, device.externalId);
-            // How far the data goes: Progress waits while an Activity is
-            // open, so a written Activity can end after it.
-            const ends = [
-              Option.map(progress, (p) => DateTime.unsafeMake(p.ts * 1000)),
-              lastActivity,
-            ].flatMap(Option.toArray);
+            const upTo = yield* dataUpTo(store, device);
             devices.push({
               name: device.name,
               kind: device.kind,
@@ -157,10 +151,7 @@ export const readStatus = (): Effect.Effect<
                       syncStaleAfterMillis
                     ? "stale"
                     : "synced",
-              dataUpTo:
-                ends.length === 0
-                  ? null
-                  : ends.reduce((a, b) => DateTime.max(a, b)),
+              dataUpTo: Option.getOrNull(upTo),
               lastActivity: Option.getOrNull(lastActivity),
             });
           }
