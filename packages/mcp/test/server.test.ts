@@ -240,9 +240,7 @@ describe("server", () => {
         await call("remove_category", { id: idOf(category) }),
       ],
       ["remove_project", await call("remove_project", { id: idOf(project) })],
-      ["summary", await call("summary", { range: day, groupBy: "app" })],
       ["breakdown", await call("breakdown", { range: day })],
-      ["timeline", await call("timeline", { range: day })],
       ["activities", await call("activities", { range: day })],
       ["status", await call("status", {})],
     ];
@@ -270,8 +268,6 @@ describe("server", () => {
       "set_category",
       "set_project",
       "status",
-      "summary",
-      "timeline",
     ]);
     for (const check of checks) {
       expect(check).toEqual({
@@ -843,13 +839,7 @@ describe("server", () => {
     // Then
     const names = tools.map((t) => t.name);
     expect(names).toEqual(
-      expect.arrayContaining([
-        "status",
-        "summary",
-        "breakdown",
-        "timeline",
-        "activities",
-      ]),
+      expect.arrayContaining(["status", "breakdown", "activities"]),
     );
   });
 
@@ -866,27 +856,26 @@ describe("server", () => {
     expect(description).toContain("dataUpTo is how far it goes");
   });
 
-  it("instructions name the four question tools and the range format", async () => {
+  it("instructions name the question tools and the range format", async () => {
     // Given: the same
     const { client, close } = await connect(Store.Test);
     // When
     const instructions = client.getInstructions();
     await close();
     // Then
-    expect(instructions).toContain("summary, timeline, activities, status");
+    expect(instructions).toContain("breakdown, activities, status");
     expect(instructions).toContain("YYYY-MM-DDTHH:mm");
   });
 
-  it("the four question tools return not installed without a database", async () => {
+  it("the question tools return not installed without a database", async () => {
     // Given: a server over a path whose file does not exist
     const { client, close } = await connect(installedStore(path));
     // When
     const results = [
       await callTool(client, {
-        name: "summary",
-        arguments: { range: day, groupBy: "app" },
+        name: "breakdown",
+        arguments: { range: day },
       }),
-      await callTool(client, { name: "timeline", arguments: { range: day } }),
       await callTool(client, {
         name: "activities",
         arguments: { range: day },
@@ -915,8 +904,8 @@ describe("server", () => {
       await callTool(client, { name: "list_categories", arguments: {} }),
       await callTool(client, { name: "list_rules", arguments: {} }),
       await callTool(client, {
-        name: "summary",
-        arguments: { range: day, groupBy: "app" },
+        name: "breakdown",
+        arguments: { range: day },
       }),
       await callTool(client, { name: "status", arguments: {} }),
     ];
@@ -931,7 +920,7 @@ describe("server", () => {
     expect(existsSync(path)).toBe(true);
   });
 
-  it("a stopped Collector with the plist and the database answers summary", async () => {
+  it("a stopped Collector with the plist and the database answers activities", async () => {
     // Given: the database file, the plist, the Collector stopped
     await Effect.runPromise(Effect.scoped(openStore(path)));
     const { client, close } = await connect(
@@ -939,8 +928,8 @@ describe("server", () => {
     );
     // When
     const result = await callTool(client, {
-      name: "summary",
-      arguments: { range: day, groupBy: "app" },
+      name: "activities",
+      arguments: { range: day },
     });
     await close();
     // Then
@@ -948,71 +937,32 @@ describe("server", () => {
     expect(result.structuredContent?.total).toBe(0);
   });
 
-  it("summary by app answers with the window first, then rows and total", async () => {
-    // Given: a server over the seeded day, zone Los Angeles
-    const { client, close } = await connect(withActivities(seedDay));
-    // When
-    const result = await callTool(client, {
-      name: "summary",
-      arguments: { range: day, groupBy: "app" },
-    });
-    await close();
-    // Then: a bare to is the next midnight, rows sort by seconds
-    expect(result.isError).toBeUndefined();
-    expect(result.structuredContent).toEqual({
-      range: dayWindow,
-      rows: [
-        { key: "com.microsoft.VSCode", name: "Code", seconds: 5400 },
-        { key: "com.google.Chrome", name: "Google Chrome", seconds: 600 },
-      ],
-      total: 6000,
-    });
-    expect(Object.keys(result.structuredContent ?? {})).toEqual([
-      "range",
-      "rows",
-      "total",
-    ]);
-  });
-
-  it("a timed range is echoed as given and clips the rows", async () => {
+  it("a timed range is echoed as given and clips the time", async () => {
     // Given: the same
     const { client, close } = await connect(withActivities(seedDay));
     // When: 01:00 to 02:15 local is 08:00 to 09:15Z
     const result = await callTool(client, {
-      name: "summary",
+      name: "breakdown",
       arguments: {
         range: { from: "2026-09-18T01:00", to: "2026-09-18T02:15" },
-        groupBy: "category",
       },
     });
     await close();
     // Then
-    expect(result.structuredContent).toEqual({
+    const reply = result.structuredContent as {
+      range: unknown;
+      blocks: ReadonlyArray<{ seconds: number }>;
+    };
+    expect({
+      range: reply.range,
+      seconds: reply.blocks.map((b) => b.seconds),
+    }).toEqual({
       range: {
         from: "2026-09-18T01:00",
         to: "2026-09-18T02:15",
         zone: "America/Los_Angeles",
       },
-      rows: [{ key: "uncategorized", name: "Uncategorized", seconds: 4500 }],
-      total: 4500,
-    });
-  });
-
-  it("an empty range gives no rows, total 0, and a note", async () => {
-    // Given: the same
-    const { client, close } = await connect(withActivities(seedDay));
-    // When
-    const result = await callTool(client, {
-      name: "summary",
-      arguments: { range: emptyDay, groupBy: "app" },
-    });
-    await close();
-    // Then
-    expect(result.structuredContent).toEqual({
-      range: emptyWindow,
-      rows: [],
-      total: 0,
-      note: "no activity in this range",
+      seconds: [4500],
     });
   });
 
@@ -1021,8 +971,8 @@ describe("server", () => {
     const { client, close } = await connect(withActivities(seedDay));
     // When
     const result = await callTool(client, {
-      name: "summary",
-      arguments: { range: day, groupBy: "app", device: "Studio" },
+      name: "activities",
+      arguments: { range: day, device: "Studio" },
     });
     await close();
     // Then
@@ -1037,11 +987,8 @@ describe("server", () => {
     const { client, close } = await connect(withActivities(seedDay));
     // When
     const result = await callTool(client, {
-      name: "summary",
-      arguments: {
-        range: { from: "2026-09-08", to: "2026-09-01" },
-        groupBy: "app",
-      },
+      name: "activities",
+      arguments: { range: { from: "2026-09-08", to: "2026-09-01" } },
     });
     await close();
     // Then
@@ -1049,49 +996,19 @@ describe("server", () => {
     expect(text(result)).toBe("range: from 2026-09-08 is after to 2026-09-01");
   });
 
-  it("an unknown groupBy is an error naming groupBy", async () => {
-    // Given: the same
-    const { client, close } = await connect(withActivities(seedDay));
-    // When
-    const result = await callTool(client, {
-      name: "summary",
-      arguments: { range: day, groupBy: "week" },
-    });
-    await close();
-    // Then
-    expect(result.isError).toBe(true);
-    expect(text(result)).toMatch(/at groupBy$/);
-  });
-
   it("a from that is not a date gets core's text", async () => {
     // Given: the same
     const { client, close } = await connect(withActivities(seedDay));
     // When
     const result = await callTool(client, {
-      name: "summary",
-      arguments: { range: { from: "today", to: "2026-09-18" }, groupBy: "app" },
+      name: "activities",
+      arguments: { range: { from: "today", to: "2026-09-18" } },
     });
     await close();
     // Then
     expect(result.isError).toBe(true);
     expect(text(result)).toBe(
       'range: from "today" is not YYYY-MM-DD or YYYY-MM-DDTHH:mm',
-    );
-  });
-
-  it("a groupBy outside the list names the allowed values", async () => {
-    // Given: the same
-    const { client, close } = await connect(withActivities(seedDay));
-    // When
-    const result = await callTool(client, {
-      name: "summary",
-      arguments: { range: day, groupBy: "week" },
-    });
-    await close();
-    // Then
-    expect(result.isError).toBe(true);
-    expect(text(result)).toBe(
-      'MCP error -32602: Input validation error: Invalid arguments for tool summary: Invalid option: expected one of "category"|"project"|"app"|"device" at groupBy',
     );
   });
 
@@ -1111,8 +1028,38 @@ describe("server", () => {
     );
   });
 
-  it("timeline answers with the window first, then blocks in order", async () => {
-    // Given: the same
+  it("the tool list has no summary and no timeline", async () => {
+    // Given: a server over an in-memory store
+    const { client, close } = await connect(Store.Test);
+    // When
+    const { tools } = await client.listTools();
+    await close();
+    // Then
+    const names = tools.map((t) => t.name);
+    expect({
+      summary: names.includes("summary"),
+      timeline: names.includes("timeline"),
+    }).toEqual({ summary: false, timeline: false });
+  });
+
+  it("a Host that calls summary gets the unknown-tool error", async () => {
+    // Given: a server over the seeded day
+    const { client, close } = await connect(withActivities(seedDay));
+    // When
+    const result = await callTool(client, {
+      name: "summary",
+      arguments: { range: day, groupBy: "app" },
+    });
+    await close();
+    // Then
+    expect({ isError: result.isError, text: text(result) }).toEqual({
+      isError: true,
+      text: "MCP error -32602: Tool summary not found",
+    });
+  });
+
+  it("a Host that calls timeline gets the unknown-tool error", async () => {
+    // Given: a server over the seeded day
     const { client, close } = await connect(withActivities(seedDay));
     // When
     const result = await callTool(client, {
@@ -1120,50 +1067,10 @@ describe("server", () => {
       arguments: { range: day },
     });
     await close();
-    // Then: no Rules, so every block is Uncategorized
-    expect(result.isError).toBeUndefined();
-    expect(result.structuredContent).toEqual({
-      range: dayWindow,
-      rows: [
-        {
-          start: "2026-09-18T08:00:00.000Z",
-          end: "2026-09-18T09:30:00.000Z",
-          app: "Code",
-          categoryName: "Uncategorized",
-          projectName: null,
-        },
-        {
-          start: "2026-09-18T09:30:00.000Z",
-          end: "2026-09-18T09:40:00.000Z",
-          app: "Google Chrome",
-          categoryName: "Uncategorized",
-          projectName: null,
-        },
-      ],
-      total: 2,
-    });
-    expect(Object.keys(result.structuredContent ?? {})).toEqual([
-      "range",
-      "rows",
-      "total",
-    ]);
-  });
-
-  it("timeline of an empty range gives no rows, total 0, and a note", async () => {
-    // Given: the same
-    const { client, close } = await connect(withActivities(seedDay));
-    // When
-    const result = await callTool(client, {
-      name: "timeline",
-      arguments: { range: emptyDay },
-    });
-    await close();
     // Then
-    expect(result.structuredContent).toEqual({
-      range: emptyWindow,
-      rows: [],
-      total: 0,
-      note: "no activity in this range",
+    expect({ isError: result.isError, text: text(result) }).toEqual({
+      isError: true,
+      text: "MCP error -32602: Tool timeline not found",
     });
   });
 
@@ -1295,14 +1202,17 @@ describe("server", () => {
     // Given: two Devices, Studio with two Activities and Laptop with one
     const { client, close } = await connect(withActivities(seedTwoDevices));
     const byDevice = await callTool(client, {
-      name: "summary",
-      arguments: { range: day, groupBy: "device" },
+      name: "breakdown",
+      arguments: { range: day, groupBy: ["device"] },
     });
-    const devices = (
-      byDevice.structuredContent as {
-        rows: ReadonlyArray<{ key: string; name: string }>;
-      }
-    ).rows;
+    const devices =
+      (
+        byDevice.structuredContent as {
+          blocks: ReadonlyArray<{
+            nodes: ReadonlyArray<{ key: string; name: string }>;
+          }>;
+        }
+      ).blocks[0]?.nodes ?? [];
     const studioId = devices.find((d) => d.name === "Studio")?.key ?? "";
     // When: the key of groupBy device is the device filter
     const result = await callTool(client, {
@@ -1623,7 +1533,7 @@ describe("server", () => {
     expect(result.structuredContent).toEqual(expected);
   });
 
-  it("a stopped Collector: status says stopped, run clocktrace start, and summary still answers", async () => {
+  it("a stopped Collector: status says stopped, run clocktrace start, and breakdown still answers", async () => {
     // Given: the seeded day, a stopped Launchd, accessibility denied
     const { client, close } = await connect(
       withActivities(seedDay),
@@ -1639,9 +1549,9 @@ describe("server", () => {
     );
     // When
     const status = await callTool(client, { name: "status", arguments: {} });
-    const summary = await callTool(client, {
-      name: "summary",
-      arguments: { range: day, groupBy: "app" },
+    const breakdown = await callTool(client, {
+      name: "breakdown",
+      arguments: { range: day },
     });
     await close();
     // Then
@@ -1658,8 +1568,14 @@ describe("server", () => {
       kind: "accessibility",
       bundleId: null,
     });
-    expect(summary.isError).toBeUndefined();
-    expect(summary.structuredContent?.total).toBe(6000);
+    expect(breakdown.isError).toBeUndefined();
+    expect(
+      (
+        breakdown.structuredContent as {
+          blocks: ReadonlyArray<{ seconds: number }>;
+        }
+      ).blocks[0]?.seconds,
+    ).toBe(6000);
   });
 
   it("status carries checkedAt for a closed browser with a Saved grant", async () => {
