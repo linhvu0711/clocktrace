@@ -35,7 +35,7 @@ clocktrace categories remove <id> [--json]    # remove a Category no Rule uses
 clocktrace projects list [--json]             # one line per Project: id, name
 clocktrace projects set --name <n> [--id <id>] [--json]   # create, or rename by id
 clocktrace projects remove <id> [--json]      # remove a Project no Rule uses
-clocktrace breakdown --from <d> --to <d> [--group-by <levels>] [--min 60s] [--devices <kinds or ids>] [--search <word>] [--block total|hour|15min] [--json]   # window and zone, then time as a tree; --group-by defaults to device,app,domain,title; --block hour or 15min gives one tree per clock Block
+clocktrace breakdown --from <d> --to <d> [--group-by <levels>] [--min 60s] [--devices <kinds or ids>] [--search <word>] [--block total|hour|15min] [--json]   # window and zone, then time as a tree; --group-by defaults to device,app,domain,page (a page is a URL without its #… part, or the title when there is no URL); --block hour or 15min gives one tree per clock Block
 clocktrace activities --from <d> --to <d> [--device <id>] [--app <a>] [--limit <n>] [--json]   # window, then one line per Activity: start, end, app, title, URL; at most 200
 clocktrace status --json   # the status tool's JSON
 clocktrace --version     # print the CLI version

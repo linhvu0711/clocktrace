@@ -380,6 +380,18 @@ describe("cli", () => {
     );
   });
 
+  it("breakdown help names the page level and the default", async () => {
+    // Given
+    const argv = ["node", "clocktrace", "breakdown", "--help"];
+    // When
+    const { exit, lines } = await runArgv(argv);
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(lines.join("\n")).toContain(
+      "levels in order, comma-separated: category, project, device, app, domain, title, page; default device,app,domain,page",
+    );
+  });
+
   it("rules add help describes each option", async () => {
     // Given
     const argv = ["node", "clocktrace", "rules", "add", "--help"];

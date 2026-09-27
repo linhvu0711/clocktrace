@@ -844,6 +844,22 @@ describe("server", () => {
     );
   });
 
+  it("the breakdown description names the page level, the default, key, and path", async () => {
+    // Given: a server over an in-memory store
+    const { client, close } = await connect(Store.Test);
+    // When
+    const { tools } = await client.listTools();
+    await close();
+    // Then
+    const description =
+      tools.find((t) => t.name === "breakdown")?.description ?? "";
+    expect(description).toContain(
+      "category, project, device, app, domain, title, page; default device, app, domain, page",
+    );
+    expect(description).toContain("a node may carry key");
+    expect(description).toContain("a page node path (its path and query)");
+  });
+
   it("the status description names the lag and dataUpTo", async () => {
     // Given: a server over an in-memory store
     const { client, close } = await connect(Store.Test);
