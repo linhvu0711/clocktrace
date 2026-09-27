@@ -87,11 +87,11 @@ The CLI command that pairs with an MCP tool: `clocktrace rules add` is the Twin 
 _Avoid_: Alias, wrapper, mirror, subcommand
 
 **Breakdown**:
-The query that sums time in a window as a tree, one level per item of an ordered list, such as Device, then app, then domain, then title. It replaces `summary` and `timeline`; `clocktrace breakdown` is its Twin.
+The query that sums time in a window as a tree, one level per item of an ordered list, such as Device, then app, then domain, then title. It replaces `summary` and `timeline`; `clocktrace breakdown` is its Twin. Planned in #236, not built yet: `summary` and `timeline` still ship.
 _Avoid_: Report, summary, totals, timeline
 
 **Block**:
-One slice of a Breakdown window with its own tree: the whole window, one clock hour, or one clock quarter-hour in the local time zone. The first and last Block are short when the window does not start or end on the clock. A run of Blocks with no activity shows as one line.
+One slice of a Breakdown window with its own tree: the whole window, one clock hour, or one clock quarter-hour in the local time zone. The first and last Block are short when the window does not start or end on the clock. A run of Blocks with no activity shows as one line. Planned in #239, not built yet.
 _Avoid_: Bucket, slot, interval, period
 
 **Rollup**:
@@ -117,11 +117,11 @@ The host of an Activity's URL, as `api.github.com`. The Rule field `domain` test
 _Avoid_: Site, website, host, registrable domain
 
 **Private**:
-A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk, and it is stored marked private. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
+A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. It will also be stored marked private: planned in #238, not built yet. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
 _Avoid_: Ignore, exclude, hidden, public
 
 **Private window**:
-A browser window the browser itself marks private (Incognito, InPrivate, Private Browsing). The Helper sends no title and no URL for it, always, with no Rule and with or without Accessibility, and marks the reading private, so its Activity is stored marked private.
+A browser window the browser itself marks private (Incognito, InPrivate, Private Browsing). The Helper sends no title and no URL for it, always, with no Rule and with or without Accessibility, and will mark the reading private so its Activity is stored marked private: planned in #241, not built yet.
 _Avoid_: Incognito tab, private mode, secret window
 
 **Uncategorized**:

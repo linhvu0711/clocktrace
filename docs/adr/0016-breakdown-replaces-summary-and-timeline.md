@@ -11,11 +11,14 @@ titles or URLs, and `activities` gave about 3,000 raw rows for one day on the
 first user's Mac. Summed into a title tree, 9 in 10 lines were under a minute.
 The user did that summing by hand each night.
 
-One query, Breakdown, now does it. An ordered list of levels makes the tree,
+One query, Breakdown, does it. An ordered list of levels makes the tree,
 the window is cut into Blocks that follow the clock, and lines under `--min`
 merge into one "small items" line whose time still counts in every total above
 it. A one-level Breakdown over the whole window is the old `summary`, so
 `summary` and `timeline` are removed, from core, MCP and the CLI.
+
+This records the decision; the work is epic #236. `breakdown` does not
+exist until #237 lands, and `summary` and `timeline` still ship until #243.
 
 ## Considered options
 
