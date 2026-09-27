@@ -15,6 +15,7 @@ import { Range, UsedRange } from "./range.js";
 import { loadRange, type RangeRows } from "./range-rows.js";
 import type { Store } from "./store.js";
 
+// override: without it the literal union keeps Effect's own words.
 export const Level = Schema.Literal(
   "category",
   "project",
@@ -22,6 +23,19 @@ export const Level = Schema.Literal(
   "app",
   "domain",
   "title",
+).annotations({
+  message: () => ({
+    message: "must be one of category, project, device, app, domain, title",
+    override: true,
+  }),
+});
+
+const Levels = Schema.Array(Level).pipe(
+  Schema.minItems(1, { message: () => "must name at least one level" }),
+  Schema.filter(
+    (levels) =>
+      new Set(levels).size === levels.length || "must not name a level twice",
+  ),
 );
 
 export const defaultLevels: ReadonlyArray<Level> = [
@@ -70,6 +84,7 @@ export const BreakdownReply = Schema.Struct({
 
 export const BreakdownInput = Schema.Struct({
   range: Range,
+  groupBy: Schema.optionalWith(Levels, { default: () => defaultLevels }),
 });
 
 type Row = RangeRows["rows"][number];
@@ -235,7 +250,7 @@ export const breakdown = (
       projectById: new Map(projects.map((p) => [p.id, p])),
       deviceById: new Map(devices.map((d) => [d.id, d])),
     };
-    const nodes = finish(group(rows, defaultLevels, lookups), 60);
+    const nodes = finish(group(rows, decoded.groupBy, lookups), 60);
     const ms = rows.reduce((sum, row) => sum + row.ms, 0);
     return {
       range,

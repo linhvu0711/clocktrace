@@ -1,7 +1,13 @@
 import { DateTime, Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { AppStore, breakdown, openStore, Store } from "../src/index.js";
+import {
+  AppStore,
+  addRule,
+  breakdown,
+  openStore,
+  Store,
+} from "../src/index.js";
 import { seedBreakdown } from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
@@ -158,5 +164,108 @@ describe("breakdown", () => {
       blocks: [{ seconds: 0, nodes: [] }],
       notes: ["no activity in this range"],
     });
+  });
+
+  it("breakdown by category gives one level with the productive flag", async () => {
+    // Given: seedBreakdown; Code is Coding (productive), Brave is Browsing (not)
+    const { result, coding, browsing } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        const coding = yield* store.insertCategory({
+          name: "Coding",
+          productive: true,
+        });
+        const browsing = yield* store.insertCategory({
+          name: "Browsing",
+          productive: false,
+        });
+        yield* addRule({
+          field: "app",
+          compare: "is",
+          value: "com.microsoft.VSCode",
+          effect: "category",
+          target: coding.id,
+        });
+        yield* addRule({
+          field: "app",
+          compare: "is",
+          value: "com.brave.Browser",
+          effect: "category",
+          target: browsing.id,
+        });
+        // When
+        const result = yield* breakdown({ range: day, groupBy: ["category"] });
+        return { result, coding, browsing };
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        seconds: 6625,
+        nodes: [
+          { name: "Uncategorized", seconds: 3900, children: [] },
+          {
+            name: "Coding",
+            key: coding.id,
+            productive: true,
+            seconds: 1845,
+            children: [],
+          },
+          {
+            name: "Browsing",
+            key: browsing.id,
+            productive: false,
+            seconds: 880,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("breakdown by project puts unmatched time in No project", async () => {
+    // Given: seedBreakdown; Code is in Thesis
+    const { result, thesis } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        const thesis = yield* store.insertProject({ name: "Thesis" });
+        yield* addRule({
+          field: "app",
+          compare: "is",
+          value: "com.microsoft.VSCode",
+          effect: "project",
+          target: thesis.id,
+        });
+        // When
+        const result = yield* breakdown({ range: day, groupBy: ["project"] });
+        return { result, thesis };
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      { name: "No project", seconds: 4780, children: [] },
+      { name: "Thesis", key: thesis.id, seconds: 1845, children: [] },
+    ]);
+  });
+
+  it("a level outside the list is rejected", async () => {
+    // Given: an empty store
+    const messages = await run(
+      // When
+      Effect.forEach([["colour"], [], ["app", "app"]], (groupBy) =>
+        Effect.map(
+          Effect.flip(breakdown({ range: day, groupBy } as never)),
+          (error) => error.message,
+        ),
+      ),
+    );
+    // Then
+    expect(messages).toEqual([
+      "groupBy.0: must be one of category, project, device, app, domain, title",
+      "groupBy: must name at least one level",
+      "groupBy: must not name a level twice",
+    ]);
   });
 });
