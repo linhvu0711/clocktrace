@@ -1,5 +1,6 @@
 import {
   type AppStore,
+  type BlockSize,
   type BreakdownBlock,
   type BreakdownInput,
   type BreakdownNode,
@@ -22,6 +23,7 @@ import {
   columns,
   duration,
   type Look,
+  line,
   type Span,
   Style,
   span,
@@ -86,6 +88,40 @@ export const breakdownScreen = (
   return columns(rows, look, { align: ["right"] });
 };
 
+// One header per Block, then its tree; a date line when the day changes, as
+// the window line holds only the first date.
+export const blocksScreen = (
+  blocks: ReadonlyArray<BreakdownBlock>,
+  look: Look,
+): ReadonlyArray<string> =>
+  blocks.flatMap((block, i) => {
+    const before = blocks[i - 1];
+    const day = block.start.slice(0, 10);
+    const label = `${block.start.slice(11, 16)}–${block.end.slice(11, 16)}`;
+    const lead = [
+      ...(before === undefined ? [] : [""]),
+      ...(before === undefined || before.start.slice(0, 10) === day
+        ? []
+        : [line([span("head", day)], look)]),
+    ];
+    if (
+      block.nodes.length === 0 ||
+      block.first === undefined ||
+      block.last === undefined
+    ) {
+      return [
+        ...lead,
+        line([span("head", label), "   ", span("dim", "no activity")], look),
+      ];
+    }
+    const times = `first ${block.first.slice(11, 16)} · last ${block.last.slice(11, 16)}`;
+    return [
+      ...lead,
+      line([span("head", label), "   ", span("dim", times)], look),
+      ...breakdownScreen(block, look),
+    ];
+  });
+
 export const printBreakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
   json: boolean,
@@ -103,13 +139,29 @@ export const printBreakdown = (
     const reply = yield* breakdown(input);
     const encoded = yield* Schema.encode(BreakdownReply)(reply);
     const levels = (input.groupBy ?? defaultLevels).join(", ");
-    yield* report(json, encoded, (v) => [
-      windowLine(input.range, v.range.zone, look, `by ${levels}`),
-      ...v.notes,
-      ...v.blocks.flatMap((block) =>
-        block.nodes.length === 0 ? [] : breakdownScreen(block, look),
-      ),
-    ]);
+    const block = input.block ?? "total";
+    yield* report(json, encoded, (v) =>
+      block === "total"
+        ? [
+            windowLine(input.range, v.range.zone, look, `by ${levels}`),
+            ...v.notes,
+            ...v.blocks.flatMap((b) =>
+              b.nodes.length === 0 ? [] : breakdownScreen(b, look),
+            ),
+          ]
+        : [
+            windowLine(
+              input.range,
+              v.range.zone,
+              look,
+              `by ${levels} · per ${block}`,
+            ),
+            ...v.notes,
+            ...(v.blocks.some((b) => b.nodes.length > 0)
+              ? blocksScreen(v.blocks, look)
+              : []),
+          ],
+    );
   });
 
 /** The items of a comma-separated flag value; empty items stay for core to reject. */
@@ -137,10 +189,25 @@ const devices = Options.text("devices").pipe(
   ),
 );
 
+const block = Options.text("block").pipe(
+  Options.optional,
+  Options.withDescription(
+    "total, hour, or 15min: one tree for the window, or one per clock hour or quarter-hour; default total",
+  ),
+);
+
 export const breakdownCommand = Command.make(
   "breakdown",
-  { from: fromOption, to: toOption, groupBy, min, devices, json: jsonOption },
-  ({ from, to, groupBy, min, devices, json }) =>
+  {
+    from: fromOption,
+    to: toOption,
+    groupBy,
+    min,
+    devices,
+    block,
+    json: jsonOption,
+  },
+  ({ from, to, groupBy, min, devices, block, json }) =>
     Effect.gen(function* () {
       const range = yield* requireWindow("breakdown", from, to);
       return yield* whenSetUp(
@@ -153,6 +220,8 @@ export const breakdownCommand = Command.make(
               | undefined,
             min: Option.getOrUndefined(min),
             devices: Option.getOrUndefined(Option.map(devices, commaList)),
+            // Core checks the value and words the error.
+            block: Option.getOrUndefined(block) as BlockSize | undefined,
           },
           json,
         ),

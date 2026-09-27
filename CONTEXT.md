@@ -91,7 +91,7 @@ The query that sums time in a window as a tree, one level per item of an ordered
 _Avoid_: Report, summary, totals, timeline
 
 **Block**:
-One slice of a Breakdown window with its own tree: the whole window, one clock hour, or one clock quarter-hour in the local time zone. The first and last Block are short when the window does not start or end on the clock. A run of Blocks with no activity shows as one line. Planned in #239, not built yet.
+One slice of a Breakdown window with its own tree: the whole window, one clock hour, or one clock quarter-hour in the local time zone. The first and last Block are short when the window does not start or end on the clock. A run of Blocks with no activity shows as one line. `clocktrace breakdown --block hour` or `--block 15min` asks for them; each Block carries its start, end, and the time of its first and last activity.
 _Avoid_: Bucket, slot, interval, period
 
 **Rollup**:

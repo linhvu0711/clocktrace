@@ -7,7 +7,7 @@ import {
   openStore,
   Store,
 } from "@clocktrace/core";
-import { seedBreakdown, seedPrivate } from "@clocktrace/core/testing";
+import { seedBreakdown, seedPrivate, seedRuns } from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import {
   Cause,
@@ -21,6 +21,7 @@ import {
 } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+  blocksScreen,
   breakdownScreen,
   commaList,
   printBreakdown,
@@ -449,5 +450,157 @@ describe("breakdown", () => {
         ],
       },
     ]);
+  });
+
+  it("breakdown --block 15min prints one tree per quarter-hour", async () => {
+    // Given: Code 09:01 to 09:14 and 09:20 to 09:25 local on 2026-09-26
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* seedRuns(store, [
+          ["a", "2026-09-26T16:01:00.000Z", "2026-09-26T16:14:00.000Z"],
+          ["a", "2026-09-26T16:20:00.000Z", "2026-09-26T16:25:00.000Z"],
+        ]);
+        // When
+        yield* printBreakdown(
+          {
+            range: { from: "2026-09-25T22:00", to: "2026-09-26T22:00" },
+            block: "15min",
+          },
+          false,
+        );
+        return studio;
+      }),
+    );
+    // Then
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    const studio = exit.value;
+    expect(output).toEqual([
+      "2026-09-25 22:00 to 2026-09-26 22:00 · America/Los_Angeles · by device, app, domain, title · per 15min",
+      "22:00–09:00   no activity",
+      "",
+      "2026-09-26",
+      "09:00–09:15   first 09:01 · last 09:14",
+      `13m 00s  Studio  mac · ${studio.id}`,
+      "13m 00s  └─ Code",
+      "13m 00s     └─ a",
+      "13m 00s  total",
+      "",
+      "09:15–09:30   first 09:20 · last 09:25",
+      `5m 00s  Studio  mac · ${studio.id}`,
+      "5m 00s  └─ Code",
+      "5m 00s     └─ a",
+      "5m 00s  total",
+      "",
+      "09:30–22:00   no activity",
+    ]);
+  });
+
+  it("a Block header is bold with first and last in gray", () => {
+    // Given: color on
+    const look = { color: true, unicode: true, width: 0 };
+    // When
+    const lines = blocksScreen(
+      [
+        {
+          start: "2026-09-26T09:00-07:00",
+          end: "2026-09-26T09:15-07:00",
+          first: "2026-09-26T09:01-07:00",
+          last: "2026-09-26T09:14-07:00",
+          seconds: 780,
+          nodes: [{ name: "Code", seconds: 780, children: [] }],
+        },
+      ],
+      look,
+    );
+    // Then
+    expect(lines).toEqual([
+      "\u001b[0;1m09:00–09:15\u001b[0m   \u001b[0;90mfirst 09:01 · last 09:14\u001b[0m",
+      "13m 00s  Code",
+      "13m 00s  \u001b[0;1mtotal\u001b[0m",
+    ]);
+  });
+
+  it("breakdown --block hour from 22:07 prints 22:07–23:00, then 23:00–00:00", async () => {
+    // Given: Code 22:10 to 23:30 local on 2026-09-25
+    const { output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-26T05:10:00.000Z", "2026-09-26T06:30:00.000Z"],
+        ]);
+        // When
+        yield* printBreakdown(
+          {
+            range: { from: "2026-09-25T22:07", to: "2026-09-26T00:00" },
+            block: "hour",
+            groupBy: ["app"],
+          },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(output).toEqual([
+      "2026-09-25 22:07 to 2026-09-26 00:00 · America/Los_Angeles · by app · per hour",
+      "22:07–23:00   first 22:10 · last 23:00",
+      "50m 00s  Code",
+      "50m 00s  total",
+      "",
+      "23:00–00:00   first 23:00 · last 23:30",
+      "30m 00s  Code",
+      "30m 00s  total",
+    ]);
+  });
+
+  it("a run of empty Blocks prints one no activity line", async () => {
+    // Given: Code 17:50 to 18:00 and 21:30 to 21:40 local on 2026-09-26
+    const { output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-27T00:50:00.000Z", "2026-09-27T01:00:00.000Z"],
+          ["a", "2026-09-27T04:30:00.000Z", "2026-09-27T04:40:00.000Z"],
+        ]);
+        // When
+        yield* printBreakdown(
+          {
+            range: { from: "2026-09-26T17:45", to: "2026-09-26T21:45" },
+            block: "15min",
+            groupBy: ["app"],
+          },
+          false,
+        );
+      }),
+    );
+    // Then
+    expect(output).toEqual([
+      "2026-09-26 17:45 to 21:45 · America/Los_Angeles · by app · per 15min",
+      "17:45–18:00   first 17:50 · last 18:00",
+      "10m 00s  Code",
+      "10m 00s  total",
+      "",
+      "18:00–21:30   no activity",
+      "",
+      "21:30–21:45   first 21:30 · last 21:40",
+      "10m 00s  Code",
+      "10m 00s  total",
+    ]);
+  });
+
+  it("a bad --block stops with core's message", async () => {
+    // Given: seedBreakdown
+    const { exit } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        yield* printBreakdown({ range: day, block: "5min" } as never, false);
+      }),
+    );
+    // Then
+    expect(failure(exit)).toBe("block: must be one of total, hour, 15min");
   });
 });
