@@ -121,7 +121,7 @@ A Rule kind. A matching Activity keeps its app and time but its title and URL ar
 _Avoid_: Ignore, exclude, hidden, public
 
 **Private window**:
-A browser window the browser itself marks private (Incognito, InPrivate, Private Browsing). The Helper sends no title and no URL for it, always, with no Rule and with or without Accessibility, and will mark the reading private so its Activity is stored marked private: planned in #241, not built yet.
+A browser window the browser itself marks private (Incognito, InPrivate, Private Browsing). The Helper sends no title and no URL for it, always, with no Rule and with or without Accessibility, and marks the reading private, so its Activity is stored marked private.
 _Avoid_: Incognito tab, private mode, secret window
 
 **Uncategorized**:

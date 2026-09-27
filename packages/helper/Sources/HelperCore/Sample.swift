@@ -28,6 +28,7 @@ public struct Sample: Equatable {
   public var idleSeconds: Double
   public var missing: [String]
   public var screenHold: Bool
+  public var isPrivate: Bool
 
   public init(
     app: String?,
@@ -37,7 +38,8 @@ public struct Sample: Equatable {
     url: String?,
     idleSeconds: Double,
     missing: [String],
-    screenHold: Bool = false
+    screenHold: Bool = false,
+    isPrivate: Bool = false
   ) {
     self.app = app
     self.bundleId = bundleId
@@ -47,5 +49,6 @@ public struct Sample: Equatable {
     self.idleSeconds = idleSeconds
     self.missing = missing
     self.screenHold = screenHold
+    self.isPrivate = isPrivate
   }
 }

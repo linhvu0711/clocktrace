@@ -261,6 +261,37 @@ describe("Helper watch", () => {
       logs: [],
     });
   });
+
+  it("a line with no private key reads as not private", async () => {
+    // Given: an older Helper's line with no private, then a line with one
+    const stdout = [
+      '{"ts":"2026-01-01T00:00:00Z","app":"Google Chrome","bundleId":"com.google.Chrome","title":null,"url":null,"idleSeconds":0,"missing":[]}',
+      '{"ts":"2026-01-01T00:00:10Z","app":"Google Chrome","bundleId":"com.google.Chrome","title":null,"url":null,"idleSeconds":0,"missing":[],"private":true}',
+    ].join("\n");
+    // When
+    const { exit, logs } = await runHelperProcess(
+      (helper) =>
+        helper.lines("/h").pipe(
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.map((chunk) =>
+            Chunk.toReadonlyArray(chunk).map((line) => ({
+              ts: DateTime.formatIso(line.ts),
+              private: line.private,
+            })),
+          ),
+        ),
+      stdout,
+    );
+    // Then
+    expect({ readings: Exit.isSuccess(exit) && exit.value, logs }).toEqual({
+      readings: [
+        { ts: "2026-01-01T00:00:00.000Z", private: false },
+        { ts: "2026-01-01T00:00:10.000Z", private: true },
+      ],
+      logs: [],
+    });
+  });
 });
 
 // The failure a Helper call ended with, or null when it succeeded.
@@ -467,14 +498,21 @@ describe("Helper shared sample files", () => {
     const stdout = sharedSample("watch.expected.jsonl");
     // When
     const { exit, logs } = await runHelperProcess(
-      (helper) => helper.lines("/h").pipe(Stream.take(5), Stream.runCollect),
+      (helper) =>
+        helper.lines("/h").pipe(
+          Stream.take(6),
+          Stream.runCollect,
+          Effect.map((chunk) =>
+            Chunk.toReadonlyArray(chunk).map((line) => line.private),
+          ),
+        ),
       stdout,
     );
     // Then
-    expect({
-      count: Exit.isSuccess(exit) ? Chunk.size(exit.value) : 0,
-      logs,
-    }).toEqual({ count: 5, logs: [] });
+    expect({ privates: Exit.isSuccess(exit) && exit.value, logs }).toEqual({
+      privates: [false, false, false, false, false, true],
+      logs: [],
+    });
   });
 
   it("permissions decodes every line of permissions.expected.jsonl", async () => {

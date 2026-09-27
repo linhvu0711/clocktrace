@@ -10,6 +10,7 @@ public struct Line: Equatable {
   public var idleSeconds: Double
   public var missing: [String]
   public var screenHold: Bool
+  public var isPrivate: Bool
 
   public init(
     ts: String,
@@ -20,7 +21,8 @@ public struct Line: Equatable {
     url: String?,
     idleSeconds: Double,
     missing: [String],
-    screenHold: Bool = false
+    screenHold: Bool = false,
+    isPrivate: Bool = false
   ) {
     self.ts = ts
     self.app = app
@@ -31,6 +33,7 @@ public struct Line: Equatable {
     self.idleSeconds = idleSeconds
     self.missing = missing
     self.screenHold = screenHold
+    self.isPrivate = isPrivate
   }
 }
 
@@ -45,6 +48,7 @@ extension Line: Encodable {
     case idleSeconds
     case missing
     case screenHold
+    case isPrivate = "private"
   }
 
   // Synthesized Codable uses encodeIfPresent and would drop nil keys;
@@ -60,6 +64,7 @@ extension Line: Encodable {
     try container.encode(idleSeconds, forKey: .idleSeconds)
     try container.encode(missing, forKey: .missing)
     try container.encode(screenHold, forKey: .screenHold)
+    try container.encode(isPrivate, forKey: .isPrivate)
   }
 
   public func json() -> String {

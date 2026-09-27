@@ -23,7 +23,8 @@ public struct Tracker {
       url: s.url,
       idleSeconds: s.idleSeconds,
       missing: s.missing,
-      screenHold: s.screenHold
+      screenHold: s.screenHold,
+      isPrivate: s.isPrivate
     )
 
     let changed: Bool
@@ -35,6 +36,7 @@ public struct Tracker {
         || last.title != candidate.title
         || last.url != candidate.url
         || last.missing != candidate.missing
+        || last.isPrivate != candidate.isPrivate
     } else {
       changed = true
     }
