@@ -98,6 +98,6 @@ Rules for `packages/helper`. Nothing above applies to Swift unless it is repeate
 
 - A CLI command is an `@effect/cli` `Command` in `apps/cli/src/<name>.ts`, and every MCP tool has one (ADR 0006).
 - A CLI flag is `kebab-case` (`--group-by`).
-- An MCP tool name is `snake_case` (`add_rule`, `list_categories`, `summary`). Its input fields are `camelCase` (`groupBy`).
+- An MCP tool name is `snake_case` (`add_rule`, `list_categories`, `breakdown`). Its input fields are `camelCase` (`groupBy`).
 - An MCP tool replies with one object: `structuredContent` matches its `outputSchema`, and the text part is the same object as JSON. A failure is `isError` with the error's message as the text.
 - A tool that takes `range` replies with `range { from, to, zone }` first, the exact window used.

@@ -56,7 +56,7 @@ Open your AI app and ask in your own words:
 - "Show my timeline for this morning."
 - "Mark every page on mybank.com as private."
 
-The same answers are in the terminal. `clocktrace summary --from 2026-09-24 --to 2026-09-24` gives one day by category. The command reference is in [`apps/cli/README.md`](apps/cli/README.md).
+The same answers are in the terminal. `clocktrace breakdown --from 2026-09-24 --to 2026-09-24` gives one day as a tree by device, app, domain, and title. The command reference is in [`apps/cli/README.md`](apps/cli/README.md).
 
 ## Check that it works
 
@@ -101,7 +101,7 @@ pnpm test
 
 `pnpm lint` runs Biome. A `pre-push` hook runs lint, build, typecheck, and test before every push and blocks the push when one fails, or when the pushed commit is not the clean checkout; `pnpm install` turns it on (`scripts/install-hooks.sh`). The GitHub workflow runs the same gates on macOS, only when started by hand from the Actions tab.
 
-Run the summary benchmark by hand with `pnpm --filter core bench`; the target is under 2 seconds on a Mac. CI does not run it.
+Run the breakdown benchmark by hand with `pnpm --filter core bench`; the target is under 2 seconds on a Mac. CI does not run it.
 
 ## Layout
 
