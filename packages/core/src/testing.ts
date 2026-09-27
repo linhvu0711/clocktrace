@@ -204,6 +204,36 @@ export const seedBreakdown = (store: StoreShape) =>
     return { studio, iphone, ipad };
   });
 
+// Studio: Brave on wellfound.com 09:00 to 09:06Z and a Private Brave window 09:20 to 09:40Z on 2026-09-18.
+export const seedPrivate = (store: StoreShape) =>
+  Effect.gen(function* () {
+    const studio = yield* store.upsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+    yield* store.insertActivity({
+      deviceId: studio.id,
+      bundleId: "com.brave.Browser",
+      appName: "Brave",
+      title: "Jobs",
+      url: "https://wellfound.com/jobs",
+      startedAt: t("2026-09-18T09:00:00.000Z"),
+      endedAt: t("2026-09-18T09:06:00.000Z"),
+    });
+    yield* store.insertActivity({
+      deviceId: studio.id,
+      bundleId: "com.brave.Browser",
+      appName: "Brave",
+      title: null,
+      url: null,
+      private: true,
+      startedAt: t("2026-09-18T09:20:00.000Z"),
+      endedAt: t("2026-09-18T09:40:00.000Z"),
+    });
+    return studio;
+  });
+
 // count one-minute Code Activities on Studio from 08:00Z
 export const seedMany = (store: StoreShape, count: number) =>
   Effect.gen(function* () {

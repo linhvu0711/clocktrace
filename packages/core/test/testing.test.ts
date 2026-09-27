@@ -8,7 +8,12 @@ import {
   Store,
   summary,
 } from "../src/index.js";
-import { seedBreakdown, seedMany, seedTwoDevices } from "../src/testing.js";
+import {
+  seedBreakdown,
+  seedMany,
+  seedPrivate,
+  seedTwoDevices,
+} from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -74,5 +79,22 @@ describe("testing", () => {
       total: 50,
       names: ["Studio", "iPad", "iPhone"],
     });
+  });
+
+  it("seedPrivate stores one plain and one Private Brave Activity", async () => {
+    // Given: an empty store
+    const reply = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        // When
+        yield* seedPrivate(store);
+        return yield* activities({ range: day });
+      }),
+    );
+    // Then
+    expect({
+      total: reply.total,
+      marks: reply.rows.map((r) => r.private),
+    }).toEqual({ total: 2, marks: [false, true] });
   });
 });
