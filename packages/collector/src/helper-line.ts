@@ -15,6 +15,8 @@ export const HelperLine = Schema.parseJson(
     url: Schema.NullOr(Schema.String),
     // An older Helper sends no screenHold: that is no Screen hold.
     screenHold: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+    // An older Helper sends no private: that is not a Private window.
+    private: Schema.optionalWith(Schema.Boolean, { default: () => false }),
     idleSeconds: Schema.Number,
     missing: Schema.Array(Schema.String),
   }),
