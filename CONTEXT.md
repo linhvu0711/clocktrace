@@ -59,7 +59,7 @@ The app in front asks macOS to keep the screen on, as a video, a video call, or 
 _Avoid_: Wake lock, display assertion, keep-awake, playback
 
 **Device**:
-One source of Activities: this Mac, or an iPhone or iPad synced through Apple. Every Activity belongs to one Device.
+One source of Activities: this Mac, or an iPhone or iPad synced through Apple. Every Activity belongs to one Device. Each Device has a kind, `mac`, `iphone`, or `ipad`, and two Devices can share a kind and a name, so a Breakdown picks Devices by kind or by id.
 _Avoid_: Source, machine, peer
 
 **Importer**:
@@ -86,8 +86,16 @@ _Avoid_: MCP entry, server entry, host config
 The CLI command that pairs with an MCP tool: `clocktrace rules add` is the Twin of `add_rule`. Both call one core function and neither has logic of its own. Every tool has one (ADR 0006).
 _Avoid_: Alias, wrapper, mirror, subcommand
 
+**Breakdown**:
+The query that sums time in a window as a tree, one level per item of an ordered list, such as Device, then app, then domain, then title. It replaces `summary` and `timeline`; `clocktrace breakdown` is its Twin. Planned in #236, not built yet: `summary` and `timeline` still ship.
+_Avoid_: Report, summary, totals, timeline
+
+**Block**:
+One slice of a Breakdown window with its own tree: the whole window, one clock hour, or one clock quarter-hour in the local time zone. The first and last Block are short when the window does not start or end on the clock. A run of Blocks with no activity shows as one line. Planned in #239, not built yet.
+_Avoid_: Bucket, slot, interval, period
+
 **Rollup**:
-One row per day, Device, app, Category, and Project with the seconds summed, derived from Activities each night with the Rules of that moment. Whole-day `summary` questions read it, today reads Activities; `timeline` and `activities` always read Activities. Rebuilt for affected days when Rules change. Never the source of truth. Planned in #18, not built: no rollup table exists yet.
+One row per day, Device, app, Category, and Project with the seconds summed, derived from Activities each night with the Rules of that moment. Never the source of truth. Not built: #18 was closed as not planned on 2026-09-24, because the raw scan over a year of Activities took 462 ms.
 _Avoid_: Aggregate, cache, summary table
 
 ### Grouping
@@ -104,12 +112,16 @@ _Avoid_: Project, tag, label, group
 One test on an Activity with one effect: set its Category, set its Project, or mark it Private. A test is one field (app, title, url, domain, device), one compare (is, contains, starts with, ends with, matches), one value. On the domain field, starts with and ends with stop at a dot: ends with `github.com` covers `github.com` and `api.github.com`, never `evilgithub.com`; starts with `docs` covers `docs.google.com`, never `docsevil.com`. Rules are checked in order per effect and the first match wins. Category and Project rules run at query time and are never stored on the Activity. Private rules run before the write.
 _Avoid_: Filter, mapping, classifier, blacklist
 
+**Domain**:
+The host of an Activity's URL, as `api.github.com`. The Rule field `domain` tests it and a Breakdown level groups by it. Not the registrable domain, so `docs.google.com` and `mail.google.com` are two Domains.
+_Avoid_: Site, website, host, registrable domain
+
 **Private**:
-A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
+A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. It will also be stored marked private: planned in #238, not built yet. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
 _Avoid_: Ignore, exclude, hidden, public
 
 **Private window**:
-A browser window the browser itself marks private (Incognito, InPrivate, Private Browsing). The Helper sends no title and no URL for it, always, with no Rule and with or without Accessibility.
+A browser window the browser itself marks private (Incognito, InPrivate, Private Browsing). The Helper sends no title and no URL for it, always, with no Rule and with or without Accessibility, and will mark the reading private so its Activity is stored marked private: planned in #241, not built yet.
 _Avoid_: Incognito tab, private mode, secret window
 
 **Uncategorized**:
