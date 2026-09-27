@@ -162,7 +162,11 @@ const cut = (cell: Cell, room: number, look: Look): ReadonlyArray<Span> => {
     const tailWidth = visible(tail);
     if (tailWidth + e < room) {
       return [
-        ...cut(regroup(graphemes(cellSpans.slice(0, kept))), room - tailWidth, look),
+        ...cut(
+          regroup(graphemes(cellSpans.slice(0, kept))),
+          room - tailWidth,
+          look,
+        ),
         ...tail,
       ];
     }

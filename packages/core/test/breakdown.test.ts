@@ -915,12 +915,7 @@ describe("breakdown", () => {
       Effect.gen(function* () {
         const store = yield* Store;
         yield* seedVisits(store, [
-          [
-            null,
-            null,
-            "2026-09-18T08:00:00.000Z",
-            "2026-09-18T08:05:00.000Z",
-          ],
+          [null, null, "2026-09-18T08:00:00.000Z", "2026-09-18T08:05:00.000Z"],
         ]);
         // When
         return yield* breakdown({ range: day, groupBy: ["page"] });

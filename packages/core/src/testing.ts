@@ -309,32 +309,31 @@ export const seedVideo = (store: StoreShape) => {
   const url = "https://www.youtube.com/watch?v=111fgmmrnKc";
   const mb = [914, 921, 928, 935, 942, 950, 957, 963, 970, 977, 984];
   let at = Date.UTC(2026, 8, 18, 14, 7, 40);
-  const visits: Array<
-    readonly [string | null, string | null, string, string]
-  > = [
+  const visits: Array<readonly [string | null, string | null, string, string]> =
     [
-      `${base} - Brave`,
-      url,
-      "2026-09-18T14:00:00.000Z",
-      "2026-09-18T14:01:40.000Z",
-    ],
-    [
-      `${base} - Audio playing - Brave`,
-      url,
-      "2026-09-18T14:01:40.000Z",
-      "2026-09-18T14:07:40.000Z",
-    ],
-    ...mb.map((n): readonly [string, string, string, string] => {
-      const start = at;
-      at += 100_000;
-      return [
-        `${base} - Audio playing - High memory usage - ${n} MB - Brave`,
+      [
+        `${base} - Brave`,
         url,
-        new Date(start).toISOString(),
-        new Date(at).toISOString(),
-      ];
-    }),
-  ];
+        "2026-09-18T14:00:00.000Z",
+        "2026-09-18T14:01:40.000Z",
+      ],
+      [
+        `${base} - Audio playing - Brave`,
+        url,
+        "2026-09-18T14:01:40.000Z",
+        "2026-09-18T14:07:40.000Z",
+      ],
+      ...mb.map((n): readonly [string, string, string, string] => {
+        const start = at;
+        at += 100_000;
+        return [
+          `${base} - Audio playing - High memory usage - ${n} MB - Brave`,
+          url,
+          new Date(start).toISOString(),
+          new Date(at).toISOString(),
+        ];
+      }),
+    ];
   return seedVisits(store, visits);
 };
 
