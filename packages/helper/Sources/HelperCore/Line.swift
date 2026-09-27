@@ -10,6 +10,7 @@ public struct Line: Equatable {
   public var idleSeconds: Double
   public var missing: [String]
   public var screenHold: Bool
+  public var isPrivate: Bool
 
   public init(
     ts: String,
@@ -20,7 +21,8 @@ public struct Line: Equatable {
     url: String?,
     idleSeconds: Double,
     missing: [String],
-    screenHold: Bool = false
+    screenHold: Bool = false,
+    isPrivate: Bool = false
   ) {
     self.ts = ts
     self.app = app
@@ -31,6 +33,7 @@ public struct Line: Equatable {
     self.idleSeconds = idleSeconds
     self.missing = missing
     self.screenHold = screenHold
+    self.isPrivate = isPrivate
   }
 }
 

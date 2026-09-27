@@ -43,10 +43,12 @@ final class SamplerTests: XCTestCase {
       Sampler.sample(reads, urls: urls ?? UrlReader(reads: reads), at: t0), at: t0)
   }
 
-  private func braveLine(title: String?, url: String?, missing: [String]) -> Line {
+  private func braveLine(
+    title: String?, url: String?, missing: [String], isPrivate: Bool = false
+  ) -> Line {
     Line(
       ts: ts0, app: "Brave Browser", bundleId: "com.brave.Browser", grant: "granted",
-      title: title, url: url, idleSeconds: 1, missing: missing)
+      title: title, url: url, idleSeconds: 1, missing: missing, isPrivate: isPrivate)
   }
 
   func testAChromeIncognitoWindowHasNoTitleOrUrl() {
@@ -57,7 +59,7 @@ final class SamplerTests: XCTestCase {
     // When
     let result = line(r)
     // Then
-    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: []))
+    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: [], isPrivate: true))
   }
 
   func testAChromeIncognitoWindowWithoutAccessibilityHasNoTitleOrUrl() {
@@ -68,7 +70,8 @@ final class SamplerTests: XCTestCase {
     // When
     let result = line(r)
     // Then
-    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: ["accessibility"]))
+    XCTAssertEqual(
+      result, braveLine(title: nil, url: nil, missing: ["accessibility"], isPrivate: true))
   }
 
   func testAChromeNormalWindowKeepsTheTitleAndUrl() {
@@ -177,7 +180,7 @@ final class SamplerTests: XCTestCase {
     // When: sample 2, slow
     let result = line(r, urls: urls)
     // Then
-    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: []))
+    XCTAssertEqual(result, braveLine(title: nil, url: nil, missing: [], isPrivate: true))
   }
 
   private let safariFormats = ["%@, Private Browsing", "%@, navigation privée"]
@@ -191,10 +194,12 @@ final class SamplerTests: XCTestCase {
       safariPrivateFormats: safariPrivateFormats ?? safariFormats)
   }
 
-  private func safariLine(title: String?, url: String?, missing: [String]) -> Line {
+  private func safariLine(
+    title: String?, url: String?, missing: [String], isPrivate: Bool = false
+  ) -> Line {
     Line(
       ts: ts0, app: "Safari", bundleId: "com.apple.Safari", grant: "granted",
-      title: title, url: url, idleSeconds: 1, missing: missing)
+      title: title, url: url, idleSeconds: 1, missing: missing, isPrivate: isPrivate)
   }
 
   func testASafariPrivateWindowHasNoTitleOrUrl() {
@@ -203,7 +208,7 @@ final class SamplerTests: XCTestCase {
     // When
     let result = line(r)
     // Then
-    XCTAssertEqual(result, safariLine(title: nil, url: nil, missing: []))
+    XCTAssertEqual(result, safariLine(title: nil, url: nil, missing: [], isPrivate: true))
   }
 
   func testAFrenchSafariPrivateWindowHasNoTitleOrUrl() {
@@ -212,7 +217,7 @@ final class SamplerTests: XCTestCase {
     // When
     let result = line(r)
     // Then
-    XCTAssertEqual(result, safariLine(title: nil, url: nil, missing: []))
+    XCTAssertEqual(result, safariLine(title: nil, url: nil, missing: [], isPrivate: true))
   }
 
   func testASafariNormalWindowKeepsTheTitleAndUrl() {

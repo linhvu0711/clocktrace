@@ -18,6 +18,7 @@ public enum Sampler {
 
     // A Private window sends no title and no URL; when the Helper cannot tell,
     // it sends no URL (ADR 0011).
+    var isPrivate = false
     if case .granted(let output) = read, let bundleId = front?.bundleId {
       let window: Window
       if isChromeFamily(bundleId) {
@@ -30,6 +31,7 @@ public enum Sampler {
         read = .granted(u)
       case .privateWindow:
         title = nil
+        isPrivate = true
         read = .granted(nil)
       case .unknown:
         read = .granted(nil)
@@ -66,7 +68,8 @@ public enum Sampler {
       idleSeconds: r.idleSeconds(),
       missing: missing,
       // Only a hold by the app in front is a Screen hold; a failed read is none.
-      screenHold: front.map { r.screenHoldPids()?.contains($0.pid) ?? false } ?? false
+      screenHold: front.map { r.screenHoldPids()?.contains($0.pid) ?? false } ?? false,
+      isPrivate: isPrivate
     )
   }
 
