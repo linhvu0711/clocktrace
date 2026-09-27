@@ -94,7 +94,7 @@ export const openStore = (
     );
     const insertActivityStatement = yield* prepare(() =>
       db.prepare(
-        "INSERT INTO activities (id, device_id, bundle_id, app_name, title, url, started_at, ended_at) VALUES (@id, @deviceId, @bundleId, @appName, @title, @url, @startedAt, @endedAt)",
+        "INSERT INTO activities (id, device_id, bundle_id, app_name, title, url, private, started_at, ended_at) VALUES (@id, @deviceId, @bundleId, @appName, @title, @url, @private, @startedAt, @endedAt)",
       ),
     );
     const insertCategoryStatement = yield* prepare(() =>
@@ -169,7 +169,7 @@ export const openStore = (
     );
     const selectActivities = yield* prepare(() =>
       db.prepare(
-        "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
+        "SELECT id, device_id AS deviceId, bundle_id AS bundleId, app_name AS appName, title, url, private, started_at AS startedAt, ended_at AS endedAt FROM activities WHERE started_at < @to AND ended_at > @from AND (@deviceId IS NULL OR device_id = @deviceId) ORDER BY started_at",
       ),
     );
     const selectLatestEnd = yield* prepare(() =>
@@ -211,10 +211,11 @@ export const openStore = (
               appName: activity.appName,
               title: activity.title,
               url: activity.url,
+              private: activity.private === true ? 1 : 0,
               startedAt: DateTime.formatIso(activity.startedAt),
               endedAt: DateTime.formatIso(activity.endedAt),
             });
-            return { id, ...activity };
+            return { id, ...activity, private: activity.private === true };
           },
           catch: (cause) => new StoreError({ cause }),
         });
@@ -237,12 +238,14 @@ export const openStore = (
             appName: string;
             title: string | null;
             url: string | null;
+            private: number;
             startedAt: string;
             endedAt: string;
           }>;
           return rows.map(
             (row): Activity => ({
               ...row,
+              private: row.private === 1,
               startedAt: DateTime.unsafeMake(row.startedAt),
               endedAt: DateTime.unsafeMake(row.endedAt),
             }),
@@ -550,6 +553,7 @@ export const openStore = (
                     appName: activity.appName,
                     title: activity.title,
                     url: activity.url,
+                    private: activity.private === true ? 1 : 0,
                     startedAt: DateTime.formatIso(activity.startedAt),
                     endedAt: DateTime.formatIso(activity.endedAt),
                   });
