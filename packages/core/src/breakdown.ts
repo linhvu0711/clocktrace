@@ -115,9 +115,22 @@ export const BreakdownInput = Schema.Struct({
       Schema.minItems(1, { message: () => "must name at least one Device" }),
     ),
   ),
+  search: Schema.optional(
+    Schema.String.pipe(
+      Schema.minLength(1, { message: () => "must not be empty" }),
+    ),
+  ),
 });
 
 type Row = RangeRows["rows"][number];
+
+/** The title or URL holds the word, in any case; a row with neither never matches. */
+const matches = (row: Row, word: string): boolean => {
+  const w = word.toLowerCase();
+  return [row.activity.title, row.activity.url].some(
+    (text) => text?.toLowerCase().includes(w) === true,
+  );
+};
 
 interface Lookups {
   readonly categoryById: ReadonlyMap<string, Category>;
@@ -313,10 +326,13 @@ export const breakdown = (
       asked === undefined
         ? undefined
         : yield* pickDevices(asked, yield* store.listDevices());
-    const { range, rows, categories, projects, devices } = yield* loadRange({
-      range: decoded.range,
-      deviceIds,
-    });
+    const loaded = yield* loadRange({ range: decoded.range, deviceIds });
+    const { range, categories, projects, devices } = loaded;
+    const search = decoded.search;
+    const rows =
+      search === undefined
+        ? loaded.rows
+        : loaded.rows.filter((row) => matches(row, search));
     const lookups: Lookups = {
       categoryById: new Map(categories.map((c) => [c.id, c])),
       projectById: new Map(projects.map((p) => [p.id, p])),
