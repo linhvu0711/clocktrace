@@ -36,8 +36,8 @@ export interface RangeRows {
 
 /**
  * The Activities of a window, clipped to it, with their Rules resolved and
- * iPhone and iPad app names looked up. `deviceIds`, when given, keeps only
- * those Devices, before any App Store lookup.
+ * iPhone and iPad app names looked up. `deviceIds`, when given, reads only
+ * those Devices, so no App Store lookup runs for another.
  */
 export const loadRange = (input: {
   readonly range: Range;
@@ -51,12 +51,15 @@ export const loadRange = (input: {
     const store = yield* Store;
     const now = yield* DateTime.nowInCurrentZone;
     const { from, to } = yield* resolveRange(input.range, now);
-    const { deviceIds } = input;
-    const read = yield* store.readActivities({ from, to });
+    // SQLite filters by one Device, so each asked Device is its own read.
     const stored =
-      deviceIds === undefined
-        ? read
-        : read.filter((a) => deviceIds.includes(a.deviceId));
+      input.deviceIds === undefined
+        ? yield* store.readActivities({ from, to })
+        : (yield* Effect.forEach(input.deviceIds, (deviceId) =>
+            store.readActivities({ deviceId, from, to }),
+          ))
+            .flat()
+            .sort((a, b) => a.startedAt.epochMillis - b.startedAt.epochMillis);
     const rules = yield* store.listRules();
     const devices = yield* store.listDevices();
     const deviceById = new Map(devices.map((d) => [d.id, d]));
