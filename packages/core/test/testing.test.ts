@@ -15,6 +15,8 @@ import {
   seedPrivate,
   seedRuns,
   seedTwoDevices,
+  seedVideo,
+  seedVisits,
 } from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
@@ -107,6 +109,49 @@ describe("testing", () => {
       total: reply.total,
       marks: reply.rows.map((r) => r.private),
     }).toEqual({ total: 2, marks: [false, true] });
+  });
+
+  it("seedVisits stores one Brave Activity per visit", async () => {
+    // Given: an empty store
+    const reply = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        // When
+        yield* seedVisits(store, [
+          [
+            "a",
+            "https://example.com/a",
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:10:00.000Z",
+          ],
+          [null, null, "2026-09-18T09:00:00.000Z", "2026-09-18T09:05:00.000Z"],
+        ]);
+        return appRows(yield* breakdown({ range: day, groupBy: ["app"] }));
+      }),
+    );
+    // Then
+    expect(reply).toEqual([
+      { key: "com.brave.Browser", name: "Brave", seconds: 900 },
+    ]);
+  });
+
+  it("seedVideo stores 26m on one URL under 13 titles", async () => {
+    // Given: an empty store
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        // When
+        yield* seedVideo(store);
+        const app = yield* breakdown({ range: day, groupBy: ["app"] });
+        const titles = yield* breakdown({ range: day, groupBy: ["title"] });
+        return { app: appRows(app), titles: titles.blocks[0]?.nodes.length };
+      }),
+    );
+    // Then
+    expect(result).toEqual({
+      app: [{ key: "com.brave.Browser", name: "Brave", seconds: 1560 }],
+      titles: 13,
+    });
   });
 
   it("seedRuns stores one Code Activity per run", async () => {

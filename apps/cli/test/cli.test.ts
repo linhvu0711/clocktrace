@@ -346,7 +346,7 @@ describe("cli", () => {
       "list, add, or remove classification rules",
       "list, set, or remove categories",
       "list, set, or remove projects",
-      "show time as a tree by device, app, domain, and title",
+      "show time as a tree by device, app, domain, and page",
       "list raw activities",
     ]) {
       expect(text).toContain(desc);
@@ -377,6 +377,18 @@ describe("cli", () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(lines.join("\n")).toContain(
       "register these hosts without the checklist: claude, codex, hermes, openclaw",
+    );
+  });
+
+  it("breakdown help names the page level and the default", async () => {
+    // Given
+    const argv = ["node", "clocktrace", "breakdown", "--help"];
+    // When
+    const { exit, lines } = await runArgv(argv);
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(lines.join("\n")).toContain(
+      "levels in order, comma-separated: category, project, device, app, domain, title, page; default device,app,domain,page",
     );
   });
 

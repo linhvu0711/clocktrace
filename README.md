@@ -56,7 +56,7 @@ Open your AI app and ask in your own words:
 - "Show my timeline for this morning."
 - "Mark every page on mybank.com as private."
 
-The same answers are in the terminal. `clocktrace breakdown --from 2026-09-24 --to 2026-09-24` gives one day as a tree by device, app, domain, and title. The command reference is in [`apps/cli/README.md`](apps/cli/README.md).
+The same answers are in the terminal. `clocktrace breakdown --from 2026-09-24 --to 2026-09-24` gives one day as a tree by device, app, domain, and page, so a video whose tab title keeps changing stays one line. The command reference is in [`apps/cli/README.md`](apps/cli/README.md).
 
 ## Check that it works
 

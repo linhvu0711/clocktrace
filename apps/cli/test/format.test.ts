@@ -200,6 +200,24 @@ describe("format", () => {
     ]);
   });
 
+  it("a cut shortens the text before a kept span", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 10 };
+    // When / Then
+    expect(
+      columns([["ab", ["cdefghij", { text: " xy", keep: true }]]], look),
+    ).toEqual(["ab  cd… xy"]);
+  });
+
+  it("a kept span with no room is cut with the rest", () => {
+    // Given
+    const look = { color: false, unicode: true, width: 6 };
+    // When / Then
+    expect(
+      columns([["ab", ["cdefghij", { text: " xy", keep: true }]]], look),
+    ).toEqual(["ab  c…"]);
+  });
+
   it("a row that fits is not cut", () => {
     // Given
     const look = { color: false, unicode: true, width: 8 };

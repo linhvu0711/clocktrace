@@ -8,7 +8,12 @@ import {
   openStore,
   Store,
 } from "@clocktrace/core";
-import { seedBreakdown, seedPrivate, seedRuns } from "@clocktrace/core/testing";
+import {
+  seedBreakdown,
+  seedPrivate,
+  seedRuns,
+  seedVideo,
+} from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import {
   Cause,
@@ -104,7 +109,7 @@ const small: BreakdownBlock = {
 };
 
 describe("breakdown", () => {
-  it("breakdown prints the window line and the tree by device, app, domain, title", async () => {
+  it("breakdown prints the window line and the tree by device, app, domain, page", async () => {
     // Given: seedBreakdown
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -121,7 +126,7 @@ describe("breakdown", () => {
     }
     const { studio, iphone, ipad } = exit.value;
     expect(output).toEqual([
-      `${window} · by device, app, domain, title`,
+      `${window} · by device, app, domain, page`,
       `1h 15m 25s  Studio  mac · ${studio.id}`,
       "   30m 45s  ├─ Code",
       "   30m 00s  │  ├─ main.ts",
@@ -131,9 +136,9 @@ describe("breakdown", () => {
       "   10m 00s  │  └─ Journal",
       "   14m 40s  └─ Brave",
       "    6m 40s     ├─ news.ycombinator.com",
-      "    6m 40s     │  └─ Hacker News",
+      "    6m 40s     │  └─ 40 small items",
       "    6m 00s     ├─ wellfound.com",
-      "    6m 00s     │  └─ Jobs",
+      "    6m 00s     │  └─ Jobs  /jobs",
       "    2m 00s     └─ (no domain)",
       "    2m 00s        └─ New Tab",
       `   30m 00s  iPhone  iphone · ${iphone.id}`,
@@ -210,6 +215,31 @@ describe("breakdown", () => {
     }).toEqual({ lines: 1, parsed: exit.value });
   });
 
+  it("breakdown --json names a page by its top title with its URL and path", async () => {
+    // Given: seedVideo, 13 titles on one URL for 26m
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVideo(store);
+        // When
+        yield* printBreakdown({ range: day, groupBy: ["page"] }, true);
+      }),
+    );
+    // Then
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    expect(JSON.parse(output[0] ?? "").blocks[0]?.nodes).toEqual([
+      {
+        name: "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube - Audio playing - Brave",
+        key: "https://www.youtube.com/watch?v=111fgmmrnKc",
+        path: "/watch?v=111fgmmrnKc",
+        seconds: 1560,
+        children: [],
+      },
+    ]);
+  });
+
   it("breakdown --json --block hour prints the breakdown tool's JSON", async () => {
     // Given: seedBreakdown
     const { exit, output } = await runPrint(
@@ -249,7 +279,7 @@ describe("breakdown", () => {
     );
     // Then
     expect(output).toEqual([
-      "2026-09-01 whole day · America/Los_Angeles · by device, app, domain, title",
+      "2026-09-01 whole day · America/Los_Angeles · by device, app, domain, page",
       "! no activity in this range",
     ]);
   });
@@ -293,7 +323,7 @@ describe("breakdown", () => {
       count: output.filter((l) => l.includes("data up to")).length,
     }).toEqual({
       top: [
-        `${window} · by device, app, domain, title`,
+        `${window} · by device, app, domain, page`,
         "! iPhone data up to 2026-09-18 12:30; later time is not in yet",
         `1h 15m 25s  Studio  mac · ${exit.value.studio.id}`,
       ],
@@ -351,7 +381,7 @@ describe("breakdown", () => {
     );
     // Then
     expect(messages).toEqual([
-      "groupBy.0: must be one of category, project, device, app, domain, title",
+      "groupBy.0: must be one of category, project, device, app, domain, title, page",
       "min: must be a whole number with s or m, as 60s or 2m",
       "min: must be a whole number with s or m, as 60s or 2m",
     ]);
@@ -445,6 +475,65 @@ describe("breakdown", () => {
       "30m 00s  ├─ main.ts",
       "    \u001b[0;90m<1m\u001b[0m  └─ \u001b[0;90m3 small items\u001b[0m",
       "30m 45s  \u001b[0;1mtotal\u001b[0m",
+    ]);
+  });
+
+  it("a page line shows its path in gray after the title", () => {
+    // Given: color on
+    const look = { color: true, unicode: true, width: 0 };
+    const block: BreakdownBlock = {
+      start: "2026-09-18T00:00-07:00",
+      end: "2026-09-19T00:00-07:00",
+      seconds: 360,
+      nodes: [
+        {
+          name: "Jobs",
+          key: "https://wellfound.com/jobs",
+          path: "/jobs",
+          seconds: 360,
+          children: [],
+        },
+      ],
+    };
+    // When
+    const lines = breakdownScreen(block, look);
+    // Then
+    expect(lines).toEqual([
+      "6m 00s  Jobs  \u001b[0;90m/jobs\u001b[0m",
+      "6m 00s  \u001b[0;1mtotal\u001b[0m",
+    ]);
+  });
+
+  it("a long page title is cut and its path kept", () => {
+    // Given: a 60-column terminal
+    const look = { color: false, unicode: true, width: 60 };
+    const block: BreakdownBlock = {
+      start: "2026-09-18T00:00-07:00",
+      end: "2026-09-19T00:00-07:00",
+      seconds: 1560,
+      nodes: [
+        {
+          name: "www.youtube.com",
+          seconds: 1560,
+          children: [
+            {
+              name: "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube - Audio playing - Brave",
+              key: "https://www.youtube.com/watch?v=111fgmmrnKc",
+              path: "/watch?v=111fgmmrnKc",
+              seconds: 1560,
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
+    // When
+    const lines = breakdownScreen(block, look);
+    // Then
+    expect(lines).toEqual([
+      "26m 00s  www.youtube.com",
+      "26m 00s  └─ Top 2 in the World with m…  /watch?v=111fgmmrnKc",
+      "26m 00s  total",
     ]);
   });
 
@@ -556,7 +645,7 @@ describe("breakdown", () => {
     }
     const studio = exit.value;
     expect(output).toEqual([
-      "2026-09-25 22:00 to 2026-09-26 22:00 · America/Los_Angeles · by device, app, domain, title · per 15min",
+      "2026-09-25 22:00 to 2026-09-26 22:00 · America/Los_Angeles · by device, app, domain, page · per 15min",
       "22:00–09:00   no activity",
       "",
       "2026-09-26",

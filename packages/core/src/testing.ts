@@ -269,6 +269,74 @@ export const seedMany = (store: StoreShape, count: number) =>
     }
   });
 
+// Studio: one Brave Activity per visit, title, URL, and UTC start and end as given.
+export const seedVisits = (
+  store: StoreShape,
+  visits: ReadonlyArray<
+    readonly [
+      title: string | null,
+      url: string | null,
+      start: string,
+      end: string,
+    ]
+  >,
+) =>
+  Effect.gen(function* () {
+    const studio = yield* store.upsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+    for (const [title, url, start, end] of visits) {
+      yield* store.insertActivity({
+        deviceId: studio.id,
+        bundleId: "com.brave.Browser",
+        appName: "Brave",
+        title,
+        url,
+        startedAt: t(start),
+        endedAt: t(end),
+      });
+    }
+    return studio;
+  });
+
+// Studio: one YouTube video for 26m on 2026-09-18, its URL fixed while Brave
+// adds "Audio playing" and "High memory usage - N MB" to the title, N moving.
+export const seedVideo = (store: StoreShape) => {
+  const base =
+    "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube";
+  const url = "https://www.youtube.com/watch?v=111fgmmrnKc";
+  const mb = [914, 921, 928, 935, 942, 950, 957, 963, 970, 977, 984];
+  let at = Date.UTC(2026, 8, 18, 14, 7, 40);
+  const visits: Array<readonly [string | null, string | null, string, string]> =
+    [
+      [
+        `${base} - Brave`,
+        url,
+        "2026-09-18T14:00:00.000Z",
+        "2026-09-18T14:01:40.000Z",
+      ],
+      [
+        `${base} - Audio playing - Brave`,
+        url,
+        "2026-09-18T14:01:40.000Z",
+        "2026-09-18T14:07:40.000Z",
+      ],
+      ...mb.map((n): readonly [string, string, string, string] => {
+        const start = at;
+        at += 100_000;
+        return [
+          `${base} - Audio playing - High memory usage - ${n} MB - Brave`,
+          url,
+          new Date(start).toISOString(),
+          new Date(at).toISOString(),
+        ];
+      }),
+    ];
+  return seedVisits(store, visits);
+};
+
 // Studio: one Code Activity per run, title and UTC start and end as given.
 export const seedRuns = (
   store: StoreShape,

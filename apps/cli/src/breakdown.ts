@@ -39,6 +39,13 @@ const guides = (look: Look) =>
     : { branch: "|- ", last: "`- ", through: "|  ", after: "   " };
 
 const nameCell = (node: BreakdownNode): ReadonlyArray<string | Span> => {
+  if (node.path !== undefined) {
+    return [
+      node.name,
+      { text: "  ", keep: true },
+      { text: node.path, tone: "dim", keep: true },
+    ];
+  }
   if (node.kind !== undefined && node.key !== undefined) {
     return [node.name, "  ", span("dim", `${node.kind} · ${node.key}`)];
   }
@@ -196,7 +203,7 @@ export const commaList = (text: string): ReadonlyArray<string> =>
 const groupBy = Options.text("group-by").pipe(
   Options.optional,
   Options.withDescription(
-    "levels in order, comma-separated: category, project, device, app, domain, title; default device,app,domain,title",
+    "levels in order, comma-separated: category, project, device, app, domain, title, page; default device,app,domain,page",
   ),
 );
 
@@ -263,6 +270,6 @@ export const breakdownCommand = Command.make(
     }),
 ).pipe(
   Command.withDescription(
-    "show time as a tree by device, app, domain, and title",
+    "show time as a tree by device, app, domain, and page",
   ),
 );
