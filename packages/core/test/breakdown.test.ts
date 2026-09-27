@@ -35,7 +35,7 @@ const run = <A, E>(
 const day = { from: "2026-09-18", to: "2026-09-18" };
 
 describe("breakdown", () => {
-  it("breakdown by device, app, domain, title sums the seeded day", async () => {
+  it("breakdown by device, app, domain, page sums the seeded day", async () => {
     // Given: seedBreakdown, no rules, no categories
     const { result, studio, iphone, ipad } = await run(
       Effect.gen(function* () {
@@ -99,13 +99,26 @@ describe("breakdown", () => {
                       name: "news.ycombinator.com",
                       seconds: 400,
                       children: [
-                        { name: "Hacker News", seconds: 400, children: [] },
+                        {
+                          name: "40 small items",
+                          seconds: 400,
+                          small: 40,
+                          children: [],
+                        },
                       ],
                     },
                     {
                       name: "wellfound.com",
                       seconds: 360,
-                      children: [{ name: "Jobs", seconds: 360, children: [] }],
+                      children: [
+                        {
+                          name: "Jobs",
+                          key: "https://wellfound.com/jobs",
+                          path: "/jobs",
+                          seconds: 360,
+                          children: [],
+                        },
+                      ],
                     },
                     {
                       name: "(no domain)",
@@ -1393,7 +1406,15 @@ describe("breakdown", () => {
                     {
                       name: "wellfound.com",
                       seconds: 360,
-                      children: [{ name: "Jobs", seconds: 360, children: [] }],
+                      children: [
+                        {
+                          name: "Jobs",
+                          key: "https://wellfound.com/jobs",
+                          path: "/jobs",
+                          seconds: 360,
+                          children: [],
+                        },
+                      ],
                     },
                   ],
                 },
@@ -1467,7 +1488,13 @@ describe("breakdown", () => {
                     name: "github.com",
                     seconds: 600,
                     children: [
-                      { name: "Pull request", seconds: 600, children: [] },
+                      {
+                        name: "Pull request",
+                        key: "https://github.com/clocktrace/clocktrace/pull/244",
+                        path: "/clocktrace/clocktrace/pull/244",
+                        seconds: 600,
+                        children: [],
+                      },
                     ],
                   },
                 ],

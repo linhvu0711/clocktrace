@@ -346,7 +346,7 @@ describe("cli", () => {
       "list, add, or remove classification rules",
       "list, set, or remove categories",
       "list, set, or remove projects",
-      "show time as a tree by device, app, domain, and title",
+      "show time as a tree by device, app, domain, and page",
       "list raw activities",
     ]) {
       expect(text).toContain(desc);

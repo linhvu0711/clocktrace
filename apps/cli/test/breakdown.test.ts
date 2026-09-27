@@ -109,7 +109,7 @@ const small: BreakdownBlock = {
 };
 
 describe("breakdown", () => {
-  it("breakdown prints the window line and the tree by device, app, domain, title", async () => {
+  it("breakdown prints the window line and the tree by device, app, domain, page", async () => {
     // Given: seedBreakdown
     const { exit, output } = await runPrint(
       Effect.gen(function* () {
@@ -126,7 +126,7 @@ describe("breakdown", () => {
     }
     const { studio, iphone, ipad } = exit.value;
     expect(output).toEqual([
-      `${window} · by device, app, domain, title`,
+      `${window} · by device, app, domain, page`,
       `1h 15m 25s  Studio  mac · ${studio.id}`,
       "   30m 45s  ├─ Code",
       "   30m 00s  │  ├─ main.ts",
@@ -136,9 +136,9 @@ describe("breakdown", () => {
       "   10m 00s  │  └─ Journal",
       "   14m 40s  └─ Brave",
       "    6m 40s     ├─ news.ycombinator.com",
-      "    6m 40s     │  └─ Hacker News",
+      "    6m 40s     │  └─ 40 small items",
       "    6m 00s     ├─ wellfound.com",
-      "    6m 00s     │  └─ Jobs",
+      "    6m 00s     │  └─ Jobs  /jobs",
       "    2m 00s     └─ (no domain)",
       "    2m 00s        └─ New Tab",
       `   30m 00s  iPhone  iphone · ${iphone.id}`,
@@ -279,7 +279,7 @@ describe("breakdown", () => {
     );
     // Then
     expect(output).toEqual([
-      "2026-09-01 whole day · America/Los_Angeles · by device, app, domain, title",
+      "2026-09-01 whole day · America/Los_Angeles · by device, app, domain, page",
       "! no activity in this range",
     ]);
   });
@@ -323,7 +323,7 @@ describe("breakdown", () => {
       count: output.filter((l) => l.includes("data up to")).length,
     }).toEqual({
       top: [
-        `${window} · by device, app, domain, title`,
+        `${window} · by device, app, domain, page`,
         "! iPhone data up to 2026-09-18 12:30; later time is not in yet",
         `1h 15m 25s  Studio  mac · ${exit.value.studio.id}`,
       ],
@@ -645,7 +645,7 @@ describe("breakdown", () => {
     }
     const studio = exit.value;
     expect(output).toEqual([
-      "2026-09-25 22:00 to 2026-09-26 22:00 · America/Los_Angeles · by device, app, domain, title · per 15min",
+      "2026-09-25 22:00 to 2026-09-26 22:00 · America/Los_Angeles · by device, app, domain, page · per 15min",
       "22:00–09:00   no activity",
       "",
       "2026-09-26",

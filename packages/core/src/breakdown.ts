@@ -69,7 +69,7 @@ export const defaultLevels: ReadonlyArray<Level> = [
   "device",
   "app",
   "domain",
-  "title",
+  "page",
 ];
 
 export const BlockSize = Schema.Literal("total", "hour", "15min").annotations({
