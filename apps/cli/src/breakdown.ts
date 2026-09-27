@@ -33,10 +33,21 @@ import { fromOption, requireWindow, toOption, windowLine } from "./window.js";
 
 const guides = { branch: "├─ ", last: "└─ ", through: "│  ", after: "   " };
 
-const nameCell = (node: BreakdownNode): ReadonlyArray<string | Span> =>
-  node.kind !== undefined && node.key !== undefined
-    ? [node.name, "  ", span("dim", `${node.kind} · ${node.key}`)]
-    : [node.name];
+const nameCell = (node: BreakdownNode): ReadonlyArray<string | Span> => {
+  if (node.kind !== undefined && node.key !== undefined) {
+    return [node.name, "  ", span("dim", `${node.kind} · ${node.key}`)];
+  }
+  if (node.productive !== undefined) {
+    return [
+      node.name,
+      "  ",
+      node.productive
+        ? span("ok", "productive")
+        : span("dim", "not productive"),
+    ];
+  }
+  return [node.name];
+};
 
 // The duration comes first and the tree last, so `columns` cuts a long
 // title to the terminal width.

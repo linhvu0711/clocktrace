@@ -1,5 +1,6 @@
 import {
   AppStore,
+  addRule,
   type BreakdownBlock,
   BreakdownReply,
   breakdown,
@@ -134,6 +135,48 @@ describe("breakdown", () => {
       "   30m 00s  └─ Game",
       `    5m 00s  iPad  ipad · ${ipad.id}`,
       "    5m 00s  └─ Books",
+      "1h 50m 25s  total",
+    ]);
+  });
+
+  it("breakdown by category tags each Category productive or not", async () => {
+    // Given: seedBreakdown; Code is Coding (productive), Brave is Browsing (not)
+    const { output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        const coding = yield* store.insertCategory({
+          name: "Coding",
+          productive: true,
+        });
+        const browsing = yield* store.insertCategory({
+          name: "Browsing",
+          productive: false,
+        });
+        yield* addRule({
+          field: "app",
+          compare: "is",
+          value: "com.microsoft.VSCode",
+          effect: "category",
+          target: coding.id,
+        });
+        yield* addRule({
+          field: "app",
+          compare: "is",
+          value: "com.brave.Browser",
+          effect: "category",
+          target: browsing.id,
+        });
+        // When
+        yield* printBreakdown({ range: day, groupBy: ["category"] }, false);
+      }),
+    );
+    // Then
+    expect(output).toEqual([
+      `${window} · by category`,
+      "1h 05m 00s  Uncategorized",
+      "   30m 45s  Coding  productive",
+      "   14m 40s  Browsing  not productive",
       "1h 50m 25s  total",
     ]);
   });
