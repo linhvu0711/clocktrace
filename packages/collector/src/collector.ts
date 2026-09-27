@@ -188,6 +188,7 @@ export const collect = <E, R>(
             appName: line.app,
             title: line.title,
             url: line.url,
+            private: line.private,
             startedAt: s.idleClosed
               ? DateTime.subtract(line.ts, { seconds: line.idleSeconds })
               : line.ts,
@@ -198,7 +199,8 @@ export const collect = <E, R>(
           open.value.bundleId !== bundleId ||
           open.value.appName !== line.app ||
           open.value.title !== line.title ||
-          open.value.url !== line.url
+          open.value.url !== line.url ||
+          open.value.private !== line.private
         ) {
           yield* Ref.set(state, {
             lastTs: line.ts,
@@ -212,6 +214,7 @@ export const collect = <E, R>(
               appName: line.app,
               title: line.title,
               url: line.url,
+              private: line.private,
               startedAt: line.ts,
             }),
           );

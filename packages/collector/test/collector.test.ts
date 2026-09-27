@@ -802,6 +802,58 @@ describe("collector", () => {
     ]);
   });
 
+  it("a Private window line stores the Activity private with no title and no url", async () => {
+    // Given: a Chrome Private window, then a Chrome window the Helper cannot
+    // classify, then Finder
+    const lines = Stream.fromIterable([
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "granted",
+        private: true,
+      }),
+      line({
+        ts: "2026-01-01T00:00:05.000Z",
+        app: "Google Chrome",
+        bundleId: "com.google.Chrome",
+        grant: "granted",
+      }),
+      line({
+        ts: "2026-01-01T00:00:10.000Z",
+        app: "Finder",
+        bundleId: "com.apple.finder",
+      }),
+    ]);
+    const rows = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        // When
+        yield* collect(lines, device.id);
+        const result = yield* store.readActivities({
+          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
+          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
+        });
+        return result.map((a) => ({
+          appName: a.appName,
+          title: a.title,
+          url: a.url,
+          private: a.private,
+        }));
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(rows).toEqual([
+      { appName: "Google Chrome", title: null, url: null, private: true },
+      { appName: "Google Chrome", title: null, url: null, private: false },
+    ]);
+  });
+
   it("an idle end before the start writes nothing", async () => {
     // Given: the only line after the open reports 920 idle seconds
     const lines = [
