@@ -10,8 +10,15 @@ const fields = {
   endedAt: Schema.DateTimeUtc,
 };
 
-const NewActivityStruct = Schema.Struct(fields);
-const ActivityStruct = Schema.Struct({ id: Schema.UUID, ...fields });
+const NewActivityStruct = Schema.Struct({
+  ...fields,
+  private: Schema.optional(Schema.Boolean),
+});
+const ActivityStruct = Schema.Struct({
+  id: Schema.UUID,
+  ...fields,
+  private: Schema.Boolean,
+});
 
 const endsAfterStart = (a: {
   readonly startedAt: DateTime.Utc;

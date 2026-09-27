@@ -249,6 +249,43 @@ describe("activities", () => {
     });
   });
 
+  it("activities --json shows the private mark", async () => {
+    // Given: seedDay plus a private Safari at 10:00Z
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const studio = yield* seedDay(store);
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.apple.Safari",
+          appName: "Safari",
+          title: null,
+          url: null,
+          private: true,
+          startedAt: DateTime.unsafeMake("2026-09-18T10:00:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T10:10:00.000Z"),
+        });
+        // When
+        yield* printActivities(
+          { range: { from: "2026-09-18", to: "2026-09-18" } },
+          true,
+        );
+      }),
+    );
+    // Then
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    const parsed = JSON.parse(output[0] ?? "") as {
+      rows: ReadonlyArray<{ appName: string; private: boolean }>;
+    };
+    expect(parsed.rows.map((r) => [r.appName, r.private])).toEqual([
+      ["Code", false],
+      ["Google Chrome", false],
+      ["Safari", true],
+    ]);
+  });
+
   it("activities of an empty window prints the window line and no activity", async () => {
     // Given: seedDay
     const { exit, output } = await runPrint(

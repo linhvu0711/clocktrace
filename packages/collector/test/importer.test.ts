@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { type ImportBatch, Store, StoreError } from "@clocktrace/core";
+import { addRule, type ImportBatch, Store, StoreError } from "@clocktrace/core";
 import {
   DateTime,
   Effect,
@@ -442,6 +442,59 @@ describe("importer", () => {
         url: null,
         startedAt: "2026-09-19T16:06:00.000Z",
         endedAt: "2026-09-19T16:10:00.000Z",
+      },
+    ]);
+  });
+
+  it("an imported Activity that matches a Private rule is stored private", async () => {
+    // Given: an iPhone and an iPad with the shared record stream, a Private rule on Instagram
+    const activities = await run(
+      { devices: [D_MAC, D_PHONE, D_PAD], records: ALL },
+      "27.0",
+      () =>
+        Effect.gen(function* () {
+          yield* addRule({
+            field: "app",
+            compare: "is",
+            value: "com.burbn.instagram",
+            effect: "private",
+            target: null,
+          });
+          // When
+          yield* importOnce("/stub");
+          const store = yield* Store;
+          return yield* store.readActivities({
+            from: t("2026-09-19T00:00:00.000Z"),
+            to: t("2026-09-20T00:00:00.000Z"),
+          });
+        }),
+    );
+    // Then
+    expect(
+      activities.map((a) => ({
+        appName: a.appName,
+        title: a.title,
+        url: a.url,
+        private: a.private,
+      })),
+    ).toEqual([
+      {
+        appName: "com.apple.mobilenotes",
+        title: null,
+        url: null,
+        private: false,
+      },
+      {
+        appName: "com.apple.mobilesafari",
+        title: null,
+        url: null,
+        private: false,
+      },
+      {
+        appName: "com.burbn.instagram",
+        title: null,
+        url: null,
+        private: true,
       },
     ]);
   });

@@ -96,7 +96,7 @@ export const readPrivate: Effect.Effect<
   return (activity) => {
     const device = devices.find((d) => d.id === activity.deviceId) ?? null;
     return resolve(activity, rules, device).private
-      ? { ...activity, title: null, url: null }
+      ? { ...activity, title: null, url: null, private: true }
       : activity;
   };
 });

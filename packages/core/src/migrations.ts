@@ -49,6 +49,10 @@ CREATE TABLE app_names (
 );
 `;
 
-export const migrations: ReadonlyArray<string> = [v1, v2];
+const v3 = `
+ALTER TABLE activities ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
+`;
+
+export const migrations: ReadonlyArray<string> = [v1, v2, v3];
 
 export const schemaVersion: number = migrations.length;

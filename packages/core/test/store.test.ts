@@ -6,7 +6,7 @@ import { DateTime, Effect, Either, Option } from "effect";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DatabaseNewerError, StoreShape } from "../src/index.js";
-import { openStore, Store } from "../src/index.js";
+import { migrations, openStore, Store } from "../src/index.js";
 
 describe("store", () => {
   let dir: string;
@@ -26,7 +26,7 @@ describe("store", () => {
   ): Promise<A> =>
     Effect.runPromise(Effect.scoped(Effect.flatMap(openStore(path), f)));
 
-  it("creates the file, seven tables, and schema version 2", async () => {
+  it("creates the file, seven tables, and schema version 3", async () => {
     // Given: the file does not exist
     // When
     await Effect.runPromise(Effect.scoped(openStore(path)));
@@ -40,7 +40,7 @@ describe("store", () => {
     db.close();
     // Then
     expect(existsSync(path)).toBe(true);
-    expect(version).toBe(2);
+    expect(version).toBe(3);
     expect(tables.map((row) => row.name)).toEqual([
       "activities",
       "app_names",
@@ -69,7 +69,37 @@ describe("store", () => {
     // Then
     expect(devices).toHaveLength(1);
     expect(devices[0]?.externalId).toBe("mac-1");
-    expect(version).toBe(2);
+    expect(version).toBe(3);
+  });
+
+  it("a v2 file opens at v3 and its old rows read private false", async () => {
+    // Given: a v2 file with one device and one Activity
+    const db = new Database(path);
+    db.exec(migrations[0] ?? "");
+    db.exec(migrations[1] ?? "");
+    db.pragma("user_version = 2");
+    db.exec(
+      "INSERT INTO devices (id, kind, name, external_id) VALUES ('00000000-0000-4000-8000-000000000001', 'mac', 'Studio', 'mac-1')",
+    );
+    db.exec(
+      "INSERT INTO activities (id, device_id, bundle_id, app_name, title, url, started_at, ended_at) VALUES ('00000000-0000-4000-8000-0000000000a1', '00000000-0000-4000-8000-000000000001', 'com.apple.Terminal', 'Terminal', 'zsh', NULL, '2026-09-17T10:00:00.000Z', '2026-09-17T10:30:00.000Z')",
+    );
+    db.close();
+    // When
+    const rows = await useStore((store) =>
+      store.readActivities({
+        from: DateTime.unsafeMake("2026-09-17T00:00:00.000Z"),
+        to: DateTime.unsafeMake("2026-09-18T00:00:00.000Z"),
+      }),
+    );
+    const after = new Database(path);
+    const version = after.pragma("user_version", { simple: true });
+    after.close();
+    // Then
+    expect({
+      version,
+      rows: rows.map((a) => ({ title: a.title, private: a.private })),
+    }).toEqual({ version: 3, rows: [{ title: "zsh", private: false }] });
   });
 
   it("fails when the file is newer than the code", async () => {
@@ -87,10 +117,10 @@ describe("store", () => {
       const error = result.left as DatabaseNewerError;
       expect(error._tag).toBe("DatabaseNewerError");
       expect(error.message).toBe(
-        "database was written by clocktrace 99, this is 2 · upgrade clocktrace",
+        "database was written by clocktrace 99, this is 3 · upgrade clocktrace",
       );
       expect(error.fileVersion).toBe(99);
-      expect(error.codeVersion).toBe(2);
+      expect(error.codeVersion).toBe(3);
     }
   });
 
@@ -235,6 +265,50 @@ describe("store", () => {
     expect(DateTime.formatIso(activity.endedAt)).toBe(
       "2026-09-17T10:30:00.000Z",
     );
+  });
+
+  it("insertActivity stores the private mark and reads it back", async () => {
+    // Given: an open store, a device, a private Mail and an unmarked Terminal
+    const rows = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* store.insertActivity({
+          deviceId: d.id,
+          bundleId: "com.apple.mail",
+          appName: "Mail",
+          title: null,
+          url: null,
+          private: true,
+          startedAt: t("2026-09-17T10:00:00.000Z"),
+          endedAt: t("2026-09-17T10:30:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: d.id,
+          bundleId: "com.apple.Terminal",
+          appName: "Terminal",
+          title: "zsh",
+          url: null,
+          startedAt: t("2026-09-17T10:30:00.000Z"),
+          endedAt: t("2026-09-17T11:00:00.000Z"),
+        });
+        // When
+        return yield* store.readActivities({
+          from: t("2026-09-17T00:00:00.000Z"),
+          to: t("2026-09-18T00:00:00.000Z"),
+        });
+      }),
+    );
+    // Then
+    expect(
+      rows.map((a) => ({
+        appName: a.appName,
+        title: a.title,
+        private: a.private,
+      })),
+    ).toEqual([
+      { appName: "Mail", title: null, private: true },
+      { appName: "Terminal", title: "zsh", private: false },
+    ]);
   });
 
   it("the activity interface has insert and read only", async () => {
@@ -840,6 +914,37 @@ describe("store", () => {
     expect(activities).toHaveLength(2);
     expect(progress).toEqual(Option.some('{"segment":"s","offset":1,"ts":1}'));
     expect(status).toEqual(Option.some("ok"));
+  });
+
+  it("writeImportBatch stores the private mark", async () => {
+    // Given: an open store and a device
+    const rows = await useStore((store) =>
+      Effect.gen(function* () {
+        const d = yield* seedDevice(store);
+        yield* store.writeImportBatch({
+          activities: [
+            {
+              deviceId: d.id,
+              bundleId: "com.burbn.instagram",
+              appName: "com.burbn.instagram",
+              title: null,
+              url: null,
+              private: true,
+              startedAt: t("2026-09-17T10:00:00.000Z"),
+              endedAt: t("2026-09-17T10:05:00.000Z"),
+            },
+          ],
+          settings: [],
+        });
+        // When
+        return yield* store.readActivities({
+          from: t("2026-09-17T00:00:00.000Z"),
+          to: t("2026-09-18T00:00:00.000Z"),
+        });
+      }),
+    );
+    // Then
+    expect(rows.map((a) => a.private)).toEqual([true]);
   });
 
   it("writeImportBatch that fails leaves nothing behind", async () => {

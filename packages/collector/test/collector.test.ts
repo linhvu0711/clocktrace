@@ -743,6 +743,64 @@ describe("collector", () => {
     ]);
   });
 
+  it("a Private rule stores the Mac Activity private with no title and no url", async () => {
+    // Given: a Private rule on "Secret" titles, then Safari, Terminal, Finder
+    const lines = Stream.fromIterable([
+      line({
+        ts: "2026-01-01T00:00:00.000Z",
+        app: "Safari",
+        bundleId: "com.apple.Safari",
+        title: "Secret plan",
+        url: "https://example.com/a",
+      }),
+      line({
+        ts: "2026-01-01T00:00:05.000Z",
+        app: "Terminal",
+        bundleId: "com.apple.Terminal",
+        title: "zsh",
+      }),
+      line({
+        ts: "2026-01-01T00:00:10.000Z",
+        app: "Finder",
+        bundleId: "com.apple.finder",
+      }),
+    ]);
+    const rows = await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const device = yield* store.upsertDevice({
+          kind: "mac",
+          name: "Studio",
+          externalId: "mac-1",
+        });
+        yield* addRule({
+          field: "title",
+          compare: "contains",
+          value: "Secret",
+          effect: "private",
+          target: null,
+        });
+        // When
+        yield* collect(lines, device.id);
+        const result = yield* store.readActivities({
+          from: DateTime.unsafeMake("2026-01-01T00:00:00Z"),
+          to: DateTime.unsafeMake("2026-01-02T00:00:00Z"),
+        });
+        return result.map((a) => ({
+          appName: a.appName,
+          title: a.title,
+          url: a.url,
+          private: a.private,
+        }));
+      }).pipe(Effect.provide(Store.Test)),
+    );
+    // Then
+    expect(rows).toEqual([
+      { appName: "Safari", title: null, url: null, private: true },
+      { appName: "Terminal", title: "zsh", url: null, private: false },
+    ]);
+  });
+
   it("an idle end before the start writes nothing", async () => {
     // Given: the only line after the open reports 920 idle seconds
     const lines = [
