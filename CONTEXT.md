@@ -87,7 +87,7 @@ The CLI command that pairs with an MCP tool: `clocktrace rules add` is the Twin 
 _Avoid_: Alias, wrapper, mirror, subcommand
 
 **Breakdown**:
-The query that sums time in a window as a tree, one level per item of an ordered list, such as Device, then app, then domain, then title. An Activity marked Private shows as one `(private)` line at the first level with no value, in place of `(no domain)` or `(no title)`, with no level under it. It replaces `summary` and `timeline`; `clocktrace breakdown` is its Twin. Built in #237; `summary` and `timeline` were removed in #243.
+The query that sums time in a window as a tree, one level per item of an ordered list, such as Device, then app, then domain, then title. An Activity marked Private shows as one `(private)` line at the first level with no value, in place of `(no domain)` or `(no title)`, with no level under it. It replaces `summary` and `timeline`; `clocktrace breakdown` is its Twin. Built in #237; `summary` and `timeline` were removed in #243. #251 adds a Page level and ends the default with it in place of title.
 _Avoid_: Report, summary, totals, timeline
 
 **Block**:
@@ -115,6 +115,10 @@ _Avoid_: Filter, mapping, classifier, blacklist
 **Domain**:
 The host of an Activity's URL, as `api.github.com`. The Rule field `domain` tests it and a Breakdown level groups by it. Not the registrable domain, so `docs.google.com` and `mail.google.com` are two Domains.
 _Avoid_: Site, website, host, registrable domain
+
+**Page**:
+An Activity's URL without its `#…` part, or its title when it has no URL. A Breakdown level will group by it, so a page whose title changes while it is open, as Brave's does with "Audio playing" or "High memory usage", stays one line. That line shows the title with the most time, as the browser gave it, plus the path and query. The query stays because it often names the page, as `watch?v=` does. Planned in #251, not built: `breakdown` has no `page` level yet.
+_Avoid_: Tab, URL, address, link
 
 **Private**:
 A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. It is also stored marked private, and the mark holds no title and no URL. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
