@@ -8,7 +8,7 @@ import {
   openStore,
   Store,
 } from "../src/index.js";
-import { seedBreakdown, seedPrivate } from "../src/testing.js";
+import { seedBreakdown, seedPrivate, seedRuns } from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -538,6 +538,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T02:00-07:00",
+        last: "2026-09-18T02:40-07:00",
         seconds: 1560,
         nodes: [
           {
@@ -591,6 +595,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T02:20-07:00",
+        last: "2026-09-18T02:40-07:00",
         seconds: 1200,
         nodes: [
           {
@@ -653,6 +661,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T02:00-07:00",
+        last: "2026-09-18T04:30-07:00",
         seconds: 3480,
         nodes: [
           {
@@ -683,5 +695,234 @@ describe("breakdown", () => {
         ],
       },
     ]);
+  });
+
+  it("hour Blocks from 22:07 start short, then follow the clock", async () => {
+    // Given: Code 22:10 to 23:30 local on 2026-09-25
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-26T05:10:00.000Z", "2026-09-26T06:30:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-25T22:07", to: "2026-09-26T00:00" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-25T22:07-07:00",
+        end: "2026-09-25T23:00-07:00",
+        first: "2026-09-25T22:10-07:00",
+        last: "2026-09-25T23:00-07:00",
+        seconds: 3000,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 3000,
+            children: [],
+          },
+        ],
+      },
+      {
+        start: "2026-09-25T23:00-07:00",
+        end: "2026-09-26T00:00-07:00",
+        first: "2026-09-25T23:00-07:00",
+        last: "2026-09-25T23:30-07:00",
+        seconds: 1800,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 1800,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("an Activity across a Block edge is cut at the edge", async () => {
+    // Given: Code 09:14 to 09:17 local
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-09-26T16:14:00.000Z", "2026-09-26T16:17:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-26T09:00", to: "2026-09-26T09:30" },
+          block: "15min",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-26T09:00-07:00",
+        end: "2026-09-26T09:15-07:00",
+        first: "2026-09-26T09:14-07:00",
+        last: "2026-09-26T09:15-07:00",
+        seconds: 60,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 60,
+            children: [],
+          },
+        ],
+      },
+      {
+        start: "2026-09-26T09:15-07:00",
+        end: "2026-09-26T09:30-07:00",
+        first: "2026-09-26T09:15-07:00",
+        last: "2026-09-26T09:17-07:00",
+        seconds: 120,
+        nodes: [
+          {
+            name: "Code",
+            key: "com.microsoft.VSCode",
+            seconds: 120,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("min merges small lines inside each Block", async () => {
+    // Given: b 09:14:00 to 09:14:30, a 09:14:30 to 09:15:30 local
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["b", "2026-09-26T16:14:00.000Z", "2026-09-26T16:14:30.000Z"],
+          ["a", "2026-09-26T16:14:30.000Z", "2026-09-26T16:15:30.000Z"],
+        ]);
+        // When: min 60s by default
+        return yield* breakdown({
+          range: { from: "2026-09-26T09:00", to: "2026-09-26T09:30" },
+          block: "15min",
+          groupBy: ["title"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.nodes)).toEqual([
+      [{ name: "2 small items", seconds: 60, small: 2, children: [] }],
+      [{ name: "a", seconds: 30, children: [] }],
+    ]);
+  });
+
+  it("hour Blocks follow the clock on the day DST ends", async () => {
+    // Given: Code over the whole 25-hour day
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-11-01T07:00:00.000Z", "2026-11-02T08:00:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-11-01", to: "2026-11-01" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.start)).toEqual([
+      "2026-11-01T00:00-07:00",
+      "2026-11-01T01:00-07:00",
+      "2026-11-01T01:00-08:00",
+      "2026-11-01T02:00-08:00",
+      "2026-11-01T03:00-08:00",
+      "2026-11-01T04:00-08:00",
+      "2026-11-01T05:00-08:00",
+      "2026-11-01T06:00-08:00",
+      "2026-11-01T07:00-08:00",
+      "2026-11-01T08:00-08:00",
+      "2026-11-01T09:00-08:00",
+      "2026-11-01T10:00-08:00",
+      "2026-11-01T11:00-08:00",
+      "2026-11-01T12:00-08:00",
+      "2026-11-01T13:00-08:00",
+      "2026-11-01T14:00-08:00",
+      "2026-11-01T15:00-08:00",
+      "2026-11-01T16:00-08:00",
+      "2026-11-01T17:00-08:00",
+      "2026-11-01T18:00-08:00",
+      "2026-11-01T19:00-08:00",
+      "2026-11-01T20:00-08:00",
+      "2026-11-01T21:00-08:00",
+      "2026-11-01T22:00-08:00",
+      "2026-11-01T23:00-08:00",
+    ]);
+  });
+
+  it("hour Blocks follow the clock on the day DST starts", async () => {
+    // Given: Code over the whole 23-hour day
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-03-08T08:00:00.000Z", "2026-03-09T07:00:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-03-08", to: "2026-03-08" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.start)).toEqual([
+      "2026-03-08T00:00-08:00",
+      "2026-03-08T01:00-08:00",
+      "2026-03-08T03:00-07:00",
+      "2026-03-08T04:00-07:00",
+      "2026-03-08T05:00-07:00",
+      "2026-03-08T06:00-07:00",
+      "2026-03-08T07:00-07:00",
+      "2026-03-08T08:00-07:00",
+      "2026-03-08T09:00-07:00",
+      "2026-03-08T10:00-07:00",
+      "2026-03-08T11:00-07:00",
+      "2026-03-08T12:00-07:00",
+      "2026-03-08T13:00-07:00",
+      "2026-03-08T14:00-07:00",
+      "2026-03-08T15:00-07:00",
+      "2026-03-08T16:00-07:00",
+      "2026-03-08T17:00-07:00",
+      "2026-03-08T18:00-07:00",
+      "2026-03-08T19:00-07:00",
+      "2026-03-08T20:00-07:00",
+      "2026-03-08T21:00-07:00",
+      "2026-03-08T22:00-07:00",
+      "2026-03-08T23:00-07:00",
+    ]);
+  });
+
+  it("a block outside total, hour, 15min is rejected", async () => {
+    // Given: an empty store
+    const message = await run(
+      // When
+      Effect.map(
+        Effect.flip(breakdown({ range: day, block: "5min" } as never)),
+        (error) => error.message,
+      ),
+    );
+    // Then
+    expect(message).toBe("block: must be one of total, hour, 15min");
   });
 });

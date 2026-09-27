@@ -207,6 +207,30 @@ describe("breakdown", () => {
     }).toEqual({ lines: 1, parsed: exit.value });
   });
 
+  it("breakdown --json --block hour prints the breakdown tool's JSON", async () => {
+    // Given: seedBreakdown
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        yield* printBreakdown({ range: day, block: "hour" }, true);
+        return yield* Effect.flatMap(
+          breakdown({ range: day, block: "hour" }),
+          Schema.encode(BreakdownReply),
+        );
+      }),
+    );
+    // Then: the line is core's encoded reply
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    expect({
+      lines: output.length,
+      parsed: JSON.parse(output[0] ?? ""),
+    }).toEqual({ lines: 1, parsed: exit.value });
+  });
+
   it("breakdown of an empty window prints the note", async () => {
     // Given: seedBreakdown
     const { output } = await runPrint(
@@ -402,6 +426,10 @@ describe("breakdown", () => {
     }
     expect(JSON.parse(output[0] ?? "").blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T02:00-07:00",
+        last: "2026-09-18T02:40-07:00",
         seconds: 1560,
         nodes: [
           {

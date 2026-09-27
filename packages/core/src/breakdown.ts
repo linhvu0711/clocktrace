@@ -69,6 +69,13 @@ export const defaultLevels: ReadonlyArray<Level> = [
   "title",
 ];
 
+export const BlockSize = Schema.Literal("total", "hour", "15min").annotations({
+  message: () => ({
+    message: "must be one of total, hour, 15min",
+    override: true,
+  }),
+});
+
 const nodeFields = {
   name: Schema.String,
   seconds: Schema.Int,
@@ -116,6 +123,7 @@ export const BreakdownInput = Schema.Struct({
   range: Range,
   groupBy: Schema.optionalWith(Levels, { default: () => defaultLevels }),
   min: Schema.optionalWith(Min, { default: () => 60 }),
+  block: Schema.optionalWith(BlockSize, { default: () => "total" as const }),
   devices: Schema.optional(
     Schema.Array(DeviceSelector).pipe(
       Schema.minItems(1, { message: () => "must name at least one Device" }),
@@ -310,6 +318,84 @@ const stamp = (ms: number, zone: DateTime.TimeZone): string => {
   return `${isoMinute(zoned)}${DateTime.zonedOffsetIso(zoned)}`;
 };
 
+const stepMinutes = { hour: 60, "15min": 15 } as const;
+
+// Block edges on the local clock: a step from the last edge, then back to the
+// nearest whole step, so a DST jump still lands on the clock.
+const edges = (
+  fromMs: number,
+  toMs: number,
+  size: BlockSize,
+  zone: DateTime.TimeZone,
+): ReadonlyArray<number> => {
+  if (size === "total") {
+    return [fromMs, toMs];
+  }
+  const minutes = stepMinutes[size];
+  const step = minutes * 60_000;
+  const floor = (ms: number): number => {
+    const parts = DateTime.toParts(
+      DateTime.setZone(DateTime.unsafeMake(ms), zone),
+    );
+    return (
+      ms -
+      ((parts.minutes % minutes) * 60 + parts.seconds) * 1000 -
+      parts.millis
+    );
+  };
+  const out = [fromMs];
+  let t = fromMs;
+  while (t < toMs) {
+    const next = floor(t + step);
+    t = Math.min(next <= t ? t + step : next, toMs);
+    out.push(t);
+  }
+  return out;
+};
+
+/** The index of the Block that holds `ms`: the last edge at or before it. */
+const blockIndex = (edges: ReadonlyArray<number>, ms: number): number => {
+  let lo = 0;
+  let hi = edges.length - 2;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if ((edges[mid] ?? 0) <= ms) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return lo;
+};
+
+// An Activity across an edge is cut there; a zero-length one stays in the
+// Block of its start.
+const cut = (
+  rows: ReadonlyArray<Row>,
+  edges: ReadonlyArray<number>,
+): ReadonlyArray<ReadonlyArray<Row>> => {
+  const buckets = edges.slice(1).map((): Array<Row> => []);
+  const fromMs = edges[0] ?? 0;
+  const toMs = edges[edges.length - 1] ?? 0;
+  for (const row of rows) {
+    const start = Math.max(row.activity.startedAt.epochMillis, fromMs);
+    const end = Math.min(row.activity.endedAt.epochMillis, toMs);
+    let i = blockIndex(edges, start);
+    if (end <= start) {
+      buckets[i]?.push({ ...row, ms: 0 });
+      continue;
+    }
+    for (; i < buckets.length && (edges[i] ?? 0) < end; i++) {
+      const ms =
+        Math.min(end, edges[i + 1] ?? 0) - Math.max(start, edges[i] ?? 0);
+      if (ms > 0) {
+        buckets[i]?.push({ ...row, ms });
+      }
+    }
+  }
+  return buckets;
+};
+
 const blockOf = (
   startMs: number,
   endMs: number,
@@ -363,14 +449,22 @@ export const breakdown = (
       projectById: new Map(projects.map((p) => [p.id, p])),
       deviceById: new Map(devices.map((d) => [d.id, d])),
     };
-    const block = blockOf(
+    const blockEdges = edges(
       from.epochMillis,
       to.epochMillis,
-      rows,
-      decoded.groupBy,
-      decoded.min,
-      lookups,
+      decoded.block,
       zone,
+    );
+    const blocks = cut(rows, blockEdges).map((blockRows, i) =>
+      blockOf(
+        blockEdges[i] ?? 0,
+        blockEdges[i + 1] ?? 0,
+        blockRows,
+        decoded.groupBy,
+        decoded.min,
+        lookups,
+        zone,
+      ),
     );
     const kindNotes = [...new Set(asked ?? [])]
       .filter(isKind)
@@ -384,15 +478,16 @@ export const breakdown = (
       .map((kind) => `no ${kind} Device has activity in this range`);
     return {
       range,
-      blocks: [block],
+      blocks,
       notes:
-        block.nodes.length === 0 && kindNotes.length === 0
+        rows.length === 0 && kindNotes.length === 0
           ? ["no activity in this range"]
           : kindNotes,
     };
   });
 
 export type Level = Schema.Schema.Type<typeof Level>;
+export type BlockSize = Schema.Schema.Type<typeof BlockSize>;
 export type BreakdownBlock = Schema.Schema.Type<typeof BreakdownBlock>;
 export type BreakdownReply = Schema.Schema.Type<typeof BreakdownReply>;
 export type BreakdownInput = Schema.Schema.Type<typeof BreakdownInput>;
