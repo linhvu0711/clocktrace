@@ -25,6 +25,7 @@ import {
   seedDay,
   seedMany,
   seedTwoDevices,
+  seedVideo,
 } from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -1723,6 +1724,36 @@ describe("breakdown tool", () => {
     });
   });
 
+  it("breakdown names a page by its top title with its URL and path", async () => {
+    // Given: a server over seedVideo, 13 titles on one URL for 26m
+    const { client, close } = await connect(withActivities(seedVideo));
+    // When
+    const result = await callTool(client, {
+      name: "breakdown",
+      arguments: { range: day, groupBy: ["page"] },
+    });
+    await close();
+    // Then
+    const reply = result.structuredContent as {
+      blocks: ReadonlyArray<{ nodes: ReadonlyArray<unknown> }>;
+    };
+    expect({
+      isError: result.isError,
+      nodes: reply.blocks[0]?.nodes,
+    }).toEqual({
+      isError: undefined,
+      nodes: [
+        {
+          name: "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube - Audio playing - Brave",
+          key: "https://www.youtube.com/watch?v=111fgmmrnKc",
+          path: "/watch?v=111fgmmrnKc",
+          seconds: 1560,
+          children: [],
+        },
+      ],
+    });
+  });
+
   it("a groupBy level outside the list names the allowed values", async () => {
     // Given: the same
     const { client, close } = await connect(withActivities(seedBreakdown));
@@ -1736,7 +1767,7 @@ describe("breakdown tool", () => {
     expect({ isError: result.isError, text: text(result) }).toEqual({
       isError: true,
       text: expect.stringContaining(
-        'expected one of "category"|"project"|"device"|"app"|"domain"|"title"',
+        'expected one of "category"|"project"|"device"|"app"|"domain"|"title"|"page"',
       ),
     });
   });

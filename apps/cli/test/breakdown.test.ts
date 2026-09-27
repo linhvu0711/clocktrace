@@ -8,7 +8,12 @@ import {
   openStore,
   Store,
 } from "@clocktrace/core";
-import { seedBreakdown, seedPrivate, seedRuns } from "@clocktrace/core/testing";
+import {
+  seedBreakdown,
+  seedPrivate,
+  seedRuns,
+  seedVideo,
+} from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import {
   Cause,
@@ -210,6 +215,31 @@ describe("breakdown", () => {
     }).toEqual({ lines: 1, parsed: exit.value });
   });
 
+  it("breakdown --json names a page by its top title with its URL and path", async () => {
+    // Given: seedVideo, 13 titles on one URL for 26m
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVideo(store);
+        // When
+        yield* printBreakdown({ range: day, groupBy: ["page"] }, true);
+      }),
+    );
+    // Then
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    expect(JSON.parse(output[0] ?? "").blocks[0]?.nodes).toEqual([
+      {
+        name: "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube - Audio playing - Brave",
+        key: "https://www.youtube.com/watch?v=111fgmmrnKc",
+        path: "/watch?v=111fgmmrnKc",
+        seconds: 1560,
+        children: [],
+      },
+    ]);
+  });
+
   it("breakdown --json --block hour prints the breakdown tool's JSON", async () => {
     // Given: seedBreakdown
     const { exit, output } = await runPrint(
@@ -351,7 +381,7 @@ describe("breakdown", () => {
     );
     // Then
     expect(messages).toEqual([
-      "groupBy.0: must be one of category, project, device, app, domain, title",
+      "groupBy.0: must be one of category, project, device, app, domain, title, page",
       "min: must be a whole number with s or m, as 60s or 2m",
       "min: must be a whole number with s or m, as 60s or 2m",
     ]);

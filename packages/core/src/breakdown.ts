@@ -25,9 +25,11 @@ export const Level = Schema.Literal(
   "app",
   "domain",
   "title",
+  "page",
 ).annotations({
   message: () => ({
-    message: "must be one of category, project, device, app, domain, title",
+    message:
+      "must be one of category, project, device, app, domain, title, page",
     override: true,
   }),
 });
@@ -80,8 +82,10 @@ export const BlockSize = Schema.Literal("total", "hour", "15min").annotations({
 const nodeFields = {
   name: Schema.String,
   seconds: Schema.Int,
-  /** The Device, bundle, Category, or Project id behind the line. */
+  /** The Device, bundle, Category, or Project id behind the line, or a page's URL. */
   key: Schema.optionalWith(Schema.String, { exact: true }),
+  /** On a page line with a URL: its path and query, as /watch?v=…; left out when both are empty. */
+  path: Schema.optionalWith(Schema.String, { exact: true }),
   kind: Schema.optionalWith(DeviceKind, { exact: true }),
   productive: Schema.optionalWith(Schema.Boolean, { exact: true }),
   /** On an "N small items" line: how many lines it merges. */
@@ -161,16 +165,42 @@ interface Part {
   readonly line: Line;
   /** No domain or no title: shown only beside siblings. */
   readonly empty: boolean;
+  /** A page with a URL: its line takes the title with the most time. */
+  readonly titled: boolean;
 }
 
 // No domain or title holds a NUL, so a Private line never merges with a real value.
 const privateId = "\u0000private";
 
+/** A URL's page: the stored text before its #… part, and its path and query. */
+const pageOf = (
+  url: string | null,
+): { readonly key: string; readonly path: string } | null => {
+  if (url === null || url === "") {
+    return null;
+  }
+  try {
+    const parsed = new URL(url);
+    return {
+      key: url.split("#", 1)[0] ?? url,
+      path: parsed.pathname + parsed.search,
+    };
+  } catch {
+    return null;
+  }
+};
+
 const partOf = (level: Level, { activity, resolution }: Row, l: Lookups) => {
-  const part = (id: string, line: Line, empty = false): Part => ({
+  const part = (
+    id: string,
+    line: Line,
+    empty = false,
+    titled = false,
+  ): Part => ({
     id,
     line,
     empty,
+    titled,
   });
   switch (level) {
     case "category": {
@@ -227,7 +257,49 @@ const partOf = (level: Level, { activity, resolution }: Row, l: Lookups) => {
         ? part("", { name: "(no title)" }, true)
         : part(title, { name: title });
     }
+    case "page": {
+      if (activity.private) {
+        return part(privateId, { name: "(private)", private: true });
+      }
+      const page = pageOf(activity.url);
+      if (page !== null) {
+        return part(
+          `\u0000${page.key}`,
+          {
+            name: "",
+            key: page.key,
+            ...(page.path === "" ? {} : { path: page.path }),
+          },
+          false,
+          true,
+        );
+      }
+      const title = activity.title ?? "";
+      return title === ""
+        ? part("", { name: "(no title)" }, true)
+        : part(title, { name: title });
+    }
   }
+};
+
+/** The non-empty title with the most time across the rows, first seen on a tie. */
+const topTitle = (rows: ReadonlyArray<Row>): string => {
+  const byTitle = new Map<string, number>();
+  for (const row of rows) {
+    const title = row.activity.title;
+    if (title !== null && title !== "") {
+      byTitle.set(title, (byTitle.get(title) ?? 0) + row.ms);
+    }
+  }
+  let top = "";
+  let topMs = 0;
+  for (const [title, ms] of byTitle) {
+    if (ms > topMs) {
+      top = title;
+      topMs = ms;
+    }
+  }
+  return top === "" ? "(no title)" : top;
 };
 
 interface Group {
@@ -264,7 +336,7 @@ const group = (
     return group(rows, rest, l, parent);
   }
   return parts.map(({ part, rows }) => ({
-    line: part.line,
+    line: part.titled ? { ...part.line, name: topTitle(rows) } : part.line,
     ms: rows.reduce((sum, row) => sum + row.ms, 0),
     // A Private line has no detail under it.
     children: part.line.private === true ? [] : group(rows, rest, l, true),

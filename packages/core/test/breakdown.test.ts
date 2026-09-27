@@ -9,7 +9,13 @@ import {
   openStore,
   Store,
 } from "../src/index.js";
-import { seedBreakdown, seedPrivate, seedRuns } from "../src/testing.js";
+import {
+  seedBreakdown,
+  seedPrivate,
+  seedRuns,
+  seedVideo,
+  seedVisits,
+} from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -302,7 +308,7 @@ describe("breakdown", () => {
     );
     // Then
     expect(messages).toEqual([
-      "groupBy.0: must be one of category, project, device, app, domain, title",
+      "groupBy.0: must be one of category, project, device, app, domain, title, page",
       "groupBy: must name at least one level",
       "groupBy: must not name a level twice",
     ]);
@@ -696,6 +702,325 @@ describe("breakdown", () => {
         ],
       },
     ]);
+  });
+
+  it("a video whose title changes is one page line named by its top title", async () => {
+    // Given: seedVideo, 13 titles on one URL for 26m
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVideo(store);
+        // When
+        return yield* breakdown({
+          range: day,
+          groupBy: ["domain", "page"],
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      {
+        name: "www.youtube.com",
+        seconds: 1560,
+        children: [
+          {
+            name: "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube - Audio playing - Brave",
+            key: "https://www.youtube.com/watch?v=111fgmmrnKc",
+            path: "/watch?v=111fgmmrnKc",
+            seconds: 1560,
+            children: [],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("two titles with the same time: the one seen first names the page", async () => {
+    // Given: Zeta then Alpha, 2m each on one URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVisits(store, [
+          [
+            "Zeta",
+            "https://example.com/a",
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:02:00.000Z",
+          ],
+          [
+            "Alpha",
+            "https://example.com/a",
+            "2026-09-18T08:02:00.000Z",
+            "2026-09-18T08:04:00.000Z",
+          ],
+        ]);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      {
+        name: "Zeta",
+        key: "https://example.com/a",
+        path: "/a",
+        seconds: 240,
+        children: [],
+      },
+    ]);
+  });
+
+  it("two queries are two pages, even with one title", async () => {
+    // Given: watch?v=A 5m and watch?v=B 3m, both titled Video
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVisits(store, [
+          [
+            "Video",
+            "https://www.youtube.com/watch?v=A",
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:05:00.000Z",
+          ],
+          [
+            "Video",
+            "https://www.youtube.com/watch?v=B",
+            "2026-09-18T08:05:00.000Z",
+            "2026-09-18T08:08:00.000Z",
+          ],
+        ]);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      {
+        name: "Video",
+        key: "https://www.youtube.com/watch?v=A",
+        path: "/watch?v=A",
+        seconds: 300,
+        children: [],
+      },
+      {
+        name: "Video",
+        key: "https://www.youtube.com/watch?v=B",
+        path: "/watch?v=B",
+        seconds: 180,
+        children: [],
+      },
+    ]);
+  });
+
+  it("two fragments are one page", async () => {
+    // Given: /docs#a 5m and /docs#b 3m
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVisits(store, [
+          [
+            "Docs a",
+            "https://example.com/docs#a",
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:05:00.000Z",
+          ],
+          [
+            "Docs b",
+            "https://example.com/docs#b",
+            "2026-09-18T08:05:00.000Z",
+            "2026-09-18T08:08:00.000Z",
+          ],
+        ]);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      {
+        name: "Docs a",
+        key: "https://example.com/docs",
+        path: "/docs",
+        seconds: 480,
+        children: [],
+      },
+    ]);
+  });
+
+  it("a row with no URL is a page by its exact title", async () => {
+    // Given: main.ts 10m and a.ts 2m, no URLs
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["main.ts", "2026-09-18T08:00:00.000Z", "2026-09-18T08:10:00.000Z"],
+          ["a.ts", "2026-09-18T08:10:00.000Z", "2026-09-18T08:12:00.000Z"],
+        ]);
+        // When
+        const page = yield* breakdown({ range: day, groupBy: ["page"] });
+        const title = yield* breakdown({ range: day, groupBy: ["title"] });
+        return { page, title };
+      }),
+    );
+    // Then
+    const nodes = [
+      { name: "main.ts", seconds: 600, children: [] },
+      { name: "a.ts", seconds: 120, children: [] },
+    ];
+    expect([
+      result.page.blocks[0]?.nodes,
+      result.title.blocks[0]?.nodes,
+    ]).toEqual([nodes, nodes]);
+  });
+
+  it("a URL that does not parse counts as no URL", async () => {
+    // Given: one visit whose URL is 'not a url'
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVisits(store, [
+          [
+            "Weird",
+            "not a url",
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:05:00.000Z",
+          ],
+        ]);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      { name: "Weird", seconds: 300, children: [] },
+    ]);
+  });
+
+  it("a row with no URL and no title is (no title)", async () => {
+    // Given: one visit with neither
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVisits(store, [
+          [
+            null,
+            null,
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:05:00.000Z",
+          ],
+        ]);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      { name: "(no title)", seconds: 300, children: [] },
+    ]);
+  });
+
+  it("a page with a URL and no title keeps its URL", async () => {
+    // Given: one visit with a URL and no title
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVisits(store, [
+          [
+            null,
+            "https://example.com/x",
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:05:00.000Z",
+          ],
+        ]);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      {
+        name: "(no title)",
+        key: "https://example.com/x",
+        path: "/x",
+        seconds: 300,
+        children: [],
+      },
+    ]);
+  });
+
+  it("a page with no path carries no path", async () => {
+    // Given: one visit on brave://settings
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVisits(store, [
+          [
+            "Settings",
+            "brave://settings",
+            "2026-09-18T08:00:00.000Z",
+            "2026-09-18T08:05:00.000Z",
+          ],
+        ]);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      {
+        name: "Settings",
+        key: "brave://settings",
+        seconds: 300,
+        children: [],
+      },
+    ]);
+  });
+
+  it("a Private Activity is (private) at the page level", async () => {
+    // Given: seedPrivate, Brave 6m on wellfound.com and 20m Private
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedPrivate(store);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["page"] });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      { name: "(private)", private: true, seconds: 1200, children: [] },
+      {
+        name: "Jobs",
+        key: "https://wellfound.com/jobs",
+        path: "/jobs",
+        seconds: 360,
+        children: [],
+      },
+    ]);
+  });
+
+  it("title still splits the video by its titles", async () => {
+    // Given: seedVideo
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedVideo(store);
+        // When
+        return yield* breakdown({ range: day, groupBy: ["title"] });
+      }),
+    );
+    // Then
+    expect({
+      count: result.blocks[0]?.nodes.length,
+      first: result.blocks[0]?.nodes[0],
+    }).toEqual({
+      count: 13,
+      first: {
+        name: "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube - Audio playing - Brave",
+        seconds: 360,
+        children: [],
+      },
+    });
   });
 
   it("hour Blocks from 22:07 start short, then follow the clock", async () => {
