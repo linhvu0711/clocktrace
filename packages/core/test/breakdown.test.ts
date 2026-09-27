@@ -268,4 +268,88 @@ describe("breakdown", () => {
       "groupBy: must not name a level twice",
     ]);
   });
+
+  it("min 0s keeps each small line", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({ range: day, min: "0s" });
+      }),
+    );
+    // Then: Studio, then Code
+    expect(result.blocks[0]?.nodes[0]?.children[0]?.children).toEqual([
+      { name: "main.ts", seconds: 1800, children: [] },
+      { name: "a.ts", seconds: 20, children: [] },
+      { name: "b.ts", seconds: 15, children: [] },
+      { name: "c.ts", seconds: 10, children: [] },
+    ]);
+  });
+
+  it("min 11m merges three small lines and keeps a lone one", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: day,
+          groupBy: ["app", "title"],
+          min: "11m",
+        });
+      }),
+    );
+    // Then
+    expect(result.blocks[0]?.nodes).toEqual([
+      {
+        name: "Code",
+        key: "com.microsoft.VSCode",
+        seconds: 1845,
+        children: [
+          { name: "main.ts", seconds: 1800, children: [] },
+          { name: "3 small items", seconds: 45, small: 3, children: [] },
+        ],
+      },
+      { name: "Game", key: "com.example.game", seconds: 1800, children: [] },
+      {
+        name: "Obsidian",
+        key: "md.obsidian",
+        seconds: 1800,
+        children: [
+          { name: "Plan", seconds: 1200, children: [] },
+          { name: "Journal", seconds: 600, children: [] },
+        ],
+      },
+      {
+        name: "Brave",
+        key: "com.brave.Browser",
+        seconds: 880,
+        children: [
+          { name: "3 small items", seconds: 880, small: 3, children: [] },
+        ],
+      },
+      { name: "Books", key: "com.example.books", seconds: 300, children: [] },
+    ]);
+  });
+
+  it("min abc and -5s are rejected", async () => {
+    // Given: an empty store
+    const messages = await run(
+      // When
+      Effect.forEach(["abc", "-5s"], (min) =>
+        Effect.map(
+          Effect.flip(breakdown({ range: day, min })),
+          (error) => error.message,
+        ),
+      ),
+    );
+    // Then
+    expect(messages).toEqual([
+      "min: must be a whole number with s or m, as 60s or 2m",
+      "min: must be a whole number with s or m, as 60s or 2m",
+    ]);
+  });
 });

@@ -38,6 +38,22 @@ const Levels = Schema.Array(Level).pipe(
   ),
 );
 
+// The pattern carries the message, so abc and -5s get core's words.
+const minRule = {
+  message: () => "must be a whole number with s or m, as 60s or 2m",
+};
+
+/** `60s` or `2m` as text, seconds once decoded. */
+const Min = Schema.transform(
+  Schema.String.pipe(Schema.pattern(/^\d+[sm]$/, minRule)),
+  Schema.Int,
+  {
+    strict: true,
+    decode: (text) => Number(text.slice(0, -1)) * (text.endsWith("m") ? 60 : 1),
+    encode: (seconds) => `${seconds}s`,
+  },
+);
+
 export const defaultLevels: ReadonlyArray<Level> = [
   "device",
   "app",
@@ -85,6 +101,7 @@ export const BreakdownReply = Schema.Struct({
 export const BreakdownInput = Schema.Struct({
   range: Range,
   groupBy: Schema.optionalWith(Levels, { default: () => defaultLevels }),
+  min: Schema.optionalWith(Min, { default: () => 60 }),
 });
 
 type Row = RangeRows["rows"][number];
@@ -250,7 +267,7 @@ export const breakdown = (
       projectById: new Map(projects.map((p) => [p.id, p])),
       deviceById: new Map(devices.map((d) => [d.id, d])),
     };
-    const nodes = finish(group(rows, decoded.groupBy, lookups), 60);
+    const nodes = finish(group(rows, decoded.groupBy, lookups), decoded.min);
     const ms = rows.reduce((sum, row) => sum + row.ms, 0);
     return {
       range,
