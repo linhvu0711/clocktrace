@@ -20,7 +20,7 @@ export const toOption = Options.text("to").pipe(
 
 export const deviceOption = Options.text("device").pipe(
   Options.optional,
-  Options.withDescription("a Device id, see summary --group-by device"),
+  Options.withDescription("a Device id, see breakdown --group-by device"),
 );
 
 export class MissingWindowError extends Data.TaggedError("MissingWindowError")<{

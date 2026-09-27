@@ -1,6 +1,6 @@
 # clocktrace
 
-The `clocktrace` command: setup, uninstall, start, stop, status, permissions, mcp, and the Twins of the rule, category, project, and question tools (`rules`, `categories`, `projects`, `breakdown`, `summary`, `timeline`, `activities`, `status --json`).
+The `clocktrace` command: setup, uninstall, start, stop, status, permissions, mcp, and the Twins of the rule, category, project, and question tools (`rules`, `categories`, `projects`, `breakdown`, `activities`, `status --json`).
 The Collector itself lives in `packages/collector` and runs as a per-user
 launchd agent.
 
@@ -35,8 +35,6 @@ clocktrace categories remove <id> [--json]    # remove a Category no Rule uses
 clocktrace projects list [--json]             # one line per Project: id, name
 clocktrace projects set --name <n> [--id <id>] [--json]   # create, or rename by id
 clocktrace projects remove <id> [--json]      # remove a Project no Rule uses
-clocktrace summary --from <d> --to <d> [--group-by category|project|app|device] [--device <id>] [--json]   # window and zone, then seconds per group and the total; --group-by defaults to category
-clocktrace timeline --from <d> --to <d> [--device <id>] [--json]   # window, then one line per block: start, end, app, Category, Project
 clocktrace breakdown --from <d> --to <d> [--group-by <levels>] [--min 60s] [--devices <kinds or ids>] [--search <word>] [--block total|hour|15min] [--json]   # window and zone, then time as a tree; --group-by defaults to device,app,domain,title; --block hour or 15min gives one tree per clock Block
 clocktrace activities --from <d> --to <d> [--device <id>] [--app <a>] [--limit <n>] [--json]   # window, then one line per Activity: start, end, app, title, URL; at most 200
 clocktrace status --json   # the status tool's JSON
@@ -74,7 +72,7 @@ is not removed. A kept custom database is purged later with
 `CLOCKTRACE_DB=<path> clocktrace uninstall --purge`; the Done line
 prints that command, because the launch agent that knew the path is gone.
 
-`rules`, `categories`, `projects`, `breakdown`, `summary`, `timeline`, `activities`, and `status --json` are the Twins of the MCP tools
+`rules`, `categories`, `projects`, `breakdown`, `activities`, and `status --json` are the Twins of the MCP tools
 (ADR 0006): each calls the same core function as its tool, `--json`
 prints exactly what the tool returns, an empty list prints `none`, and
 a core error prints the tool's text and exits 1. A `compare` that holds
@@ -99,7 +97,7 @@ documented in `packages/collector/README.md`.
 2. `pnpm --filter cli exec clocktrace stop` twice prints `collector: stopped`
    twice; `start` twice prints `collector: running` twice.
 3. `pnpm --filter cli exec clocktrace bogus` prints
-   `Invalid subcommand for clocktrace - use one of 'setup', 'uninstall', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects', 'breakdown', 'summary', 'timeline', 'activities'`
+   `Invalid subcommand for clocktrace - use one of 'setup', 'uninstall', 'start', 'stop', 'status', 'permissions', 'mcp', 'rules', 'categories', 'projects', 'breakdown', 'activities'`
    and exits 1.
 4. `rm -rf ~/Applications/Clocktrace.app` then
    `pnpm --filter cli exec clocktrace status` prints

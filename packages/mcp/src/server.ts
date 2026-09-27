@@ -45,14 +45,8 @@ import {
   removeRule,
   Store,
   type StoreError,
-  SummaryInput,
-  SummaryReply,
   setCategory,
   setProject,
-  summary,
-  TimelineInput,
-  TimelineReply,
-  timeline,
 } from "@clocktrace/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -114,7 +108,7 @@ const inputShape = <A, I>(schema: Schema.Schema<A, I>) =>
   toZod(Schema.encodedSchema(schema));
 
 const instructions =
-  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, breakdown, summary, timeline, activities, status. breakdown, summary, timeline, and activities take range { from, to }: local dates YYYY-MM-DD or local date-times YYYY-MM-DDTHH:mm; compute words like today or this week yourself. Every reply starts with the exact window used and its zone.";
+  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, breakdown, activities, status. breakdown and activities take range { from, to }: local dates YYYY-MM-DD or local date-times YYYY-MM-DDTHH:mm; compute words like today or this week yourself. Every reply starts with the exact window used and its zone.";
 
 const failureText = (cause: Cause.Cause<ToolError>): string =>
   Option.match(Cause.failureOption(cause), {
@@ -297,21 +291,10 @@ export const makeServer = async (
   );
 
   tool(
-    "summary",
-    {
-      description:
-        "Seconds per Category, Project, app, or Device in a range. range is { from, to }: each a local date YYYY-MM-DD or a local date-time YYYY-MM-DDTHH:mm in the user's zone; a bare from is midnight, a bare to is the whole of that day. Compute today, yesterday, or this week yourself and pass dates. device is a Device id, the key of groupBy device. The reply starts with range { from, to, zone }, the exact window used, then rows and total seconds.",
-      input: SummaryInput,
-      output: SummaryReply,
-    },
-    summary,
-  );
-
-  tool(
     "breakdown",
     {
       description:
-        "Time summed as a tree in a range. groupBy is an ordered list of levels: category, project, device, app, domain, title; default device, app, domain, title. min is a whole number with s or m, default 60s: sibling lines under it merge into one 'N small items' line whose time still counts above. devices lists Device kinds (mac, iphone, ipad) or Device ids, default all. search keeps only Activities whose title or URL contains the word, in any case. notes can say an iPhone or iPad's data is not in yet after a time. block is total, hour, or 15min, default total: hour and 15min cut the window into Blocks on the local clock, an Activity across an edge is cut there, and a run of Blocks with no activity is one Block. Same range rules as summary. The reply starts with range { from, to, zone }, then blocks, each with start and end (local time with offset, YYYY-MM-DDTHH:mm±hh:mm), first and last (the first activity start and last activity end in the Block, left out when it has none), seconds, and a tree of nodes { name, seconds, children }, then notes.",
+        "Time summed as a tree in a range. groupBy is an ordered list of levels: category, project, device, app, domain, title; default device, app, domain, title. min is a whole number with s or m, default 60s: sibling lines under it merge into one 'N small items' line whose time still counts above. devices lists Device kinds (mac, iphone, ipad) or Device ids, default all. search keeps only Activities whose title or URL contains the word, in any case. notes can say an iPhone or iPad's data is not in yet after a time. block is total, hour, or 15min, default total: hour and 15min cut the window into Blocks on the local clock, an Activity across an edge is cut there, and a run of Blocks with no activity is one Block. range is { from, to }: each a local date YYYY-MM-DD or a local date-time YYYY-MM-DDTHH:mm in the user's zone; a bare from is midnight, a bare to is the whole of that day. Compute today, yesterday, or this week yourself and pass dates. The reply starts with range { from, to, zone }, then blocks, each with start and end (local time with offset, YYYY-MM-DDTHH:mm±hh:mm), first and last (the first activity start and last activity end in the Block, left out when it has none), seconds, and a tree of nodes { name, seconds, children }, then notes.",
       input: BreakdownInput,
       output: BreakdownReply,
     },
@@ -319,21 +302,10 @@ export const makeServer = async (
   );
 
   tool(
-    "timeline",
-    {
-      description:
-        "Blocks of continuous time in one app and Category within a range, in time order, clipped to the window. Same range rules as summary. device is a Device id, the key of summary with groupBy device. The reply starts with range { from, to, zone }, then rows and total, the block count.",
-      input: TimelineInput,
-      output: TimelineReply,
-    },
-    timeline,
-  );
-
-  tool(
     "activities",
     {
       description:
-        "Raw Activities (app, window title, URL, start, end) in a range, in time order, at most 200 per call. hasMore true means more exist: narrow the range, or filter by app (bundle id or app name) or device (a Device id). Same range rules as summary. The reply starts with range { from, to, zone }, then rows, total, and hasMore; capped true means a limit over 200 was cut to 200.",
+        "Raw Activities (app, window title, URL, start, end) in a range, in time order, at most 200 per call. hasMore true means more exist: narrow the range, or filter by app (bundle id or app name) or device (a Device id). Same range rules as breakdown. The reply starts with range { from, to, zone }, then rows, total, and hasMore; capped true means a limit over 200 was cut to 200.",
       input: ActivitiesInput,
       output: ActivitiesReply,
     },

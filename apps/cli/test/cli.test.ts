@@ -166,6 +166,46 @@ describe("cli", () => {
     }
   });
 
+  it("summary is an unknown command", async () => {
+    // Given
+    const argv = ["node", "clocktrace", "summary"];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(
+      Exit.isFailure(exit) &&
+        exit.cause._tag === "Fail" &&
+        ValidationError.isValidationError(exit.cause.error),
+    ).toBe(true);
+  });
+
+  it("timeline is an unknown command", async () => {
+    // Given
+    const argv = ["node", "clocktrace", "timeline"];
+    // When
+    const { exit } = await runArgv(argv);
+    // Then
+    expect(
+      Exit.isFailure(exit) &&
+        exit.cause._tag === "Fail" &&
+        ValidationError.isValidationError(exit.cause.error),
+    ).toBe(true);
+  });
+
+  it("help lists breakdown and neither summary nor timeline", async () => {
+    // Given
+    const argv = ["node", "clocktrace", "--help"];
+    // When
+    const { lines } = await runArgv(argv);
+    // Then
+    const text = lines.join("\n");
+    expect({
+      breakdown: text.includes("breakdown"),
+      summary: text.includes("summary"),
+      timeline: text.includes("timeline"),
+    }).toEqual({ breakdown: true, summary: false, timeline: false });
+  });
+
   it("a stray word is rejected", async () => {
     // Given
     const argv = ["node", "clocktrace", "status", "extra"];
@@ -245,56 +285,12 @@ describe("cli", () => {
     }
   });
 
-  it("an unknown group is a validation error", async () => {
-    // Given
-    const argv = [
-      "node",
-      "clocktrace",
-      "summary",
-      "--from",
-      "2026-09-18",
-      "--to",
-      "2026-09-18",
-      "--group-by",
-      "week",
-    ];
-    // When
-    const { exit } = await runArgv(argv);
-    // Then
-    expect(exit).toEqual(
-      Exit.fail(
-        ValidationError.invalidValue(
-          HelpDoc.p(
-            "Expected one of the following cases: category, project, app, device",
-          ),
-        ),
-      ),
-    );
-  });
-
-  it("summary before setup fails not set up", async () => {
+  it("breakdown before setup fails not set up", async () => {
     // Given: the launchd agent is not installed, no database file
     const argv = [
       "node",
       "clocktrace",
-      "summary",
-      "--from",
-      "2026-09-18",
-      "--to",
-      "2026-09-18",
-    ];
-    // When
-    const { exit } = await runArgv(argv);
-    // Then
-    expect(exit).toEqual(Exit.fail(new NotSetUpError({ dbPath: path })));
-  });
-
-  it("timeline before setup fails not set up", async () => {
-    // Given: the launchd agent is not installed, no database file
-    const argv = [
-      "node",
-      "clocktrace",
-      "timeline",
+      "breakdown",
       "--from",
       "2026-09-18",
       "--to",
@@ -351,8 +347,6 @@ describe("cli", () => {
       "list, set, or remove categories",
       "list, set, or remove projects",
       "show time as a tree by device, app, domain, and title",
-      "show time summed by category, project, app, or device",
-      "show a timeline of activity blocks",
       "list raw activities",
     ]) {
       expect(text).toContain(desc);
@@ -371,7 +365,7 @@ describe("cli", () => {
     }
     const text = lines.join("\n");
     expect(text).toContain("setup");
-    expect(text).toContain("summary");
+    expect(text).toContain("breakdown");
   });
 
   it("setup help describes --hosts", async () => {
@@ -440,7 +434,7 @@ describe("cli", () => {
 
   it("shared option descriptions read plainly", async () => {
     // Given
-    const argv = ["node", "clocktrace", "summary", "--help"];
+    const argv = ["node", "clocktrace", "activities", "--help"];
     // When
     const { exit, lines } = await runArgv(argv);
     // Then
@@ -449,57 +443,38 @@ describe("cli", () => {
     expect(text).toContain(
       "print JSON for scripts, the same shape the MCP tool returns",
     );
-    expect(text).toContain("a Device id, see summary --group-by device");
-    expect(text).toContain("how to group the rows");
-    expect(text).toContain(
-      "One of the following: category, project, app, device",
-    );
+    expect(text).toContain("a Device id, see breakdown --group-by device");
   });
 
   it("renderFriendly explains a missing window", () => {
     // Given / When / Then
     expect(
-      renderFriendly(new MissingWindowError({ command: "summary" })),
+      renderFriendly(new MissingWindowError({ command: "breakdown" })),
     ).toEqual([
-      "summary needs --from and --to.",
-      "example:  clocktrace summary --from YYYY-MM-DD --to YYYY-MM-DD",
+      "breakdown needs --from and --to.",
+      "example:  clocktrace breakdown --from YYYY-MM-DD --to YYYY-MM-DD",
     ]);
   });
 
   it("renderFriendly names each command", () => {
     // Given / When / Then
     expect(
-      renderFriendly(new MissingWindowError({ command: "timeline" }))[0],
-    ).toBe("timeline needs --from and --to.");
-    expect(
       renderFriendly(new MissingWindowError({ command: "activities" }))[0],
     ).toBe("activities needs --from and --to.");
   });
 
-  it("summary with no window explains itself", async () => {
+  it("breakdown with no window explains itself", async () => {
     // Given
-    const argv = ["node", "clocktrace", "summary"];
+    const argv = ["node", "clocktrace", "breakdown"];
     // When
     const { exit, lines } = await runArgv(argv);
     // Then
     expect(exit).toEqual(
-      Exit.fail(new MissingWindowError({ command: "summary" })),
+      Exit.fail(new MissingWindowError({ command: "breakdown" })),
     );
     const text = lines.join("\n");
-    expect(text).toContain("summary needs --from and --to.");
-    expect(text).toContain("example:  clocktrace summary --from");
-  });
-
-  it("timeline with no window explains itself", async () => {
-    // Given
-    const argv = ["node", "clocktrace", "timeline"];
-    // When
-    const { exit, lines } = await runArgv(argv);
-    // Then
-    expect(exit).toEqual(
-      Exit.fail(new MissingWindowError({ command: "timeline" })),
-    );
-    expect(lines.join("\n")).toContain("timeline needs --from and --to.");
+    expect(text).toContain("breakdown needs --from and --to.");
+    expect(text).toContain("example:  clocktrace breakdown --from");
   });
 
   it("activities with no window explains itself", async () => {
