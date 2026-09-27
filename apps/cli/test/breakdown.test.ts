@@ -603,4 +603,53 @@ describe("breakdown", () => {
     // Then
     expect(failure(exit)).toBe("block: must be one of total, hour, 15min");
   });
+
+  it("a clock hour that repeats when DST ends shows its offset", () => {
+    // Given: hour Blocks on 2026-11-01 in Los Angeles, color off
+    const look = { color: false, unicode: true, width: 0 };
+    // When
+    const lines = blocksScreen(
+      [
+        {
+          start: "2026-11-01T00:00-07:00",
+          end: "2026-11-01T01:00-07:00",
+          first: "2026-11-01T00:10-07:00",
+          last: "2026-11-01T00:50-07:00",
+          seconds: 2400,
+          nodes: [{ name: "Code", seconds: 2400, children: [] }],
+        },
+        {
+          start: "2026-11-01T01:00-07:00",
+          end: "2026-11-01T01:00-08:00",
+          first: "2026-11-01T01:03-07:00",
+          last: "2026-11-01T01:58-07:00",
+          seconds: 3300,
+          nodes: [{ name: "Code", seconds: 3300, children: [] }],
+        },
+        {
+          start: "2026-11-01T01:00-08:00",
+          end: "2026-11-01T02:00-08:00",
+          first: "2026-11-01T01:00-08:00",
+          last: "2026-11-01T01:40-08:00",
+          seconds: 2400,
+          nodes: [{ name: "Code", seconds: 2400, children: [] }],
+        },
+      ],
+      look,
+    );
+    // Then
+    expect(lines).toEqual([
+      "00:00–01:00   first 00:10 · last 00:50",
+      "40m 00s  Code",
+      "40m 00s  total",
+      "",
+      "01:00–02:00 -07:00   first 01:03 · last 01:58",
+      "55m 00s  Code",
+      "55m 00s  total",
+      "",
+      "01:00–02:00 -08:00   first 01:00 · last 01:40",
+      "40m 00s  Code",
+      "40m 00s  total",
+    ]);
+  });
 });

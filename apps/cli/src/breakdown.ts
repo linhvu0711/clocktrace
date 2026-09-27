@@ -88,16 +88,36 @@ export const breakdownScreen = (
   return columns(rows, look, { align: ["right"] });
 };
 
+/** `HH:mm` of a Block time, read at the offset `±hh:mm`. */
+const clockAt = (time: string, offset: string): string => {
+  const sign = offset.startsWith("-") ? -1 : 1;
+  const shift =
+    sign * (Number(offset.slice(1, 3)) * 60 + Number(offset.slice(4, 6)));
+  return new Date(Date.parse(time) + shift * 60_000)
+    .toISOString()
+    .slice(11, 16);
+};
+
 // One header per Block, then its tree; a date line when the day changes, as
 // the window line holds only the first date.
 export const blocksScreen = (
   blocks: ReadonlyArray<BreakdownBlock>,
   look: Look,
-): ReadonlyArray<string> =>
-  blocks.flatMap((block, i) => {
+): ReadonlyArray<string> => {
+  // When DST ends a clock time comes twice; those Blocks show their offset.
+  const offsets = new Map<string, Set<string>>();
+  for (const block of blocks) {
+    const seen = offsets.get(block.start.slice(0, 16)) ?? new Set<string>();
+    offsets.set(block.start.slice(0, 16), seen.add(block.start.slice(16)));
+  }
+  return blocks.flatMap((block, i) => {
     const before = blocks[i - 1];
     const day = block.start.slice(0, 10);
-    const label = `${block.start.slice(11, 16)}–${block.end.slice(11, 16)}`;
+    const offset = block.start.slice(16);
+    const repeats = (offsets.get(block.start.slice(0, 16))?.size ?? 0) > 1;
+    const label = repeats
+      ? `${block.start.slice(11, 16)}–${clockAt(block.end, offset)} ${offset}`
+      : `${block.start.slice(11, 16)}–${block.end.slice(11, 16)}`;
     const lead = [
       ...(before === undefined ? [] : [""]),
       ...(before === undefined || before.start.slice(0, 10) === day
@@ -121,6 +141,7 @@ export const blocksScreen = (
       ...breakdownScreen(block, look),
     ];
   });
+};
 
 export const printBreakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
