@@ -368,11 +368,12 @@ export const breakdown = (
       decoded.min,
     );
     const ms = rows.reduce((sum, row) => sum + row.ms, 0);
+    // Before search: a kind whose Activities only miss the word still has activity.
     const kindNotes = [...new Set(asked ?? [])]
       .filter(isKind)
       .filter(
         (kind) =>
-          !rows.some(
+          !loaded.rows.some(
             (row) =>
               lookups.deviceById.get(row.activity.deviceId)?.kind === kind,
           ),

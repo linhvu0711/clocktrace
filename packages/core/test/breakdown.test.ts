@@ -485,6 +485,24 @@ describe("breakdown", () => {
     });
   });
 
+  it("a search with no iPhone match does not say the iPhone has no activity", async () => {
+    // Given: seedBreakdown; the iPhone has a Game Activity with no title or URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: day,
+          devices: ["iphone"],
+          search: "github",
+        });
+      }),
+    );
+    // Then
+    expect(result.notes).toEqual(["no activity in this range"]);
+  });
+
   it("search empty is rejected", async () => {
     // Given: seedBreakdown
     const message = await run(
