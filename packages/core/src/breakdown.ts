@@ -1,4 +1,4 @@
-import { type DateTime, Effect, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
@@ -11,8 +11,9 @@ import {
 } from "./errors.js";
 import { decodeInput } from "./input.js";
 import { domainOf } from "./matcher.js";
+import { dataUpTo } from "./progress.js";
 import type { Project } from "./project.js";
-import { Range, UsedRange } from "./range.js";
+import { isoMinute, Range, UsedRange } from "./range.js";
 import { loadRange, type RangeRows } from "./range-rows.js";
 import { Store } from "./store.js";
 
@@ -115,9 +116,22 @@ export const BreakdownInput = Schema.Struct({
       Schema.minItems(1, { message: () => "must name at least one Device" }),
     ),
   ),
+  search: Schema.optional(
+    Schema.String.pipe(
+      Schema.minLength(1, { message: () => "must not be empty" }),
+    ),
+  ),
 });
 
 type Row = RangeRows["rows"][number];
+
+/** The title or URL holds the word, in any case; a row with neither never matches. */
+const matches = (row: Row, word: string): boolean => {
+  const w = word.toLowerCase();
+  return [row.activity.title, row.activity.url].some(
+    (text) => text?.toLowerCase().includes(w) === true,
+  );
+};
 
 interface Lookups {
   readonly categoryById: ReadonlyMap<string, Category>;
@@ -298,6 +312,30 @@ const pickDevices = (
     : Effect.fail(new DeviceNotFoundError({ id: unknown }));
 };
 
+/** One note per iPhone or iPad whose data ends before the window does. */
+const lateNotes = (
+  store: Store,
+  devices: ReadonlyArray<Device>,
+  to: DateTime.Utc,
+): Effect.Effect<ReadonlyArray<string>, StoreError, DateTime.CurrentTimeZone> =>
+  Effect.gen(function* () {
+    const zone = yield* DateTime.CurrentTimeZone;
+    const notes: Array<string> = [];
+    for (const device of devices) {
+      if (device.kind === "mac") {
+        continue;
+      }
+      const upTo = yield* dataUpTo(store, device);
+      if (Option.isSome(upTo) && DateTime.lessThan(upTo.value, to)) {
+        const at = isoMinute(DateTime.setZone(upTo.value, zone));
+        notes.push(
+          `${device.name} data up to ${at.replace("T", " ")}; later time is not in yet`,
+        );
+      }
+    }
+    return notes;
+  });
+
 export const breakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
 ): Effect.Effect<
@@ -313,10 +351,13 @@ export const breakdown = (
       asked === undefined
         ? undefined
         : yield* pickDevices(asked, yield* store.listDevices());
-    const { range, rows, categories, projects, devices } = yield* loadRange({
-      range: decoded.range,
-      deviceIds,
-    });
+    const loaded = yield* loadRange({ range: decoded.range, deviceIds });
+    const { range, categories, projects, devices } = loaded;
+    const search = decoded.search;
+    const rows =
+      search === undefined
+        ? loaded.rows
+        : loaded.rows.filter((row) => matches(row, search));
     const lookups: Lookups = {
       categoryById: new Map(categories.map((c) => [c.id, c])),
       projectById: new Map(projects.map((p) => [p.id, p])),
@@ -327,23 +368,33 @@ export const breakdown = (
       decoded.min,
     );
     const ms = rows.reduce((sum, row) => sum + row.ms, 0);
+    // Before search: a kind whose Activities only miss the word still has activity.
     const kindNotes = [...new Set(asked ?? [])]
       .filter(isKind)
       .filter(
         (kind) =>
-          !rows.some(
+          !loaded.rows.some(
             (row) =>
               lookups.deviceById.get(row.activity.deviceId)?.kind === kind,
           ),
       )
       .map((kind) => `no ${kind} Device has activity in this range`);
+    const late = yield* lateNotes(
+      store,
+      deviceIds === undefined
+        ? devices
+        : devices.filter((d) => deviceIds.includes(d.id)),
+      loaded.to,
+    );
     return {
       range,
       blocks: [{ seconds: Math.round(ms / 1000), nodes }],
-      notes:
-        nodes.length === 0 && kindNotes.length === 0
+      notes: [
+        ...late,
+        ...(nodes.length === 0 && kindNotes.length === 0
           ? ["no activity in this range"]
-          : kindNotes,
+          : kindNotes),
+      ],
     };
   });
 

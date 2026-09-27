@@ -311,7 +311,7 @@ export const makeServer = async (
     "breakdown",
     {
       description:
-        "Time summed as a tree in a range. groupBy is an ordered list of levels: category, project, device, app, domain, title; default device, app, domain, title. min is a whole number with s or m, default 60s: sibling lines under it merge into one 'N small items' line whose time still counts above. devices lists Device kinds (mac, iphone, ipad) or Device ids, default all. Same range rules as summary. The reply starts with range { from, to, zone }, then blocks (one, the whole window), each with seconds and a tree of nodes { name, seconds, children }, then notes.",
+        "Time summed as a tree in a range. groupBy is an ordered list of levels: category, project, device, app, domain, title; default device, app, domain, title. min is a whole number with s or m, default 60s: sibling lines under it merge into one 'N small items' line whose time still counts above. devices lists Device kinds (mac, iphone, ipad) or Device ids, default all. search keeps only Activities whose title or URL contains the word, in any case. notes can say an iPhone or iPad's data is not in yet after a time. Same range rules as summary. The reply starts with range { from, to, zone }, then blocks (one, the whole window), each with seconds and a tree of nodes { name, seconds, children }, then notes.",
       input: BreakdownInput,
       output: BreakdownReply,
     },
