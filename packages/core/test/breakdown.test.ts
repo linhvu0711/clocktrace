@@ -446,4 +446,30 @@ describe("breakdown", () => {
       "devices: must name at least one Device",
     ]);
   });
+
+  it("a blank level with nothing above it still shows its time", async () => {
+    // Given: seedBreakdown; the iPhone's Game has no URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: day,
+          groupBy: ["domain"],
+          devices: ["iphone"],
+        });
+      }),
+    );
+    // Then
+    expect({ blocks: result.blocks, notes: result.notes }).toEqual({
+      blocks: [
+        {
+          seconds: 1800,
+          nodes: [{ name: "(no domain)", seconds: 1800, children: [] }],
+        },
+      ],
+      notes: [],
+    });
+  });
 });

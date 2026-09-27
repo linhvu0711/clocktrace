@@ -199,10 +199,12 @@ interface Group {
   readonly children: ReadonlyArray<Group>;
 }
 
+/** `parent` is false only for the top level, which has no line above it. */
 const group = (
   rows: ReadonlyArray<Row>,
   levels: ReadonlyArray<Level>,
   l: Lookups,
+  parent: boolean,
 ): ReadonlyArray<Group> => {
   const [level, ...rest] = levels;
   if (level === undefined) {
@@ -219,14 +221,15 @@ const group = (
     }
   }
   const parts = [...byId.values()];
-  // An empty value with no siblings says nothing: skip the level.
-  if (parts.length === 1 && parts[0]?.part.empty === true) {
-    return group(rows, rest, l);
+  // An empty value with no siblings says nothing under its parent: skip the
+  // level. At the top there is no parent to carry the time, so it stays.
+  if (parent && parts.length === 1 && parts[0]?.part.empty === true) {
+    return group(rows, rest, l, parent);
   }
   return parts.map(({ part, rows }) => ({
     line: part.line,
     ms: rows.reduce((sum, row) => sum + row.ms, 0),
-    children: group(rows, rest, l),
+    children: group(rows, rest, l, true),
   }));
 };
 
@@ -309,7 +312,10 @@ export const breakdown = (
       projectById: new Map(projects.map((p) => [p.id, p])),
       deviceById: new Map(devices.map((d) => [d.id, d])),
     };
-    const nodes = finish(group(rows, decoded.groupBy, lookups), decoded.min);
+    const nodes = finish(
+      group(rows, decoded.groupBy, lookups, false),
+      decoded.min,
+    );
     const ms = rows.reduce((sum, row) => sum + row.ms, 0);
     const kindNotes = [...new Set(asked ?? [])]
       .filter(isKind)
