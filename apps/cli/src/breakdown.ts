@@ -22,6 +22,7 @@ import {
   columns,
   duration,
   type Look,
+  line,
   type Span,
   Style,
   span,
@@ -86,6 +87,10 @@ export const breakdownScreen = (
   return columns(rows, look, { align: ["right"] });
 };
 
+/** A note about the answer, as a warning: the reply is less than the whole picture. */
+export const noteLine = (note: string, look: Look): string =>
+  line([span("warn", `! ${note}`)], look);
+
 export const printBreakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
   json: boolean,
@@ -105,7 +110,7 @@ export const printBreakdown = (
     const levels = (input.groupBy ?? defaultLevels).join(", ");
     yield* report(json, encoded, (v) => [
       windowLine(input.range, v.range.zone, look, `by ${levels}`),
-      ...v.notes,
+      ...v.notes.map((note) => noteLine(note, look)),
       ...v.blocks.flatMap((block) =>
         block.nodes.length === 0 ? [] : breakdownScreen(block, look),
       ),
@@ -137,10 +142,25 @@ const devices = Options.text("devices").pipe(
   ),
 );
 
+const search = Options.text("search").pipe(
+  Options.optional,
+  Options.withDescription(
+    "count only Activities whose title or URL contains this word, in any case",
+  ),
+);
+
 export const breakdownCommand = Command.make(
   "breakdown",
-  { from: fromOption, to: toOption, groupBy, min, devices, json: jsonOption },
-  ({ from, to, groupBy, min, devices, json }) =>
+  {
+    from: fromOption,
+    to: toOption,
+    groupBy,
+    min,
+    devices,
+    search,
+    json: jsonOption,
+  },
+  ({ from, to, groupBy, min, devices, search, json }) =>
     Effect.gen(function* () {
       const range = yield* requireWindow("breakdown", from, to);
       return yield* whenSetUp(
@@ -153,6 +173,7 @@ export const breakdownCommand = Command.make(
               | undefined,
             min: Option.getOrUndefined(min),
             devices: Option.getOrUndefined(Option.map(devices, commaList)),
+            search: Option.getOrUndefined(search),
           },
           json,
         ),
