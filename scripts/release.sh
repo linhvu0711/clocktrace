@@ -139,6 +139,11 @@ else
 fi
 
 tar -czf "$tarball" -C "$stage" .
+# MIT needs the notice in every copy, and pnpm deploy leaves it out.
+if ! tar -tzf "$tarball" ./LICENSE >/dev/null 2>&1; then
+  echo "release: $tarball has no LICENSE"
+  exit 1
+fi
 echo "release: $tarball"
 shasum -a 256 "$tarball"
 
