@@ -16,12 +16,16 @@ import {
   type AppStore,
   activities,
   addRule,
+  BreakdownInput,
+  BreakdownReply,
+  breakdown,
   CategoriesReply,
   Category,
   CategoryInput,
   type CategoryInUseError,
   type CategoryNotFoundError,
   type DatabaseNewerError,
+  type DeviceNotFoundError,
   type InvalidInputError,
   type InvalidRangeError,
   type InvalidRuleError,
@@ -83,6 +87,7 @@ type ToolError =
   | InvalidRuleError
   | InvalidInputError
   | InvalidRangeError
+  | DeviceNotFoundError
   | RuleNotFoundError
   | CategoryNotFoundError
   | ProjectNotFoundError
@@ -109,7 +114,7 @@ const inputShape = <A, I>(schema: Schema.Schema<A, I>) =>
   toZod(Schema.encodedSchema(schema));
 
 const instructions =
-  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, summary, timeline, activities, status. summary, timeline, and activities take range { from, to }: local dates YYYY-MM-DD or local date-times YYYY-MM-DDTHH:mm; compute words like today or this week yourself. Every reply starts with the exact window used and its zone.";
+  "clocktrace is automatic time tracking for this Mac. Activities (app, window title, URL) are stored in a local SQLite database. Rules group them: a Rule sets a Category, sets a Project, or marks the Activity Private. Tools: list_categories, list_projects, list_rules, add_rule, remove_rule, remove_category, remove_project, set_category, set_project, breakdown, summary, timeline, activities, status. breakdown, summary, timeline, and activities take range { from, to }: local dates YYYY-MM-DD or local date-times YYYY-MM-DDTHH:mm; compute words like today or this week yourself. Every reply starts with the exact window used and its zone.";
 
 const failureText = (cause: Cause.Cause<ToolError>): string =>
   Option.match(Cause.failureOption(cause), {
@@ -300,6 +305,17 @@ export const makeServer = async (
       output: SummaryReply,
     },
     summary,
+  );
+
+  tool(
+    "breakdown",
+    {
+      description:
+        "Time summed as a tree in a range. groupBy is an ordered list of levels: category, project, device, app, domain, title; default device, app, domain, title. min is a whole number with s or m, default 60s: sibling lines under it merge into one 'N small items' line whose time still counts above. devices lists Device kinds (mac, iphone, ipad) or Device ids, default all. Same range rules as summary. The reply starts with range { from, to, zone }, then blocks (one, the whole window), each with seconds and a tree of nodes { name, seconds, children }, then notes.",
+      input: BreakdownInput,
+      output: BreakdownReply,
+    },
+    breakdown,
   );
 
   tool(

@@ -8,7 +8,7 @@ import {
   Store,
   summary,
 } from "../src/index.js";
-import { seedMany, seedTwoDevices } from "../src/testing.js";
+import { seedBreakdown, seedMany, seedTwoDevices } from "../src/testing.js";
 
 const EmptyStore = Layer.scoped(
   Store,
@@ -54,6 +54,25 @@ describe("testing", () => {
         { key: "com.apple.Safari", name: "Safari", seconds: 300 },
       ],
       total: 3,
+    });
+  });
+
+  it("seedBreakdown stores three Devices and 50 Activities", async () => {
+    // Given: an empty store
+    const { total, names } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        // When
+        yield* seedBreakdown(store);
+        const { total } = yield* activities({ range: day });
+        const devices = yield* store.listDevices();
+        return { total, names: devices.map((d) => d.name).sort() };
+      }),
+    );
+    // Then
+    expect({ total, names }).toEqual({
+      total: 50,
+      names: ["Studio", "iPad", "iPhone"],
     });
   });
 });

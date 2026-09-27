@@ -20,7 +20,12 @@ import {
   Store,
   type StoreShape,
 } from "@clocktrace/core";
-import { seedDay, seedMany, seedTwoDevices } from "@clocktrace/core/testing";
+import {
+  seedBreakdown,
+  seedDay,
+  seedMany,
+  seedTwoDevices,
+} from "@clocktrace/core/testing";
 import { NodeContext } from "@effect/platform-node";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -236,6 +241,7 @@ describe("server", () => {
       ],
       ["remove_project", await call("remove_project", { id: idOf(project) })],
       ["summary", await call("summary", { range: day, groupBy: "app" })],
+      ["breakdown", await call("breakdown", { range: day })],
       ["timeline", await call("timeline", { range: day })],
       ["activities", await call("activities", { range: day })],
       ["status", await call("status", {})],
@@ -254,6 +260,7 @@ describe("server", () => {
     expect(checks.map((c) => c.name).sort()).toEqual([
       "activities",
       "add_rule",
+      "breakdown",
       "list_categories",
       "list_projects",
       "list_rules",
@@ -836,7 +843,13 @@ describe("server", () => {
     // Then
     const names = tools.map((t) => t.name);
     expect(names).toEqual(
-      expect.arrayContaining(["status", "summary", "timeline", "activities"]),
+      expect.arrayContaining([
+        "status",
+        "summary",
+        "breakdown",
+        "timeline",
+        "activities",
+      ]),
     );
   });
 
@@ -1707,5 +1720,92 @@ describe("server", () => {
         bundleId: null,
       },
     ]);
+  });
+});
+
+describe("breakdown tool", () => {
+  const unknownId = "00000000-0000-4000-8000-000000000099";
+
+  it("breakdown answers the tree of the seeded day", async () => {
+    // Given: a server over seedBreakdown
+    const { client, close } = await connect(withActivities(seedBreakdown));
+    // When
+    const result = await callTool(client, {
+      name: "breakdown",
+      arguments: { range: day },
+    });
+    await close();
+    // Then
+    const reply = result.structuredContent as {
+      blocks: ReadonlyArray<{
+        seconds: number;
+        nodes: ReadonlyArray<{ name: string }>;
+      }>;
+      notes: ReadonlyArray<string>;
+    };
+    expect({
+      isError: result.isError,
+      seconds: reply.blocks[0]?.seconds,
+      names: reply.blocks[0]?.nodes.map((n) => n.name),
+      notes: reply.notes,
+      sameText:
+        JSON.stringify(JSON.parse(text(result))) === JSON.stringify(reply),
+    }).toEqual({
+      isError: undefined,
+      seconds: 6625,
+      names: ["Studio", "iPhone", "iPad"],
+      notes: [],
+      sameText: true,
+    });
+  });
+
+  it("a min that is not a duration gets core's text", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedBreakdown));
+    // When
+    const result = await callTool(client, {
+      name: "breakdown",
+      arguments: { range: day, min: "abc" },
+    });
+    await close();
+    // Then
+    expect({ isError: result.isError, text: text(result) }).toEqual({
+      isError: true,
+      text: "min: must be a whole number with s or m, as 60s or 2m",
+    });
+  });
+
+  it("a groupBy level outside the list names the allowed values", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedBreakdown));
+    // When
+    const result = await callTool(client, {
+      name: "breakdown",
+      arguments: { range: day, groupBy: ["colour"] },
+    });
+    await close();
+    // Then
+    expect({ isError: result.isError, text: text(result) }).toEqual({
+      isError: true,
+      text: expect.stringContaining(
+        'expected one of "category"|"project"|"device"|"app"|"domain"|"title"',
+      ),
+    });
+  });
+
+  it("an unknown Device id gets core's text", async () => {
+    // Given: the same
+    const { client, close } = await connect(withActivities(seedBreakdown));
+    // When
+    const result = await callTool(client, {
+      name: "breakdown",
+      arguments: { range: day, devices: [unknownId] },
+    });
+    await close();
+    // Then
+    expect({ isError: result.isError, text: text(result) }).toEqual({
+      isError: true,
+      text: `no Device with id ${unknownId} · see breakdown --group-by device`,
+    });
   });
 });

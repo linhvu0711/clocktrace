@@ -56,6 +56,154 @@ export const seedTwoDevices = (store: StoreShape) =>
     return studio;
   });
 
+// Studio with Obsidian (no URL), Brave (two Domains, 40 short visits, one
+// row with no URL) and Code (one long title, three short ones); an iPhone
+// with Game and an iPad with Books. 4525 s, 1800 s, 300 s on 2026-09-18.
+export const seedBreakdown = (store: StoreShape) =>
+  Effect.gen(function* () {
+    const studio = yield* store.upsertDevice({
+      kind: "mac",
+      name: "Studio",
+      externalId: "mac-1",
+    });
+    const iphone = yield* store.upsertDevice({
+      kind: "iphone",
+      name: "iPhone",
+      externalId: "iphone-1",
+    });
+    const ipad = yield* store.upsertDevice({
+      kind: "ipad",
+      name: "iPad",
+      externalId: "ipad-1",
+    });
+    const rows: ReadonlyArray<
+      readonly [
+        string,
+        string,
+        string,
+        string | null,
+        string | null,
+        string,
+        string,
+      ]
+    > = [
+      [
+        studio.id,
+        "md.obsidian",
+        "Obsidian",
+        "Plan",
+        null,
+        "08:00:00",
+        "08:20:00",
+      ],
+      [
+        studio.id,
+        "md.obsidian",
+        "Obsidian",
+        "Journal",
+        null,
+        "08:20:00",
+        "08:30:00",
+      ],
+      [
+        studio.id,
+        "com.brave.Browser",
+        "Brave",
+        "Jobs",
+        "https://wellfound.com/jobs",
+        "09:00:00",
+        "09:06:00",
+      ],
+      [
+        studio.id,
+        "com.brave.Browser",
+        "Brave",
+        "New Tab",
+        null,
+        "09:10:00",
+        "09:12:00",
+      ],
+      [
+        studio.id,
+        "com.microsoft.VSCode",
+        "Code",
+        "main.ts",
+        null,
+        "11:00:00",
+        "11:30:00",
+      ],
+      [
+        studio.id,
+        "com.microsoft.VSCode",
+        "Code",
+        "a.ts",
+        null,
+        "11:30:00",
+        "11:30:20",
+      ],
+      [
+        studio.id,
+        "com.microsoft.VSCode",
+        "Code",
+        "b.ts",
+        null,
+        "11:30:20",
+        "11:30:35",
+      ],
+      [
+        studio.id,
+        "com.microsoft.VSCode",
+        "Code",
+        "c.ts",
+        null,
+        "11:30:35",
+        "11:30:45",
+      ],
+      [
+        iphone.id,
+        "com.example.game",
+        "Game",
+        null,
+        null,
+        "19:00:00",
+        "19:30:00",
+      ],
+      [
+        ipad.id,
+        "com.example.books",
+        "Books",
+        null,
+        null,
+        "20:00:00",
+        "20:05:00",
+      ],
+    ];
+    for (const [deviceId, bundleId, appName, title, url, start, end] of rows) {
+      yield* store.insertActivity({
+        deviceId,
+        bundleId,
+        appName,
+        title,
+        url,
+        startedAt: t(`2026-09-18T${start}.000Z`),
+        endedAt: t(`2026-09-18T${end}.000Z`),
+      });
+    }
+    const tenAm = Date.UTC(2026, 8, 18, 10);
+    for (let i = 0; i < 40; i++) {
+      yield* store.insertActivity({
+        deviceId: studio.id,
+        bundleId: "com.brave.Browser",
+        appName: "Brave",
+        title: "Hacker News",
+        url: `https://news.ycombinator.com/item?id=${i}`,
+        startedAt: DateTime.unsafeMake(tenAm + i * 10_000),
+        endedAt: DateTime.unsafeMake(tenAm + (i + 1) * 10_000),
+      });
+    }
+    return { studio, iphone, ipad };
+  });
+
 // count one-minute Code Activities on Studio from 08:00Z
 export const seedMany = (store: StoreShape, count: number) =>
   Effect.gen(function* () {
