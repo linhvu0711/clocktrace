@@ -384,7 +384,7 @@ describe("rules", () => {
     expect(rule).toMatchObject({ effect: "private", target: null });
   });
 
-  it("readPrivate blanks title and url on a Private match", async () => {
+  it("readPrivate blanks title and url and marks the activity private on a Private match", async () => {
     // Given: Store.Test seeded with the Starter set, a device, an incognito title
     const result = await useTest(
       Effect.gen(function* () {
@@ -411,6 +411,7 @@ describe("rules", () => {
       ...result.activity,
       title: null,
       url: null,
+      private: true,
     });
   });
 

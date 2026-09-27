@@ -117,7 +117,7 @@ The host of an Activity's URL, as `api.github.com`. The Rule field `domain` test
 _Avoid_: Site, website, host, registrable domain
 
 **Private**:
-A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. It will also be stored marked private: planned in #238, not built yet. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
+A Rule kind. A matching Activity keeps its app and time but its title and URL are blanked before it is written, so they never touch disk. It is also stored marked private, and the mark holds no title and no URL. There is no opposite effect, so a Private rule cannot carry an exception; write the rule narrow instead. A Private window needs no Rule.
 _Avoid_: Ignore, exclude, hidden, public
 
 **Private window**:
