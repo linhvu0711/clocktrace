@@ -69,27 +69,25 @@ export const defaultLevels: ReadonlyArray<Level> = [
   "title",
 ];
 
-// Schema.suspend needs the type of a recursive shape declared first, so this
-// is the one domain shape with an interface beside its Schema.
-export interface BreakdownNode {
-  readonly name: string;
-  readonly seconds: number;
+const nodeFields = {
+  name: Schema.String,
+  seconds: Schema.Int,
   /** The Device, bundle, Category, or Project id behind the line. */
-  readonly key?: string;
-  readonly kind?: Schema.Schema.Type<typeof DeviceKind>;
-  readonly productive?: boolean;
+  key: Schema.optionalWith(Schema.String, { exact: true }),
+  kind: Schema.optionalWith(DeviceKind, { exact: true }),
+  productive: Schema.optionalWith(Schema.Boolean, { exact: true }),
   /** On an "N small items" line: how many lines it merges. */
-  readonly small?: number;
+  small: Schema.optionalWith(Schema.Int, { exact: true }),
+};
+
+// Schema.suspend needs a declared type; it takes every field from the
+// Schema and adds only the recursive one.
+export interface BreakdownNode extends Schema.Struct.Type<typeof nodeFields> {
   readonly children: ReadonlyArray<BreakdownNode>;
 }
 
 export const BreakdownNode: Schema.Schema<BreakdownNode> = Schema.Struct({
-  name: Schema.String,
-  seconds: Schema.Int,
-  key: Schema.optionalWith(Schema.String, { exact: true }),
-  kind: Schema.optionalWith(DeviceKind, { exact: true }),
-  productive: Schema.optionalWith(Schema.Boolean, { exact: true }),
-  small: Schema.optionalWith(Schema.Int, { exact: true }),
+  ...nodeFields,
   children: Schema.Array(
     Schema.suspend((): Schema.Schema<BreakdownNode> => BreakdownNode),
   ),
