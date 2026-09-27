@@ -7,7 +7,12 @@ import stringWidth from "string-width";
 
 export type Tone = "ok" | "warn" | "bad" | "dim" | "head";
 
-export type Span = { readonly text: string; readonly tone?: Tone };
+export type Span = {
+  readonly text: string;
+  readonly tone?: Tone;
+  /** A cut never shortens a kept span: the text before it is cut instead. */
+  readonly keep?: boolean;
+};
 
 export type Cell = string | Span | ReadonlyArray<string | Span>;
 
@@ -150,6 +155,18 @@ const take = (
 const cut = (cell: Cell, room: number, look: Look): ReadonlyArray<Span> => {
   const ellipsis = look.unicode ? "…" : "...";
   const e = stringWidth(ellipsis);
+  const cellSpans = spans(cell);
+  const kept = cellSpans.findIndex((s) => s.keep === true);
+  if (kept >= 0) {
+    const tail = cellSpans.slice(kept);
+    const tailWidth = visible(tail);
+    if (tailWidth + e < room) {
+      return [
+        ...cut(regroup(graphemes(cellSpans.slice(0, kept))), room - tailWidth, look),
+        ...tail,
+      ];
+    }
+  }
   const gs = graphemes(cell);
   return e > room
     ? regroup(take(gs, room))

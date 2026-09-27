@@ -478,6 +478,65 @@ describe("breakdown", () => {
     ]);
   });
 
+  it("a page line shows its path in gray after the title", () => {
+    // Given: color on
+    const look = { color: true, unicode: true, width: 0 };
+    const block: BreakdownBlock = {
+      start: "2026-09-18T00:00-07:00",
+      end: "2026-09-19T00:00-07:00",
+      seconds: 360,
+      nodes: [
+        {
+          name: "Jobs",
+          key: "https://wellfound.com/jobs",
+          path: "/jobs",
+          seconds: 360,
+          children: [],
+        },
+      ],
+    };
+    // When
+    const lines = breakdownScreen(block, look);
+    // Then
+    expect(lines).toEqual([
+      "6m 00s  Jobs  \u001b[0;90m/jobs\u001b[0m",
+      "6m 00s  \u001b[0;1mtotal\u001b[0m",
+    ]);
+  });
+
+  it("a long page title is cut and its path kept", () => {
+    // Given: a 60-column terminal
+    const look = { color: false, unicode: true, width: 60 };
+    const block: BreakdownBlock = {
+      start: "2026-09-18T00:00-07:00",
+      end: "2026-09-19T00:00-07:00",
+      seconds: 1560,
+      nodes: [
+        {
+          name: "www.youtube.com",
+          seconds: 1560,
+          children: [
+            {
+              name: "Top 2 in the World with my MAIN Deck for Season End 👑 - YouTube - Audio playing - Brave",
+              key: "https://www.youtube.com/watch?v=111fgmmrnKc",
+              path: "/watch?v=111fgmmrnKc",
+              seconds: 1560,
+              children: [],
+            },
+          ],
+        },
+      ],
+    };
+    // When
+    const lines = breakdownScreen(block, look);
+    // Then
+    expect(lines).toEqual([
+      "26m 00s  www.youtube.com",
+      "26m 00s  └─ Top 2 in the World with m…  /watch?v=111fgmmrnKc",
+      "26m 00s  total",
+    ]);
+  });
+
   it("ASCII guides when the terminal has no Unicode", () => {
     // Given: no Unicode
     const look = { color: false, unicode: false, width: 0 };

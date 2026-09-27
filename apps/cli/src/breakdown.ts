@@ -39,6 +39,13 @@ const guides = (look: Look) =>
     : { branch: "|- ", last: "`- ", through: "|  ", after: "   " };
 
 const nameCell = (node: BreakdownNode): ReadonlyArray<string | Span> => {
+  if (node.path !== undefined) {
+    return [
+      node.name,
+      { text: "  ", keep: true },
+      { text: node.path, tone: "dim", keep: true },
+    ];
+  }
   if (node.kind !== undefined && node.key !== undefined) {
     return [node.name, "  ", span("dim", `${node.kind} · ${node.key}`)];
   }
