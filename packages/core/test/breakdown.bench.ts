@@ -1,12 +1,12 @@
 import { DateTime, Effect, Layer, ManagedRuntime } from "effect";
 import { expect, test } from "vitest";
 
-import { AppStore, Store, summary } from "../src/index.js";
+import { AppStore, breakdown, Store } from "../src/index.js";
 
-// Target: summary over one year of 100 000 Activities runs under 2 seconds on a
+// Target: breakdown over one year of 100 000 Activities runs under 2 seconds on a
 // Mac. This is a benchmark run by hand (`pnpm --filter core bench`), never in
 // the test suite, so it never fails on time. The ~16 s of inserts is by design.
-test("summary over one year of 100 000 Activities", async ({ bench }) => {
+test("breakdown over one year of 100 000 Activities", async ({ bench }) => {
   // A ManagedRuntime keeps the seeded store alive across every bench
   // iteration; the store closes its db on scope exit, so re-providing the
   // layer per run would drop the 100 000 inserts.
@@ -65,26 +65,22 @@ test("summary over one year of 100 000 Activities", async ({ bench }) => {
     }),
   );
 
-  // When: only the summary call is benchmarked, against the seeded store.
+  // When: only the breakdown call is benchmarked, against the seeded store.
   let total = 0;
-  const result = await bench(
-    'summary({ groupBy: "category" }) over one year',
-    async () => {
-      const summ = await runtime.runPromise(
-        summary({
-          range: { from: "2025-09-01", to: "2026-08-31" },
-          groupBy: "category",
-        }).pipe(DateTime.withCurrentZoneNamed("America/Los_Angeles")),
-      );
-      total = summ.total;
-    },
-  ).run();
+  const result = await bench("breakdown() over one year", async () => {
+    const reply = await runtime.runPromise(
+      breakdown({
+        range: { from: "2025-09-01", to: "2026-08-31" },
+      }).pipe(DateTime.withCurrentZoneNamed("America/Los_Angeles")),
+    );
+    total = reply.blocks[0]?.seconds ?? 0;
+  }).run();
 
-  // Then: print the measured time and assert only that summary produced data.
+  // Then: print the measured time and assert only that breakdown produced data.
   // `process.stdout.write`, not `console.log`: vitest bench swallows console
   // output, and this keeps the file clear of the repo's noConsole lint rule.
   process.stdout.write(
-    `summary over 100 000 Activities: ${result.latency.mean.toFixed(0)} ms mean (target: under 2 s on a Mac)\n`,
+    `breakdown over 100 000 Activities: ${result.latency.mean.toFixed(0)} ms mean (target: under 2 s on a Mac)\n`,
   );
   expect(total).toBeGreaterThan(0);
 
