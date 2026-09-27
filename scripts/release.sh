@@ -102,6 +102,7 @@ tarball="release/clocktrace-$version-darwin-arm64.tar.gz"
 rm -rf "$stage" "$tarball"
 pnpm --filter @clocktrace/cli deploy --prod "$PWD/$stage"
 ln -s bin/clocktrace.js "$stage/clocktrace"
+cp LICENSE "$stage/LICENSE"
 
 # The same bundle setup writes in development (packages/collector/src/app.ts),
 # next to the Helper, where setup copies it whole.
