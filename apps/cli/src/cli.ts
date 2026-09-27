@@ -12,8 +12,6 @@ import { setupCommand } from "./setup.js";
 import { startCommand } from "./start.js";
 import { statusCommand } from "./status.js";
 import { stopCommand } from "./stop.js";
-import { summaryCommand } from "./summary.js";
-import { timelineCommand } from "./timeline.js";
 import { uninstallCommand } from "./uninstall.js";
 import { version } from "./version.js";
 import { MissingWindowError } from "./window.js";
@@ -32,8 +30,6 @@ export const command = Command.make("clocktrace").pipe(
     categoriesCommand,
     projectsCommand,
     breakdownCommand,
-    summaryCommand,
-    timelineCommand,
     activitiesCommand,
   ]),
 );
