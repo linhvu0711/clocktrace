@@ -85,6 +85,8 @@ const window = "2026-09-18 whole day · America/Los_Angeles";
 const unknownId = "00000000-0000-4000-8000-000000000099";
 
 const small: BreakdownBlock = {
+  start: "2026-09-18T11:00-07:00",
+  end: "2026-09-18T12:00-07:00",
   seconds: 1845,
   nodes: [
     {
@@ -288,6 +290,8 @@ describe("breakdown", () => {
     // Given: a 30-column terminal
     const look = { color: false, unicode: true, width: 30 };
     const block: BreakdownBlock = {
+      start: "2026-09-18T11:00-07:00",
+      end: "2026-09-18T12:00-07:00",
       seconds: 1800,
       nodes: [
         {

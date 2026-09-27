@@ -1,4 +1,4 @@
-import { type DateTime, Effect, Schema } from "effect";
+import { DateTime, Effect, Schema } from "effect";
 
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
@@ -12,7 +12,7 @@ import {
 import { decodeInput } from "./input.js";
 import { domainOf } from "./matcher.js";
 import type { Project } from "./project.js";
-import { Range, UsedRange } from "./range.js";
+import { isoMinute, Range, UsedRange } from "./range.js";
 import { loadRange, type RangeRows } from "./range-rows.js";
 import { Store } from "./store.js";
 
@@ -96,6 +96,12 @@ export const BreakdownNode: Schema.Schema<BreakdownNode> = Schema.Struct({
 }).annotations({ identifier: "BreakdownNode" });
 
 export const BreakdownBlock = Schema.Struct({
+  /** Local time with offset, YYYY-MM-DDTHH:mm±hh:mm. */
+  start: Schema.String,
+  end: Schema.String,
+  /** The first activity start and the last activity end in the Block, cut to it; left out when it has none. */
+  first: Schema.optionalWith(Schema.String, { exact: true }),
+  last: Schema.optionalWith(Schema.String, { exact: true }),
   seconds: Schema.Int,
   nodes: Schema.Array(BreakdownNode),
 });
@@ -298,6 +304,39 @@ const pickDevices = (
     : Effect.fail(new DeviceNotFoundError({ id: unknown }));
 };
 
+// Local wall clock plus offset, so the two 01:00 hours of the day DST ends differ.
+const stamp = (ms: number, zone: DateTime.TimeZone): string => {
+  const zoned = DateTime.setZone(DateTime.unsafeMake(ms), zone);
+  return `${isoMinute(zoned)}${DateTime.zonedOffsetIso(zoned)}`;
+};
+
+const blockOf = (
+  startMs: number,
+  endMs: number,
+  rows: ReadonlyArray<Row>,
+  levels: ReadonlyArray<Level>,
+  min: number,
+  lookups: Lookups,
+  zone: DateTime.TimeZone,
+): BreakdownBlock => {
+  const ms = rows.reduce((sum, row) => sum + row.ms, 0);
+  const first = Math.min(
+    ...rows.map((row) => Math.max(row.activity.startedAt.epochMillis, startMs)),
+  );
+  const last = Math.max(
+    ...rows.map((row) => Math.min(row.activity.endedAt.epochMillis, endMs)),
+  );
+  return {
+    start: stamp(startMs, zone),
+    end: stamp(endMs, zone),
+    ...(rows.length === 0
+      ? {}
+      : { first: stamp(first, zone), last: stamp(last, zone) }),
+    seconds: Math.round(ms / 1000),
+    nodes: finish(group(rows, levels, lookups, false), min),
+  };
+};
+
 export const breakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
 ): Effect.Effect<
@@ -313,20 +352,26 @@ export const breakdown = (
       asked === undefined
         ? undefined
         : yield* pickDevices(asked, yield* store.listDevices());
-    const { range, rows, categories, projects, devices } = yield* loadRange({
-      range: decoded.range,
-      deviceIds,
-    });
+    const zone = yield* DateTime.CurrentTimeZone;
+    const { range, rows, from, to, categories, projects, devices } =
+      yield* loadRange({
+        range: decoded.range,
+        deviceIds,
+      });
     const lookups: Lookups = {
       categoryById: new Map(categories.map((c) => [c.id, c])),
       projectById: new Map(projects.map((p) => [p.id, p])),
       deviceById: new Map(devices.map((d) => [d.id, d])),
     };
-    const nodes = finish(
-      group(rows, decoded.groupBy, lookups, false),
+    const block = blockOf(
+      from.epochMillis,
+      to.epochMillis,
+      rows,
+      decoded.groupBy,
       decoded.min,
+      lookups,
+      zone,
     );
-    const ms = rows.reduce((sum, row) => sum + row.ms, 0);
     const kindNotes = [...new Set(asked ?? [])]
       .filter(isKind)
       .filter(
@@ -339,9 +384,9 @@ export const breakdown = (
       .map((kind) => `no ${kind} Device has activity in this range`);
     return {
       range,
-      blocks: [{ seconds: Math.round(ms / 1000), nodes }],
+      blocks: [block],
       notes:
-        nodes.length === 0 && kindNotes.length === 0
+        block.nodes.length === 0 && kindNotes.length === 0
           ? ["no activity in this range"]
           : kindNotes,
     };

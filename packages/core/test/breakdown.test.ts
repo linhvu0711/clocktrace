@@ -48,6 +48,10 @@ describe("breakdown", () => {
       },
       blocks: [
         {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          first: "2026-09-18T01:00-07:00",
+          last: "2026-09-18T13:05-07:00",
           seconds: 6625,
           nodes: [
             {
@@ -142,6 +146,29 @@ describe("breakdown", () => {
     });
   });
 
+  it("a total Block carries the window and its first and last activity", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({ range: day });
+      }),
+    );
+    const { nodes: _nodes, ...block } = result.blocks[0] ?? {
+      nodes: [],
+    };
+    // Then
+    expect(block).toEqual({
+      start: "2026-09-18T00:00-07:00",
+      end: "2026-09-19T00:00-07:00",
+      first: "2026-09-18T01:00-07:00",
+      last: "2026-09-18T13:05-07:00",
+      seconds: 6625,
+    });
+  });
+
   it("breakdown of an empty window notes no activity", async () => {
     // Given: seedBreakdown
     const result = await run(
@@ -161,7 +188,14 @@ describe("breakdown", () => {
         to: "2026-09-02T00:00",
         zone: "America/Los_Angeles",
       },
-      blocks: [{ seconds: 0, nodes: [] }],
+      blocks: [
+        {
+          start: "2026-09-01T00:00-07:00",
+          end: "2026-09-02T00:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
       notes: ["no activity in this range"],
     });
   });
@@ -202,6 +236,10 @@ describe("breakdown", () => {
     // Then
     expect(result.blocks).toEqual([
       {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T01:00-07:00",
+        last: "2026-09-18T13:05-07:00",
         seconds: 6625,
         nodes: [
           { name: "Uncategorized", seconds: 3900, children: [] },
@@ -424,7 +462,14 @@ describe("breakdown", () => {
     );
     // Then
     expect({ blocks: result.blocks, notes: result.notes }).toEqual({
-      blocks: [{ seconds: 0, nodes: [] }],
+      blocks: [
+        {
+          start: "2026-09-18T01:00-07:00",
+          end: "2026-09-18T02:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
       notes: ["no iphone Device has activity in this range"],
     });
   });
@@ -465,6 +510,10 @@ describe("breakdown", () => {
     expect({ blocks: result.blocks, notes: result.notes }).toEqual({
       blocks: [
         {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          first: "2026-09-18T12:00-07:00",
+          last: "2026-09-18T12:30-07:00",
           seconds: 1800,
           nodes: [{ name: "(no domain)", seconds: 1800, children: [] }],
         },
