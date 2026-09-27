@@ -1,4 +1,4 @@
-import { type DateTime, Effect, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
@@ -11,8 +11,9 @@ import {
 } from "./errors.js";
 import { decodeInput } from "./input.js";
 import { domainOf } from "./matcher.js";
+import { dataUpTo } from "./progress.js";
 import type { Project } from "./project.js";
-import { Range, UsedRange } from "./range.js";
+import { isoMinute, Range, UsedRange } from "./range.js";
 import { loadRange, type RangeRows } from "./range-rows.js";
 import { Store } from "./store.js";
 
@@ -311,6 +312,30 @@ const pickDevices = (
     : Effect.fail(new DeviceNotFoundError({ id: unknown }));
 };
 
+/** One note per iPhone or iPad whose data ends before the window does. */
+const lateNotes = (
+  store: Store,
+  devices: ReadonlyArray<Device>,
+  to: DateTime.Utc,
+): Effect.Effect<ReadonlyArray<string>, StoreError, DateTime.CurrentTimeZone> =>
+  Effect.gen(function* () {
+    const zone = yield* DateTime.CurrentTimeZone;
+    const notes: Array<string> = [];
+    for (const device of devices) {
+      if (device.kind === "mac") {
+        continue;
+      }
+      const upTo = yield* dataUpTo(store, device);
+      if (Option.isSome(upTo) && DateTime.lessThan(upTo.value, to)) {
+        const at = isoMinute(DateTime.setZone(upTo.value, zone));
+        notes.push(
+          `${device.name} data up to ${at.replace("T", " ")}; later time is not in yet`,
+        );
+      }
+    }
+    return notes;
+  });
+
 export const breakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
 ): Effect.Effect<
@@ -353,13 +378,22 @@ export const breakdown = (
           ),
       )
       .map((kind) => `no ${kind} Device has activity in this range`);
+    const late = yield* lateNotes(
+      store,
+      deviceIds === undefined
+        ? devices
+        : devices.filter((d) => deviceIds.includes(d.id)),
+      loaded.to,
+    );
     return {
       range,
       blocks: [{ seconds: Math.round(ms / 1000), nodes }],
-      notes:
-        nodes.length === 0 && kindNotes.length === 0
+      notes: [
+        ...late,
+        ...(nodes.length === 0 && kindNotes.length === 0
           ? ["no activity in this range"]
-          : kindNotes,
+          : kindNotes),
+      ],
     };
   });
 

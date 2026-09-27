@@ -1,7 +1,8 @@
 // Test seeds shared by the CLI and MCP tests, published as
 // @clocktrace/core/testing so no app test holds its own copy.
-import { DateTime, Effect } from "effect";
+import { DateTime, Effect, Schema } from "effect";
 
+import { ImportProgress, importProgressKey } from "./progress.js";
 import type { StoreShape } from "./store.js";
 
 const t = (s: string) => DateTime.unsafeMake(s);
@@ -59,6 +60,7 @@ export const seedTwoDevices = (store: StoreShape) =>
 // Studio with Obsidian (no URL), Brave (two Domains, 40 short visits, one
 // row with no URL) and Code (one long title, three short ones); an iPhone
 // with Game and an iPad with Books. 4525 s, 1800 s, 300 s on 2026-09-18.
+// Progress for the iPhone and the iPad is past the day, so its data is in.
 export const seedBreakdown = (store: StoreShape) =>
   Effect.gen(function* () {
     const studio = yield* store.upsertDevice({
@@ -76,6 +78,17 @@ export const seedBreakdown = (store: StoreShape) =>
       name: "iPad",
       externalId: "ipad-1",
     });
+    // 2026-09-19T12:00Z, after the day ends at 07:00Z.
+    for (const externalId of ["iphone-1", "ipad-1"]) {
+      yield* store.setSetting(
+        importProgressKey(externalId),
+        Schema.encodeSync(ImportProgress)({
+          segment: "seed",
+          offset: 0,
+          ts: 1789819200,
+        }),
+      );
+    }
     const rows: ReadonlyArray<
       readonly [
         string,

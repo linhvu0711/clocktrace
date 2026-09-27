@@ -5,6 +5,7 @@ import {
   AppStore,
   addRule,
   breakdown,
+  importProgressKey,
   openStore,
   Store,
 } from "../src/index.js";
@@ -780,5 +781,44 @@ describe("breakdown", () => {
         ],
       },
     ]);
+  });
+
+  it("a late iPhone gets one note and the Mac none", async () => {
+    // Given: seedBreakdown, iPhone Progress at 15:00Z; its last Activity
+    // ends 19:30Z, 12:30 in Los Angeles
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        yield* store.setSetting(
+          importProgressKey("iphone-1"),
+          '{"segment":"s1","offset":0,"ts":1789743600}',
+        );
+        // When
+        return yield* breakdown({ range: day });
+      }),
+    );
+    // Then
+    expect(result.notes).toEqual([
+      "iPhone data up to 2026-09-18 12:30; later time is not in yet",
+    ]);
+  });
+
+  it("devices mac gets no iPhone note", async () => {
+    // Given: seedBreakdown with a late iPhone
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        yield* store.setSetting(
+          importProgressKey("iphone-1"),
+          '{"segment":"s1","offset":0,"ts":1789743600}',
+        );
+        // When
+        return yield* breakdown({ range: day, devices: ["mac"] });
+      }),
+    );
+    // Then
+    expect(result.notes).toEqual([]);
   });
 });
