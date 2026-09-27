@@ -31,11 +31,17 @@ import type { Prompt } from "./prompt.js";
 import { whenSetUp } from "./set-up.js";
 import { fromOption, requireWindow, toOption, windowLine } from "./window.js";
 
-const guides = { branch: "├─ ", last: "└─ ", through: "│  ", after: "   " };
+const guides = (look: Look) =>
+  look.unicode
+    ? { branch: "├─ ", last: "└─ ", through: "│  ", after: "   " }
+    : { branch: "|- ", last: "`- ", through: "|  ", after: "   " };
 
 const nameCell = (node: BreakdownNode): ReadonlyArray<string | Span> => {
   if (node.kind !== undefined && node.key !== undefined) {
     return [node.name, "  ", span("dim", `${node.kind} · ${node.key}`)];
+  }
+  if (node.small !== undefined) {
+    return [span("dim", node.name)];
   }
   if (node.productive !== undefined) {
     return [
@@ -55,6 +61,7 @@ export const breakdownScreen = (
   block: BreakdownBlock,
   look: Look,
 ): ReadonlyArray<string> => {
+  const g = guides(look);
   const rows: Array<ReadonlyArray<Cell>> = [];
   const walk = (
     nodes: ReadonlyArray<BreakdownNode>,
@@ -62,12 +69,15 @@ export const breakdownScreen = (
   ): void => {
     nodes.forEach((node, i) => {
       const last = i === nodes.length - 1;
-      const guide =
-        prefix === null ? "" : prefix + (last ? guides.last : guides.branch);
-      rows.push([duration(node.seconds), [guide, ...nameCell(node)]]);
+      const guide = prefix === null ? "" : prefix + (last ? g.last : g.branch);
+      const time = duration(node.seconds);
+      rows.push([
+        node.small === undefined ? time : span("dim", time),
+        [guide, ...nameCell(node)],
+      ]);
       walk(
         node.children,
-        prefix === null ? "" : prefix + (last ? guides.after : guides.through),
+        prefix === null ? "" : prefix + (last ? g.after : g.through),
       );
     });
   };

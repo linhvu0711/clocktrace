@@ -326,4 +326,32 @@ describe("breakdown", () => {
       "30m 45s  total",
     ]);
   });
+
+  it("a small items line is gray when color is on", () => {
+    // Given: color on
+    const look = { color: true, unicode: true, width: 0 };
+    // When
+    const lines = breakdownScreen(small, look);
+    // Then
+    expect(lines).toEqual([
+      "30m 45s  Code",
+      "30m 00s  ├─ main.ts",
+      "    \u001b[0;90m<1m\u001b[0m  └─ \u001b[0;90m3 small items\u001b[0m",
+      "30m 45s  \u001b[0;1mtotal\u001b[0m",
+    ]);
+  });
+
+  it("ASCII guides when the terminal has no Unicode", () => {
+    // Given: no Unicode
+    const look = { color: false, unicode: false, width: 0 };
+    // When
+    const lines = breakdownScreen(small, look);
+    // Then
+    expect(lines).toEqual([
+      "30m 45s  Code",
+      "30m 00s  |- main.ts",
+      "    <1m  \u0060- 3 small items",
+      "30m 45s  total",
+    ]);
+  });
 });
