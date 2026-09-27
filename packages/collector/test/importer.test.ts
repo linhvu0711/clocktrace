@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 
-import { addRule, type ImportBatch, Store, StoreError } from "@clocktrace/core";
+import {
+  addRule,
+  type ImportBatch,
+  importProgressKey,
+  Store,
+  StoreError,
+} from "@clocktrace/core";
 import {
   DateTime,
   Effect,
@@ -31,7 +37,6 @@ import {
 import {
   ImportResult,
   importOnce,
-  importProgressKey,
   importStatusKey,
   importTick,
 } from "../src/importer.js";

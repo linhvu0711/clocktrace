@@ -88,6 +88,10 @@ export const breakdownScreen = (
   return columns(rows, look, { align: ["right"] });
 };
 
+/** A note about the answer, as a warning: the reply is less than the whole picture. */
+export const noteLine = (note: string, look: Look): string =>
+  line([span("warn", `! ${note}`)], look);
+
 /** `HH:mm` of a Block time, read at the offset `±hh:mm`. */
 const clockAt = (time: string, offset: string): string => {
   const sign = offset.startsWith("-") ? -1 : 1;
@@ -165,7 +169,7 @@ export const printBreakdown = (
       block === "total"
         ? [
             windowLine(input.range, v.range.zone, look, `by ${levels}`),
-            ...v.notes,
+            ...v.notes.map((note) => noteLine(note, look)),
             ...v.blocks.flatMap((b) =>
               b.nodes.length === 0 ? [] : breakdownScreen(b, look),
             ),
@@ -177,7 +181,7 @@ export const printBreakdown = (
               look,
               `by ${levels} · per ${block}`,
             ),
-            ...v.notes,
+            ...v.notes.map((note) => noteLine(note, look)),
             ...(v.blocks.some((b) => b.nodes.length > 0)
               ? blocksScreen(v.blocks, look)
               : []),
@@ -210,6 +214,13 @@ const devices = Options.text("devices").pipe(
   ),
 );
 
+const search = Options.text("search").pipe(
+  Options.optional,
+  Options.withDescription(
+    "count only Activities whose title or URL contains this word, in any case",
+  ),
+);
+
 const block = Options.text("block").pipe(
   Options.optional,
   Options.withDescription(
@@ -225,10 +236,11 @@ export const breakdownCommand = Command.make(
     groupBy,
     min,
     devices,
+    search,
     block,
     json: jsonOption,
   },
-  ({ from, to, groupBy, min, devices, block, json }) =>
+  ({ from, to, groupBy, min, devices, search, block, json }) =>
     Effect.gen(function* () {
       const range = yield* requireWindow("breakdown", from, to);
       return yield* whenSetUp(
@@ -241,6 +253,7 @@ export const breakdownCommand = Command.make(
               | undefined,
             min: Option.getOrUndefined(min),
             devices: Option.getOrUndefined(Option.map(devices, commaList)),
+            search: Option.getOrUndefined(search),
             // Core checks the value and words the error.
             block: Option.getOrUndefined(block) as BlockSize | undefined,
           },

@@ -1,6 +1,9 @@
 import {
+  ImportProgress,
+  importProgressKey,
   type NewActivity,
   readPrivate,
+  readProgress,
   Store,
   type StoreError,
 } from "@clocktrace/core";
@@ -62,32 +65,7 @@ export const ImportResult = Schema.parseJson(
 
 export type ImportResult = Schema.Schema.Type<typeof ImportResult>;
 
-export const ImportProgress = Schema.parseJson(
-  Schema.Struct({
-    segment: Schema.String,
-    offset: Schema.Number,
-    ts: Schema.Number,
-  }),
-);
-
-export type ImportProgress = Schema.Schema.Type<typeof ImportProgress>;
-
 export const importStatusKey = "importer.status";
-export const importProgressKey = (externalId: string): string =>
-  `importer.progress.${externalId}`;
-
-/** A Device's Progress; none when it has no records yet or the value does not decode. */
-export const readProgress = (
-  store: Store,
-  externalId: string,
-): Effect.Effect<Option.Option<ImportProgress>, StoreError> =>
-  Effect.gen(function* () {
-    const stored = yield* store.getSetting(importProgressKey(externalId));
-    return yield* Effect.option(
-      Schema.decodeUnknown(ImportProgress)(Option.getOrElse(stored, () => "")),
-    );
-  });
-
 const encodeResult = Schema.encodeSync(ImportResult);
 const encodeProgress = Schema.encodeSync(ImportProgress);
 

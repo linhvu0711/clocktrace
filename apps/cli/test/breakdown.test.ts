@@ -4,6 +4,7 @@ import {
   type BreakdownBlock,
   BreakdownReply,
   breakdown,
+  importProgressKey,
   openStore,
   Store,
 } from "@clocktrace/core";
@@ -24,6 +25,7 @@ import {
   blocksScreen,
   breakdownScreen,
   commaList,
+  noteLine,
   printBreakdown,
 } from "../src/breakdown.js";
 import { Style } from "../src/format.js";
@@ -248,8 +250,84 @@ describe("breakdown", () => {
     // Then
     expect(output).toEqual([
       "2026-09-01 whole day · America/Los_Angeles · by device, app, domain, title",
-      "no activity in this range",
+      "! no activity in this range",
     ]);
+  });
+
+  it("search empty stops with core's message", async () => {
+    // Given: seedBreakdown
+    const { exit } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        yield* printBreakdown({ range: day, search: "" }, false);
+      }),
+    );
+    // Then
+    expect(failure(exit)).toBe("search: must not be empty");
+  });
+
+  it("breakdown prints a late iPhone note once at the top", async () => {
+    // Given: seedBreakdown, iPhone Progress at 15:00Z; its last Activity
+    // ends 19:30Z, 12:30 in Los Angeles
+    const { exit, output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const devices = yield* seedBreakdown(store);
+        yield* store.setSetting(
+          importProgressKey("iphone-1"),
+          '{"segment":"s1","offset":0,"ts":1789743600}',
+        );
+        // When
+        yield* printBreakdown({ range: day }, false);
+        return devices;
+      }),
+    );
+    // Then
+    if (Exit.isFailure(exit)) {
+      throw new Error(String(exit.cause));
+    }
+    expect({
+      top: output.slice(0, 3),
+      count: output.filter((l) => l.includes("data up to")).length,
+    }).toEqual({
+      top: [
+        `${window} · by device, app, domain, title`,
+        "! iPhone data up to 2026-09-18 12:30; later time is not in yet",
+        `1h 15m 25s  Studio  mac · ${exit.value.studio.id}`,
+      ],
+      count: 1,
+    });
+  });
+
+  it("breakdown --json carries the late note text", async () => {
+    // Given: seedBreakdown with a late iPhone
+    const { output } = await runPrint(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        yield* store.setSetting(
+          importProgressKey("iphone-1"),
+          '{"segment":"s1","offset":0,"ts":1789743600}',
+        );
+        // When
+        yield* printBreakdown({ range: day }, true);
+      }),
+    );
+    // Then
+    expect(JSON.parse(output[0] ?? "").notes).toEqual([
+      "iPhone data up to 2026-09-18 12:30; later time is not in yet",
+    ]);
+  });
+
+  it("a note is yellow with a ! when color is on", () => {
+    // Given: color on
+    const look = { color: true, unicode: true, width: 0 };
+    // When
+    const text = noteLine("no activity in this range", look);
+    // Then
+    expect(text).toBe("\u001b[0;33m! no activity in this range\u001b[0m");
   });
 
   it("bad group-by and min stop with core's message", async () => {

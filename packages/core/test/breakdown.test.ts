@@ -5,6 +5,7 @@ import {
   AppStore,
   addRule,
   breakdown,
+  importProgressKey,
   openStore,
   Store,
 } from "../src/index.js";
@@ -1029,5 +1030,223 @@ describe("breakdown", () => {
         nodes: [],
       },
     ]);
+  });
+
+  it("search wellfound and WellFound give the same tree of matching time", async () => {
+    // Given: seedBreakdown
+    const { lower, upper, studio } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const { studio } = yield* seedBreakdown(store);
+        // When
+        const lower = yield* breakdown({ range: day, search: "wellfound" });
+        const upper = yield* breakdown({ range: day, search: "WellFound" });
+        return { lower, upper, studio };
+      }),
+    );
+    // Then
+    const tree = {
+      blocks: [
+        {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          first: "2026-09-18T02:00-07:00",
+          last: "2026-09-18T02:06-07:00",
+          seconds: 360,
+          nodes: [
+            {
+              name: "Studio",
+              key: studio.id,
+              kind: "mac",
+              seconds: 360,
+              children: [
+                {
+                  name: "Brave",
+                  key: "com.brave.Browser",
+                  seconds: 360,
+                  children: [
+                    {
+                      name: "wellfound.com",
+                      seconds: 360,
+                      children: [{ name: "Jobs", seconds: 360, children: [] }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      notes: [],
+    };
+    expect([
+      { blocks: lower.blocks, notes: lower.notes },
+      { blocks: upper.blocks, notes: upper.notes },
+    ]).toEqual([tree, tree]);
+  });
+
+  it("search github.com/clocktrace matches the URL path", async () => {
+    // Given: seedBreakdown, a Pull request on github.com/clocktrace and an
+    // Effect page on github.com/Effect-TS
+    const { result, studio } = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const { studio } = yield* seedBreakdown(store);
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.brave.Browser",
+          appName: "Brave",
+          title: "Pull request",
+          url: "https://github.com/clocktrace/clocktrace/pull/244",
+          startedAt: DateTime.unsafeMake("2026-09-18T10:30:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T10:40:00.000Z"),
+        });
+        yield* store.insertActivity({
+          deviceId: studio.id,
+          bundleId: "com.brave.Browser",
+          appName: "Brave",
+          title: "Effect",
+          url: "https://github.com/Effect-TS/effect",
+          startedAt: DateTime.unsafeMake("2026-09-18T10:40:00.000Z"),
+          endedAt: DateTime.unsafeMake("2026-09-18T10:45:00.000Z"),
+        });
+        // When
+        const result = yield* breakdown({
+          range: day,
+          search: "github.com/clocktrace",
+        });
+        return { result, studio };
+      }),
+    );
+    // Then
+    expect(result.blocks).toEqual([
+      {
+        start: "2026-09-18T00:00-07:00",
+        end: "2026-09-19T00:00-07:00",
+        first: "2026-09-18T03:30-07:00",
+        last: "2026-09-18T03:40-07:00",
+        seconds: 600,
+        nodes: [
+          {
+            name: "Studio",
+            key: studio.id,
+            kind: "mac",
+            seconds: 600,
+            children: [
+              {
+                name: "Brave",
+                key: "com.brave.Browser",
+                seconds: 600,
+                children: [
+                  {
+                    name: "github.com",
+                    seconds: 600,
+                    children: [
+                      { name: "Pull request", seconds: 600, children: [] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("a search with no match notes no activity", async () => {
+    // Given: seedBreakdown; the iPhone's Game row has no title and no URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({ range: day, search: "game" });
+      }),
+    );
+    // Then
+    expect({ blocks: result.blocks, notes: result.notes }).toEqual({
+      blocks: [
+        {
+          start: "2026-09-18T00:00-07:00",
+          end: "2026-09-19T00:00-07:00",
+          seconds: 0,
+          nodes: [],
+        },
+      ],
+      notes: ["no activity in this range"],
+    });
+  });
+
+  it("a search with no iPhone match does not say the iPhone has no activity", async () => {
+    // Given: seedBreakdown; the iPhone has a Game Activity with no title or URL
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: day,
+          devices: ["iphone"],
+          search: "github",
+        });
+      }),
+    );
+    // Then
+    expect(result.notes).toEqual(["no activity in this range"]);
+  });
+
+  it("search empty is rejected", async () => {
+    // Given: seedBreakdown
+    const message = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        const error = yield* Effect.flip(breakdown({ range: day, search: "" }));
+        return error.message;
+      }),
+    );
+    // Then
+    expect(message).toBe("search: must not be empty");
+  });
+
+  it("a late iPhone gets one note and the Mac none", async () => {
+    // Given: seedBreakdown, iPhone Progress at 15:00Z; its last Activity
+    // ends 19:30Z, 12:30 in Los Angeles
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        yield* store.setSetting(
+          importProgressKey("iphone-1"),
+          '{"segment":"s1","offset":0,"ts":1789743600}',
+        );
+        // When
+        return yield* breakdown({ range: day });
+      }),
+    );
+    // Then
+    expect(result.notes).toEqual([
+      "iPhone data up to 2026-09-18 12:30; later time is not in yet",
+    ]);
+  });
+
+  it("devices mac gets no iPhone note", async () => {
+    // Given: seedBreakdown with a late iPhone
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        yield* store.setSetting(
+          importProgressKey("iphone-1"),
+          '{"segment":"s1","offset":0,"ts":1789743600}',
+        );
+        // When
+        return yield* breakdown({ range: day, devices: ["mac"] });
+      }),
+    );
+    // Then
+    expect(result.notes).toEqual([]);
   });
 });

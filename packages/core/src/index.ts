@@ -11,6 +11,7 @@ export * from "./import-batch.js";
 export * from "./ios-app-names.js";
 export * from "./matcher.js";
 export * from "./migrations.js";
+export * from "./progress.js";
 export * from "./project.js";
 export * from "./projects.js";
 export * from "./queries.js";
