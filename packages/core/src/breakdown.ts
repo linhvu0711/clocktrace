@@ -358,8 +358,10 @@ const stamp = (ms: number, zone: DateTime.TimeZone): string => {
 
 const stepMinutes = { hour: 60, "15min": 15 } as const;
 
-// Block edges on the local clock: a step from the last edge, then back to the
-// nearest whole step, so a DST jump still lands on the clock.
+// Block edges on the local clock. Every zone's offset is a whole number of
+// quarter-hours, so each clock quarter-hour is a UTC quarter-hour: walk those
+// and keep the ones whose local minute is on the step. A DST jump of an hour
+// or of 30 minutes then still lands on the clock.
 const edges = (
   fromMs: number,
   toMs: number,
@@ -371,24 +373,21 @@ const edges = (
     return [fromMs, toMs];
   }
   const minutes = stepMinutes[size];
-  const step = minutes * 60_000;
-  const floor = (ms: number): number => {
-    const parts = DateTime.toParts(
-      DateTime.setZone(DateTime.unsafeMake(ms), zone),
-    );
-    return (
-      ms -
-      ((parts.minutes % minutes) * 60 + parts.seconds) * 1000 -
-      parts.millis
-    );
-  };
+  const quarter = 15 * 60_000;
   const out = [fromMs];
-  let t = fromMs;
-  while (t < toMs) {
-    const next = floor(t + step);
-    t = Math.min(next <= t ? t + step : next, toMs);
-    out.push(t);
+  for (
+    let t = Math.floor(fromMs / quarter) * quarter + quarter;
+    t < toMs;
+    t += quarter
+  ) {
+    const local = DateTime.toParts(
+      DateTime.setZone(DateTime.unsafeMake(t), zone),
+    );
+    if (local.minutes % minutes === 0) {
+      out.push(t);
+    }
   }
+  out.push(toMs);
   return out;
 };
 

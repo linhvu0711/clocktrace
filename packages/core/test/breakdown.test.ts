@@ -1249,4 +1249,48 @@ describe("breakdown", () => {
     // Then
     expect(result.notes).toEqual([]);
   });
+
+  it("hour Blocks follow the clock when DST moves it 30 minutes", async () => {
+    // Given: Code over the whole day DST starts on Lord Howe Island, 02:00 to 02:30
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedRuns(store, [
+          ["a", "2026-10-03T13:30:00.000Z", "2026-10-04T13:00:00.000Z"],
+        ]);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-10-04", to: "2026-10-04" },
+          block: "hour",
+          groupBy: ["app"],
+        });
+      }).pipe(DateTime.withCurrentZoneNamed("Australia/Lord_Howe")),
+    );
+    // Then
+    expect(result.blocks.map((b) => b.start)).toEqual([
+      "2026-10-04T00:00+10:30",
+      "2026-10-04T01:00+10:30",
+      "2026-10-04T03:00+11:00",
+      "2026-10-04T04:00+11:00",
+      "2026-10-04T05:00+11:00",
+      "2026-10-04T06:00+11:00",
+      "2026-10-04T07:00+11:00",
+      "2026-10-04T08:00+11:00",
+      "2026-10-04T09:00+11:00",
+      "2026-10-04T10:00+11:00",
+      "2026-10-04T11:00+11:00",
+      "2026-10-04T12:00+11:00",
+      "2026-10-04T13:00+11:00",
+      "2026-10-04T14:00+11:00",
+      "2026-10-04T15:00+11:00",
+      "2026-10-04T16:00+11:00",
+      "2026-10-04T17:00+11:00",
+      "2026-10-04T18:00+11:00",
+      "2026-10-04T19:00+11:00",
+      "2026-10-04T20:00+11:00",
+      "2026-10-04T21:00+11:00",
+      "2026-10-04T22:00+11:00",
+      "2026-10-04T23:00+11:00",
+    ]);
+  });
 });
