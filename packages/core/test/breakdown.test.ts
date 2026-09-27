@@ -352,4 +352,98 @@ describe("breakdown", () => {
       "min: must be a whole number with s or m, as 60s or 2m",
     ]);
   });
+
+  it("devices mac and iphone leave out the iPad", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({ range: day, devices: ["mac", "iphone"] });
+      }),
+    );
+    // Then
+    expect({
+      seconds: result.blocks[0]?.seconds,
+      names: result.blocks[0]?.nodes.map((n) => n.name),
+      notes: result.notes,
+    }).toEqual({ seconds: 6325, names: ["Studio", "iPhone"], notes: [] });
+  });
+
+  it("devices by id keeps one Device", async () => {
+    // Given: seedBreakdown
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        const { studio } = yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({ range: day, devices: [studio.id] });
+      }),
+    );
+    // Then
+    expect({
+      seconds: result.blocks[0]?.seconds,
+      names: result.blocks[0]?.nodes.map((n) => n.name),
+    }).toEqual({ seconds: 4525, names: ["Studio"] });
+  });
+
+  it("an unknown Device id fails", async () => {
+    // Given: seedBreakdown
+    const error = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* Effect.flip(
+          breakdown({
+            range: day,
+            devices: ["00000000-0000-4000-8000-000000000099"],
+          }),
+        );
+      }),
+    );
+    // Then
+    expect(`${error._tag} ${error.message}`).toBe(
+      "DeviceNotFoundError no Device with id 00000000-0000-4000-8000-000000000099 · see breakdown --group-by device",
+    );
+  });
+
+  it("a kind with no activity gives an empty tree and a note", async () => {
+    // Given: seedBreakdown; 08:00Z to 09:00Z holds only Obsidian
+    const result = await run(
+      Effect.gen(function* () {
+        const store = yield* Store;
+        yield* seedBreakdown(store);
+        // When
+        return yield* breakdown({
+          range: { from: "2026-09-18T01:00", to: "2026-09-18T02:00" },
+          devices: ["iphone"],
+        });
+      }),
+    );
+    // Then
+    expect({ blocks: result.blocks, notes: result.notes }).toEqual({
+      blocks: [{ seconds: 0, nodes: [] }],
+      notes: ["no iphone Device has activity in this range"],
+    });
+  });
+
+  it("a device that is neither a kind nor an id is rejected", async () => {
+    // Given: an empty store
+    const messages = await run(
+      // When
+      Effect.forEach([["phone"], []], (devices) =>
+        Effect.map(
+          Effect.flip(breakdown({ range: day, devices } as never)),
+          (error) => error.message,
+        ),
+      ),
+    );
+    // Then
+    expect(messages).toEqual([
+      "devices.0: must be a Device kind (mac, iphone, ipad) or a Device id",
+      "devices: must name at least one Device",
+    ]);
+  });
 });

@@ -3,17 +3,18 @@ import { type DateTime, Effect, Schema } from "effect";
 import type { AppStore } from "./app-store.js";
 import type { Category } from "./category.js";
 import { type Device, DeviceKind } from "./device.js";
-import type {
-  InvalidInputError,
-  InvalidRangeError,
-  StoreError,
+import {
+  DeviceNotFoundError,
+  type InvalidInputError,
+  type InvalidRangeError,
+  type StoreError,
 } from "./errors.js";
 import { decodeInput } from "./input.js";
 import { domainOf } from "./matcher.js";
 import type { Project } from "./project.js";
 import { Range, UsedRange } from "./range.js";
 import { loadRange, type RangeRows } from "./range-rows.js";
-import type { Store } from "./store.js";
+import { Store } from "./store.js";
 
 // override: without it the literal union keeps Effect's own words.
 export const Level = Schema.Literal(
@@ -53,6 +54,13 @@ const Min = Schema.transform(
     encode: (seconds) => `${seconds}s`,
   },
 );
+
+const DeviceSelector = Schema.Union(DeviceKind, Schema.UUID).annotations({
+  message: () => ({
+    message: "must be a Device kind (mac, iphone, ipad) or a Device id",
+    override: true,
+  }),
+});
 
 export const defaultLevels: ReadonlyArray<Level> = [
   "device",
@@ -102,6 +110,11 @@ export const BreakdownInput = Schema.Struct({
   range: Range,
   groupBy: Schema.optionalWith(Levels, { default: () => defaultLevels }),
   min: Schema.optionalWith(Min, { default: () => 60 }),
+  devices: Schema.optional(
+    Schema.Array(DeviceSelector).pipe(
+      Schema.minItems(1, { message: () => "must name at least one Device" }),
+    ),
+  ),
 });
 
 type Row = RangeRows["rows"][number];
@@ -250,17 +263,46 @@ const finish = (
   ];
 };
 
+type Kind = Schema.Schema.Type<typeof DeviceKind>;
+
+const isKind = (value: string): value is Kind =>
+  (DeviceKind.literals as ReadonlyArray<string>).includes(value);
+
+/** The Devices a list of kinds and ids names; an id no Device has fails. */
+const pickDevices = (
+  asked: ReadonlyArray<string>,
+  devices: ReadonlyArray<Device>,
+): Effect.Effect<ReadonlyArray<string>, DeviceNotFoundError> => {
+  const unknown = asked.find(
+    (id) => !isKind(id) && !devices.some((d) => d.id === id),
+  );
+  return unknown === undefined
+    ? Effect.succeed(
+        devices
+          .filter((d) => asked.includes(d.kind) || asked.includes(d.id))
+          .map((d) => d.id),
+      )
+    : Effect.fail(new DeviceNotFoundError({ id: unknown }));
+};
+
 export const breakdown = (
   input: Schema.Schema.Encoded<typeof BreakdownInput>,
 ): Effect.Effect<
   BreakdownReply,
-  InvalidInputError | InvalidRangeError | StoreError,
+  InvalidInputError | InvalidRangeError | DeviceNotFoundError | StoreError,
   Store | AppStore | DateTime.CurrentTimeZone
 > =>
   Effect.gen(function* () {
     const decoded = yield* decodeInput(BreakdownInput)(input);
+    const store = yield* Store;
+    const asked = decoded.devices;
+    const deviceIds =
+      asked === undefined
+        ? undefined
+        : yield* pickDevices(asked, yield* store.listDevices());
     const { range, rows, categories, projects, devices } = yield* loadRange({
       range: decoded.range,
+      deviceIds,
     });
     const lookups: Lookups = {
       categoryById: new Map(categories.map((c) => [c.id, c])),
@@ -269,10 +311,23 @@ export const breakdown = (
     };
     const nodes = finish(group(rows, decoded.groupBy, lookups), decoded.min);
     const ms = rows.reduce((sum, row) => sum + row.ms, 0);
+    const kindNotes = [...new Set(asked ?? [])]
+      .filter(isKind)
+      .filter(
+        (kind) =>
+          !rows.some(
+            (row) =>
+              lookups.deviceById.get(row.activity.deviceId)?.kind === kind,
+          ),
+      )
+      .map((kind) => `no ${kind} Device has activity in this range`);
     return {
       range,
       blocks: [{ seconds: Math.round(ms / 1000), nodes }],
-      notes: nodes.length === 0 ? ["no activity in this range"] : [],
+      notes:
+        nodes.length === 0 && kindNotes.length === 0
+          ? ["no activity in this range"]
+          : kindNotes,
     };
   });
 

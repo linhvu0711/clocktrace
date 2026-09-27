@@ -34,6 +34,16 @@ export class RuleNotFoundError extends Data.TaggedError("RuleNotFoundError")<{
   }
 }
 
+export class DeviceNotFoundError extends Data.TaggedError(
+  "DeviceNotFoundError",
+)<{
+  readonly id: string;
+}> {
+  override get message(): string {
+    return `no Device with id ${this.id} · see breakdown --group-by device`;
+  }
+}
+
 export class CategoryNotFoundError extends Data.TaggedError(
   "CategoryNotFoundError",
 )<{
