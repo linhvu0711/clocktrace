@@ -49,6 +49,18 @@ const compare = (rule: Rule, candidate: string): boolean => {
   }
 };
 
+/** The host of a URL, the Domain; null for no URL or one that does not parse. */
+export const domainOf = (url: string | null): string | null => {
+  if (url === null) {
+    return null;
+  }
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+};
+
 const candidates = (
   rule: Rule,
   activity: NewActivity,
@@ -62,14 +74,8 @@ const candidates = (
     case "url":
       return activity.url === null ? [] : [activity.url];
     case "domain": {
-      if (activity.url === null) {
-        return [];
-      }
-      try {
-        return [new URL(activity.url).hostname];
-      } catch {
-        return [];
-      }
+      const domain = domainOf(activity.url);
+      return domain === null ? [] : [domain];
     }
     case "device":
       return device === null ? [] : [device.kind, device.name];

@@ -2,7 +2,7 @@ import { DateTime } from "effect";
 import { describe, expect, it } from "vitest";
 
 import type { Category, Device, NewActivity, Rule } from "../src/index.js";
-import { resolve } from "../src/index.js";
+import { domainOf, resolve } from "../src/index.js";
 
 const deviceId = "00000000-0000-4000-8000-000000000001";
 const device: Device = {
@@ -421,5 +421,17 @@ describe("matcher", () => {
     const resolution = resolve(chrome, [], device, null, [social]);
     // Then
     expect(resolution.categoryId).toBeNull();
+  });
+
+  it("domainOf reads the host and gives null for no URL or a bad one", () => {
+    // Given: nothing
+    // When
+    const hosts = [
+      domainOf("https://api.github.com/x"),
+      domainOf(null),
+      domainOf("not a url"),
+    ];
+    // Then
+    expect(hosts).toEqual(["api.github.com", null, null]);
   });
 });
