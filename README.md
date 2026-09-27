@@ -117,6 +117,10 @@ Where code goes, and the rest of the rules, are in `CODING_STANDARDS.md`.
 
 The root lists `@clocktrace/cli` as a dev dependency only so the `clocktrace` bin is linked at the workspace root. After `pnpm build`, `pnpm --filter cli exec clocktrace --version` prints the CLI version.
 
+## License
+
+MIT. See `LICENSE`.
+
 <!-- embed-source:start -->
 ## Embedded library source
 

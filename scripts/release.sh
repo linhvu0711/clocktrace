@@ -102,6 +102,7 @@ tarball="release/clocktrace-$version-darwin-arm64.tar.gz"
 rm -rf "$stage" "$tarball"
 pnpm --filter @clocktrace/cli deploy --prod "$PWD/$stage"
 ln -s bin/clocktrace.js "$stage/clocktrace"
+cp LICENSE "$stage/LICENSE"
 
 # The same bundle setup writes in development (packages/collector/src/app.ts),
 # next to the Helper, where setup copies it whole.
@@ -138,6 +139,11 @@ else
 fi
 
 tar -czf "$tarball" -C "$stage" .
+# MIT needs the notice in every copy, and pnpm deploy leaves it out.
+if ! tar -tzf "$tarball" ./LICENSE >/dev/null 2>&1; then
+  echo "release: $tarball has no LICENSE"
+  exit 1
+fi
 echo "release: $tarball"
 shasum -a 256 "$tarball"
 
