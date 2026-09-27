@@ -146,6 +146,25 @@ final class TrackerTests: XCTestCase {
     XCTAssertEqual(line?.ts, "2026-01-01T00:00:01.000Z")
   }
 
+  func testEmitsOnAPrivateChange() {
+    // Given: a Chrome Private window observed at t0
+    var tracker = Tracker()
+    _ = tracker.observe(
+      Sample(
+        app: "Google Chrome", bundleId: "com.google.Chrome", grant: "granted", title: nil,
+        url: nil, idleSeconds: 0, missing: [], isPrivate: true),
+      at: t0)
+    // When: the same sample a second later from a window the Helper cannot classify
+    let line = tracker.observe(
+      Sample(
+        app: "Google Chrome", bundleId: "com.google.Chrome", grant: "granted", title: nil,
+        url: nil, idleSeconds: 0, missing: [], isPrivate: false),
+      at: t0.addingTimeInterval(1))
+    // Then
+    XCTAssertEqual(line?.isPrivate, false)
+    XCTAssertEqual(line?.ts, "2026-01-01T00:00:01.000Z")
+  }
+
   func testAScreenHoldChangeAlonePrintsNoLine() {
     // Given: the tracker after the first line; the same sample, now with a Screen hold
     var tracker = Tracker()

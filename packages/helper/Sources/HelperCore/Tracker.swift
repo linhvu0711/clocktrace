@@ -36,6 +36,7 @@ public struct Tracker {
         || last.title != candidate.title
         || last.url != candidate.url
         || last.missing != candidate.missing
+        || last.isPrivate != candidate.isPrivate
     } else {
       changed = true
     }
