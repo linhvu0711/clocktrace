@@ -94,6 +94,15 @@ check "a url line with a comment after it stops" test "$status" -eq 1
 check "it names the url line" says "has no single url line"
 check "it pushes nothing then either" test "$(commits)" -eq 4
 
+sed -i '' -E "s|^(  url \".*\") # release archive$|\\1|" "$tmp/edit/Formula/clocktrace.rb"
+printf '  url "https://example.com/old.tar.gz" # release archive\n' >>"$tmp/edit/Formula/clocktrace.rb"
+git -C "$tmp/edit" commit --quiet -am "a second url with a comment"
+git -C "$tmp/edit" push --quiet origin main
+run_tap 9.9.10 "$new_hash"
+check "a second url line with a comment stops" test "$status" -eq 1
+check "it names the url line again" says "has no single url line"
+check "it pushes nothing for the second url" test "$(commits)" -eq 5
+
 if [[ "$failures" -gt 0 ]]; then
   echo "tap.test: $failures failed"
   exit 1

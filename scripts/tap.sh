@@ -30,11 +30,12 @@ tap="$tmp/tap"
 git clone --quiet "$remote" "$tap"
 formula="$tap/Formula/clocktrace.rb"
 
-# The formula keeps one url line and one sha256 line, at two spaces, with
-# nothing after the value. The check and the replacement match the same shape,
-# so a line sed would skip stops the run.
+# The formula declares url and sha256 once each, at two spaces, with nothing
+# after the value. Any other declaration, or one in a shape sed would skip,
+# stops the run, so a release never pushes a url and a sha256 that disagree.
 for key in url sha256; do
-  if [[ "$(grep -cE "^  $key \"[^\"]*\"$" "$formula")" != "1" ]]; then
+  if [[ "$(grep -cE "^[[:space:]]*${key}[[:space:]]" "$formula")" != "1" ]] ||
+    [[ "$(grep -cE "^  $key \"[^\"]*\"$" "$formula")" != "1" ]]; then
     echo "tap: Formula/clocktrace.rb has no single $key line, update it by hand"
     exit 1
   fi
