@@ -116,15 +116,26 @@ fi
 # A signed release builds what main holds, so the version must already be
 # there, merged through the --bump pull request.
 if [[ "$mode" == "sign" ]]; then
+  behind=""
   for package in "${packages[@]}"; do
     found="$(cd "$package" && npm pkg get version | tr -d '"')"
     if [[ "$found" != "$version" ]]; then
-      echo "release: $package is at $found, not $version. Run scripts/release.sh --bump $version and merge its pull request first"
-      exit 1
+      behind="$package is at $found"
+      break
     fi
   done
-  if ! grep -q "\"$version\"" "$version_swift"; then
-    echo "release: $version_swift is not at $version. Run scripts/release.sh --bump $version and merge its pull request first"
+  if [[ -z "$behind" ]] && ! grep -q "\"$version\"" "$version_swift"; then
+    behind="$version_swift is not"
+  fi
+  if [[ -n "$behind" ]]; then
+    echo "release: $behind, not $version"
+    # A bump already opened only waits for its merge; running --bump again
+    # would stop on its branch.
+    if [[ -n "$(git ls-remote --heads origin "chore/release-v$version")" ]]; then
+      echo "release: merge the pull request of chore/release-v$version, pull main, then run this again"
+    else
+      echo "release: run scripts/release.sh --bump $version and merge its pull request first"
+    fi
     exit 1
   fi
 fi
