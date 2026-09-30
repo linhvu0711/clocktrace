@@ -84,6 +84,16 @@ check "a formula with no sha256 line stops" test "$status" -eq 1
 check "it says to update it by hand" says "has no single sha256 line"
 check "it pushes nothing then" test "$(commits)" -eq 3
 
+git -C "$tmp/edit" pull --quiet
+sed -i '' -E "s|^(  url \".*\")$|\\1 # release archive|" "$tmp/edit/Formula/clocktrace.rb"
+printf '  sha256 "%s"\n' "$old_hash" >>"$tmp/edit/Formula/clocktrace.rb"
+git -C "$tmp/edit" commit --quiet -am "comment after the url"
+git -C "$tmp/edit" push --quiet origin main
+run_tap 9.9.10 "$new_hash"
+check "a url line with a comment after it stops" test "$status" -eq 1
+check "it names the url line" says "has no single url line"
+check "it pushes nothing then either" test "$(commits)" -eq 4
+
 if [[ "$failures" -gt 0 ]]; then
   echo "tap.test: $failures failed"
   exit 1

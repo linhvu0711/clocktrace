@@ -30,16 +30,18 @@ tap="$tmp/tap"
 git clone --quiet "$remote" "$tap"
 formula="$tap/Formula/clocktrace.rb"
 
-# The formula keeps one url line and one sha256 line, at two spaces.
+# The formula keeps one url line and one sha256 line, at two spaces, with
+# nothing after the value. The check and the replacement match the same shape,
+# so a line sed would skip stops the run.
 for key in url sha256; do
-  if [[ "$(grep -c "^  $key \"" "$formula")" != "1" ]]; then
+  if [[ "$(grep -cE "^  $key \"[^\"]*\"$" "$formula")" != "1" ]]; then
     echo "tap: Formula/clocktrace.rb has no single $key line, update it by hand"
     exit 1
   fi
 done
 sed -i '' -E \
-  -e "s|^  url \".*\"$|  url \"$url\"|" \
-  -e "s|^  sha256 \".*\"$|  sha256 \"$hash\"|" \
+  -e "s|^  url \"[^\"]*\"$|  url \"$url\"|" \
+  -e "s|^  sha256 \"[^\"]*\"$|  sha256 \"$hash\"|" \
   "$formula"
 
 if git -C "$tap" diff --quiet; then
