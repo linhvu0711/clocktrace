@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import { App } from "../src/app.js";
 import {
   checkAgain,
+  deleteSavedGrants,
   type GrantItem,
   GrantPicture,
   grantCount,
@@ -651,6 +652,24 @@ describe("grant", () => {
         ["automation Chrome", "notAsked"],
         ["full disk access", "granted"],
       ],
+      logs: Array(7).fill("saved grant not deleted"),
+    });
+  });
+
+  it("deleteSavedGrants tries every browser, then fails with the Store error", async () => {
+    // Given: a Store whose deleteSetting fails
+    const logs: Array<string> = [];
+    // When
+    const result = await runAt(
+      Effect.either(deleteSavedGrants()).pipe(
+        Effect.map((e) => (e._tag === "Left" ? e.left._tag : "Right")),
+      ),
+      stubHelper(allGranted),
+      { store: failing("deleteSetting"), logs },
+    );
+    // Then: every browser was tried and logged, and the caller sees it
+    expect({ result, logs }).toEqual({
+      result: "StoreError",
       logs: Array(7).fill("saved grant not deleted"),
     });
   });
