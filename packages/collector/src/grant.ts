@@ -247,6 +247,23 @@ export const deleteSavedGrant = (
     yield* store.deleteSetting(savedGrantKey(bundleId));
   });
 
+// Removes the Saved grant of every browser, after a reset cleared them
+// all. macOS already cleared every browser, so one failed delete must not
+// stop the others; a Saved grant left behind goes at the next check that
+// finds notAsked.
+export const deleteSavedGrants = (): Effect.Effect<void, never, Store> =>
+  Effect.gen(function* () {
+    for (const bundleId of knownBrowsers) {
+      yield* deleteSavedGrant(bundleId).pipe(
+        Effect.catchTag("StoreError", () =>
+          Effect.logWarning("saved grant not deleted").pipe(
+            Effect.annotateLogs({ bundleId }),
+          ),
+        ),
+      );
+    }
+  });
+
 export const readSavedGrants = (): Effect.Effect<
   ReadonlyMap<string, SavedGrant>,
   StoreError,
@@ -407,18 +424,7 @@ export const resetGrant = (
         ),
       };
     }
-    // macOS already cleared every browser, so one failed delete must not
-    // stop the others; a Saved grant left behind goes at the next check
-    // that finds notAsked.
-    for (const bundleId of knownBrowsers) {
-      yield* deleteSavedGrant(bundleId).pipe(
-        Effect.catchTag("StoreError", () =>
-          Effect.logWarning("saved grant not deleted").pipe(
-            Effect.annotateLogs({ bundleId }),
-          ),
-        ),
-      );
-    }
+    yield* deleteSavedGrants();
     return {
       ...picture,
       items: picture.items.map((i) =>
