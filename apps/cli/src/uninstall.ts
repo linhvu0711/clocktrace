@@ -5,9 +5,11 @@ import {
   App,
   appBundleId,
   CollectorPaths,
+  deleteSavedGrants,
   Launchd,
   Lifecycle,
 } from "@clocktrace/collector";
+import { Store } from "@clocktrace/core";
 import { Command, Options } from "@effect/cli";
 import {
   type CommandExecutor,
@@ -78,6 +80,8 @@ export const uninstall = (options: {
     const look = yield* Style;
     const home = homedir();
     const { appPath, logDir, defaultDbPath } = yield* CollectorPaths;
+    const notCleared =
+      "saved browser grants not cleared · open each browser, then run clocktrace status";
     const done = (text: string) =>
       prompt.print(line([mark("ok", look), ` ${text}`], look));
     const skipped = (text: string) =>
@@ -125,6 +129,16 @@ export const uninstall = (options: {
       );
       if (reset) {
         yield* done("permissions reset");
+        // macOS holds no Grant now, so a kept Saved grant is no longer
+        // true. No database: nothing to clear, and none is made.
+        if (yield* reportStep(exists(dbPath))) {
+          yield* deleteSavedGrants().pipe(
+            Effect.provide(Store.Default(dbPath)),
+            Effect.catchTag("StoreError", "DatabaseNewerError", () =>
+              skipped(notCleared),
+            ),
+          );
+        }
       } else {
         yield* skipped(
           "permissions not reset · remove Clocktrace under System Settings › Privacy & Security",

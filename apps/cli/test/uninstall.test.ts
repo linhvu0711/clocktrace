@@ -19,11 +19,15 @@ import {
   LaunchdError,
   type LaunchdState,
   Lifecycle,
+  readSavedGrants,
+  saveGrant,
 } from "@clocktrace/collector";
+import { openStore, Store } from "@clocktrace/core";
 import { NodeContext } from "@effect/platform-node";
 import {
   ConfigProvider,
   Console,
+  DateTime,
   Effect,
   Exit,
   Layer,
@@ -166,13 +170,30 @@ describe("uninstall", () => {
     vi.unstubAllEnvs();
   });
 
+  // A real database: a good reset now opens it to clear the Saved grants.
   const writeState = () => {
-    writeFileSync(dbPath, "db");
+    Effect.runSync(Effect.scoped(openStore(dbPath)));
     writeFileSync(`${dbPath}-wal`, "wal");
     writeFileSync(`${dbPath}-shm`, "shm");
     mkdirSync(logDir, { recursive: true });
     writeFileSync(join(logDir, "collector.log"), "log");
   };
+
+  // A real database at dbPath with a Saved grant for each browser given.
+  const seedGrants = (grants: ReadonlyArray<readonly [string, string]>) =>
+    Effect.runPromise(
+      Effect.forEach(grants, ([bundleId, at]) =>
+        saveGrant(bundleId, "granted", DateTime.unsafeMake(at)),
+      ).pipe(Effect.provide(Store.Default(dbPath))),
+    );
+
+  const savedGrants = () =>
+    Effect.runPromise(
+      readSavedGrants().pipe(
+        Effect.map((grants) => [...grants.keys()]),
+        Effect.provide(Store.Default(dbPath)),
+      ),
+    );
 
   const run = (opts: {
     readonly purge?: boolean;
@@ -509,6 +530,58 @@ describe("uninstall", () => {
     expect(output).toContain(
       "○ permissions not reset · remove Clocktrace under System Settings › Privacy & Security",
     );
+  });
+
+  it("a good reset removes the Saved grants from the kept database", async () => {
+    // Given: Saved grants for Safari and Chrome, app present, tccutil ok
+    await seedGrants([
+      ["com.apple.Safari", "2026-09-29T06:25:45.523Z"],
+      ["com.google.Chrome", "2026-09-28T01:40:48.503Z"],
+    ]);
+    // When
+    const { exit, output } = await run({ results: tccReset });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output).toContain("✔ permissions reset");
+    expect(await savedGrants()).toEqual([]);
+  });
+
+  it("a failed tccutil keeps the Saved grants", async () => {
+    // Given: a Saved grant for Safari; tccutil not listed, so it exits 1
+    await seedGrants([["com.apple.Safari", "2026-09-29T06:25:45.523Z"]]);
+    // When
+    const { output } = await run({});
+    // Then
+    expect(output).toContain(
+      "○ permissions not reset · remove Clocktrace under System Settings › Privacy & Security",
+    );
+    expect(await savedGrants()).toEqual(["com.apple.Safari"]);
+  });
+
+  it("no database: removing Saved grants creates none", async () => {
+    // Given: no file at the database path, tccutil ok
+    // When
+    const { exit, output } = await run({ results: tccReset });
+    // Then
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(existsSync(dbPath)).toBe(false);
+    expect(output.filter((l) => l.includes("saved browser grants"))).toEqual(
+      [],
+    );
+  });
+
+  it("a database that does not open is a skip line, not an error", async () => {
+    // Given: a file that is not a database, tccutil ok
+    writeFileSync(dbPath, "not a database");
+    // When
+    const { exit, output } = await run({ results: tccReset });
+    // Then: the skip line, and the steps after it still run
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(output.slice(1, 4)).toEqual([
+      "✔ permissions reset",
+      "○ saved browser grants not cleared · open each browser, then run clocktrace status",
+      "✔ app removed",
+    ]);
   });
 
   it("a failed bootout stops before the app", async () => {
