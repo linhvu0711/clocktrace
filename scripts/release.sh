@@ -9,9 +9,10 @@
 # branch, pushes it, and opens the pull request. Once it is merged, the run
 # without a flag builds from main, signs the app with the Developer ID,
 # notarizes it through the `clocktrace` keychain profile, staples it, tags main,
-# pushes only the tag, and publishes with gh. --no-sign sets the version, signs
-# ad hoc, packs, and puts the version files back; CI runs it that way. Stops on
-# the first failure.
+# pushes only the tag, publishes with gh, and points the Homebrew tap at the
+# release (scripts/tap.sh). --no-sign sets the version, signs ad hoc, packs,
+# and puts the version files back; CI runs it that way. Stops on the first
+# failure.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -224,8 +225,14 @@ if [[ "$mode" == "sign" ]]; then
   pushed=1
   if ! gh release create "v$version" "$tarball" --title "v$version" \
     --notes "sha256: $hash" --verify-tag; then
-    echo "release: v$version is pushed, but the GitHub release failed. Publish it with:"
+    echo "release: v$version is pushed, but the GitHub release failed. Publish it and update the tap with:"
     echo "  gh release create v$version $tarball --title v$version --notes \"sha256: $hash\" --verify-tag"
+    echo "  scripts/tap.sh $version $hash"
+    exit 1
+  fi
+  if ! scripts/tap.sh "$version" "$hash"; then
+    echo "release: v$version is published, but the tap update failed. Run:"
+    echo "  scripts/tap.sh $version $hash"
     exit 1
   fi
 fi
