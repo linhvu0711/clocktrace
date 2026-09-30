@@ -103,6 +103,14 @@ check "a second url line with a comment stops" test "$status" -eq 1
 check "it names the url line again" says "has no single url line"
 check "it pushes nothing for the second url" test "$(commits)" -eq 5
 
+sed -i '' '$d' "$tmp/edit/Formula/clocktrace.rb"
+printf '  url("https://example.com/old.tar.gz")\n' >>"$tmp/edit/Formula/clocktrace.rb"
+git -C "$tmp/edit" commit --quiet -am "a second url in parentheses"
+git -C "$tmp/edit" push --quiet origin main
+run_tap 9.9.10 "$new_hash"
+check "a second url in parentheses stops" test "$status" -eq 1
+check "it pushes nothing for the url in parentheses" test "$(commits)" -eq 6
+
 if [[ "$failures" -gt 0 ]]; then
   echo "tap.test: $failures failed"
   exit 1

@@ -31,10 +31,11 @@ git clone --quiet "$remote" "$tap"
 formula="$tap/Formula/clocktrace.rb"
 
 # The formula declares url and sha256 once each, at two spaces, with nothing
-# after the value. Any other declaration, or one in a shape sed would skip,
-# stops the run, so a release never pushes a url and a sha256 that disagree.
+# after the value. Any other line that starts with the word, in any shape
+# (`url(`, a comment after it), stops the run, so a release never pushes a url
+# and a sha256 that disagree.
 for key in url sha256; do
-  if [[ "$(grep -cE "^[[:space:]]*${key}[[:space:]]" "$formula")" != "1" ]] ||
+  if [[ "$(grep -cE "^[[:space:]]*${key}([^[:alnum:]_]|$)" "$formula")" != "1" ]] ||
     [[ "$(grep -cE "^  $key \"[^\"]*\"$" "$formula")" != "1" ]]; then
     echo "tap: Formula/clocktrace.rb has no single $key line, update it by hand"
     exit 1
