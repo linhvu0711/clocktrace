@@ -88,7 +88,7 @@ pane instead.
 Run these by hand from a terminal at `packages/helper`, with
 `BIN="$(swift build -c release --show-bin-path)/clocktrace-helper"`:
 
-1. `"$BIN" --version` prints `0.0.0`; `"$BIN" bogus` prints
+1. `"$BIN" --version` prints the version in `Sources/HelperCore/Version.swift`; `"$BIN" bogus` prints
    `usage: clocktrace-helper (--version | watch | permissions | permissions request (accessibility | automation <bundleId> | fulldiskaccess) | biome records [--from <deviceId>=<segment>]... | biome devices | spawn <program> [args...])`
    to stderr and exits 2.
 2. With Accessibility off for the terminal: `"$BIN" watch` prints a first line
