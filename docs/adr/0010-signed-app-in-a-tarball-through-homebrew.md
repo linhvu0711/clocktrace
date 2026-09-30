@@ -13,7 +13,7 @@ Each release is one tarball on GitHub Releases, `clocktrace-<version>-darwin-arm
 
 ## Consequences
 
-- `scripts/release.sh <version>` bumps the version in the five `package.json` files and `Version.swift`, commits `chore: release v<version>` on `main`, tags it, pushes both, and runs `gh release create` with the sha256 in the notes. It starts only from a clean `main` that matches `origin/main`.
+- A release is two runs, because `main` takes changes only through a pull request. `scripts/release.sh --bump <version>` sets the version in the five `package.json` files and `Version.swift` on the branch `chore/release-v<version>` and opens the pull request. Once it is merged, `scripts/release.sh <version>` checks that `main` holds that version, builds and signs, tags `main`, pushes only the tag, and runs `gh release create` with the sha256 in the notes. Both runs start only from a clean `main` that matches `origin/main`.
 - CI builds the unsigned tarball (`--no-sign`) and keeps it as an artifact, but only when the workflow is started by hand (#124). Signing never runs in CI.
 - The app is signed with the `com.apple.security.automation.apple-events` entitlement (`scripts/clocktrace.entitlements`). The Hardened Runtime blocks Apple Events without it, and the Helper reads the browser URL through them.
 - `codesign --deep` signs nothing extra, because the app holds one code item, `Contents/MacOS/Clocktrace`.
