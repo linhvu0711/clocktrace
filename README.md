@@ -2,6 +2,10 @@
 
 Clocktrace records where your time goes on your Mac, and on your iPhone and iPad. There is no dashboard. You ask your AI app, for example "how much time did I spend coding this week?", and it answers from your own data.
 
+1. Install it: `brew install linhvu0711/clocktrace/clocktrace`
+2. Set it up: `clocktrace setup`. It asks for the macOS permissions and connects your AI app.
+3. Ask your AI app a question about your time.
+
 ## What it records
 
 - The app in front on your Mac, its window title, and the URL in Safari, Chrome, Brave, and Edge.
@@ -17,17 +21,13 @@ All data stays in one file on your Mac, `~/Library/Application Support/clocktrac
 
 ## Install
 
-A Homebrew install comes with the first release. Until then, install from source. You need Node 22.12 or newer, pnpm 9, and the Xcode Command Line Tools (`xcode-select --install`).
+You need [Homebrew](https://brew.sh).
 
 ```sh
-git clone https://github.com/linhvu0711/clocktrace.git
-cd clocktrace
-pnpm install
-pnpm build
-cd apps/cli && pnpm link --global
+brew install linhvu0711/clocktrace/clocktrace
 ```
 
-`pnpm link --global` puts the `clocktrace` command on your PATH. If pnpm says there is no global bin directory, run `pnpm setup` once, open a new terminal, and try again. Keep the folder where it is: the app and the AI app registrations point into it. If you move it, run `clocktrace setup` again.
+Homebrew also installs Node. After `brew upgrade`, run `clocktrace setup` again: the Collector and the AI app registrations point at the installed version of Clocktrace and Node.
 
 ## Set up
 
@@ -85,7 +85,7 @@ Change any of this by asking your AI app, or with `clocktrace rules`, `clocktrac
 
 **Time is missing while I read.** After 15 minutes with no input, the time is not counted. A video or a call in front keeps it counted, for at most 3 hours after your last input.
 
-**Remove Clocktrace.** `clocktrace uninstall` removes the Collector, the app, and the AI app registrations, and keeps your data. `clocktrace uninstall --purge` also deletes the database and the logs. Then run `pnpm unlink --global` in `apps/cli`.
+**Remove Clocktrace.** `clocktrace uninstall` removes the Collector, the app, and the AI app registrations, and keeps your data. `clocktrace uninstall --purge` also deletes the database and the logs. Then run `brew uninstall clocktrace`.
 
 ## Develop
 
@@ -98,6 +98,16 @@ pnpm install
 pnpm build
 pnpm test
 ```
+
+To run your build as the `clocktrace` command, you also need the Xcode Command Line Tools (`xcode-select --install`). Remove a Homebrew install first (`brew uninstall clocktrace`), then:
+
+```sh
+pnpm build
+cd apps/cli && pnpm link --global
+clocktrace setup
+```
+
+`pnpm link --global` puts the `clocktrace` command on your PATH. If pnpm says there is no global bin directory, run `pnpm setup` once, open a new terminal, and try again. Keep the folder where it is: the app and the AI app registrations point into it. If you move it, run `clocktrace setup` again. `pnpm unlink --global` in `apps/cli` removes the command.
 
 `pnpm lint` runs Biome. A `pre-push` hook runs lint, build, typecheck, and test before every push and blocks the push when one fails, or when the pushed commit is not the clean checkout; `pnpm install` turns it on (`scripts/install-hooks.sh`). The GitHub workflow runs the same gates on macOS, only when started by hand from the Actions tab.
 
