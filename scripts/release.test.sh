@@ -63,6 +63,13 @@ check "it names the version main holds" says "release: apps/cli is at $current, 
 check "it says to run --bump" says "run scripts/release.sh --bump $version"
 check "it leaves no tag" test -z "$(git -C "$work" tag -l "v$version")"
 
+# The version guard reads files only, so it answers before the arm64 check.
+mkdir -p "$tmp/intel"
+printf '#!/usr/bin/env bash\necho x86_64\n' >"$tmp/intel/uname"
+chmod +x "$tmp/intel/uname"
+PATH="$tmp/intel:$PATH" run_release "$version"
+check "the version guard answers on an Intel Mac too" says "release: apps/cli is at $current, not $version"
+
 run_release --bump "$version"
 check "--bump exits 0" test "$status" -eq 0
 check "--bump pushes its branch" git -C "$origin" show-ref --verify --quiet "refs/heads/$branch"

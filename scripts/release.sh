@@ -107,12 +107,6 @@ if [[ "$mode" == "bump" ]]; then
   exit 0
 fi
 
-# The build is native, and v0 ships arm64 only.
-if [[ "$(uname -m)" != "arm64" ]]; then
-  echo "release: an arm64 Mac is required, this is $(uname -m)"
-  exit 1
-fi
-
 # A signed release builds what main holds, so the version must already be
 # there, merged through the --bump pull request.
 if [[ "$mode" == "sign" ]]; then
@@ -138,6 +132,12 @@ if [[ "$mode" == "sign" ]]; then
     fi
     exit 1
   fi
+fi
+
+# The build is native, and v0 ships arm64 only.
+if [[ "$(uname -m)" != "arm64" ]]; then
+  echo "release: an arm64 Mac is required, this is $(uname -m)"
+  exit 1
 fi
 
 # --no-sign puts the version files back on any exit. A signed release takes
