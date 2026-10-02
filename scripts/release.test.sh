@@ -5,6 +5,9 @@
 #   bash scripts/release.test.sh
 set -euo pipefail
 
+# A git hook exports GIT_DIR (an absolute path in a linked worktree), and every git -C below would then act on the real repo.
+unset $(git rev-parse --local-env-vars)
+
 root="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
