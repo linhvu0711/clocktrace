@@ -2,6 +2,7 @@ import XCTest
 
 @testable import HelperCore
 
+// MARK: - Version
 final class VersionTests: XCTestCase {
   // The release script reads this version.
   func testVersionIsSemver() {
