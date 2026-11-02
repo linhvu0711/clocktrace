@@ -3,6 +3,7 @@ import XCTest
 @testable import HelperCore
 
 final class VersionTests: XCTestCase {
+  // The release script reads this version.
   func testVersionIsSemver() {
     // Given: the helper version string
     let pattern = "^[0-9]+\\.[0-9]+\\.[0-9]+$"
