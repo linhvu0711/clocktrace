@@ -16,6 +16,7 @@ import { runCommand } from "./run-command.js";
 
 const browserNames: Record<string, string> = {
   "com.apple.Safari": "Safari",
+  "com.ardia.browser": "Ardia",
   "com.brave.Browser": "Brave",
   "com.google.Chrome": "Chrome",
   "com.microsoft.edgemac": "Edge",

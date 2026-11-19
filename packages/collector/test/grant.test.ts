@@ -197,6 +197,27 @@ describe("grant", () => {
     ]);
   });
 
+  it("names Ardia in the grant list", async () => {
+    // Given: Ardia denied, an empty Store
+    // When
+    const picture = await runAt(
+      grantPicture(),
+      stubHelper({
+        ...allGranted,
+        automation: { "com.ardia.browser": "denied" },
+      }),
+    );
+    // Then
+    expect(
+      picture.items.map((i) => [i.name, i.kind, i.bundleId, i.state]),
+    ).toContainEqual([
+      "automation Ardia",
+      "automation",
+      "com.ardia.browser",
+      "denied",
+    ]);
+  });
+
   it("an unknown bundle id keeps its id", async () => {
     // Given: one browser not in the name map
     // When
@@ -652,7 +673,7 @@ describe("grant", () => {
         ["automation Chrome", "notAsked"],
         ["full disk access", "granted"],
       ],
-      logs: Array(7).fill("saved grant not deleted"),
+      logs: Array(8).fill("saved grant not deleted"),
     });
   });
 
@@ -670,7 +691,7 @@ describe("grant", () => {
     // Then: every browser was tried and logged, and the caller sees it
     expect({ result, logs }).toEqual({
       result: "StoreError",
-      logs: Array(7).fill("saved grant not deleted"),
+      logs: Array(8).fill("saved grant not deleted"),
     });
   });
 

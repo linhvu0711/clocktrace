@@ -8,7 +8,7 @@ Clocktrace records where your time goes on your Mac, and on your iPhone and iPad
 
 ## What it records
 
-- The app in front on your Mac, its window title, and the URL in Safari, Chrome, Brave, and Edge.
+- The app in front on your Mac, its window title, and the URL in Safari, Chrome, Brave, Edge, and Ardia.
 - The apps you use on your iPhone and iPad, through Apple's Screen Time sync. Only app names and times arrive, no URLs.
 
 All data stays in one file on your Mac, `~/Library/Application Support/clocktrace/clocktrace.db`. Clocktrace sends only one thing out: the ID of an iPhone or iPad app, to Apple's App Store, to look up its name. When you ask a question, your AI app sends the answer to its model, as it does with any chat. Private browser windows get no title and no URL. After 15 minutes with no keyboard or mouse input, the time is not counted, unless the app in front keeps the screen on, as a video or a call does, for at most 3 hours.
