@@ -3,62 +3,64 @@ import XCTest
 @testable import HelperCore
 
 final class BrowserEventsTests: XCTestCase {
+  private func chromeEvents(_ bundleId: String) -> BrowserEvents {
+    BrowserEvents(
+      bundleId: bundleId, properties: [["mode"], ["acTa", "URL "]],
+      privateWindow: .firstAnswer(normal: "normal", private: "incognito"))
+  }
+
   func testMapsSafari() {
     // Given: "com.apple.Safari"
     // When / Then
     XCTAssertEqual(
       browserEvents(bundleId: "com.apple.Safari"),
-      BrowserEvents(bundleId: "com.apple.Safari", properties: [["cTab", "pURL"]])
+      BrowserEvents(
+        bundleId: "com.apple.Safari", properties: [["cTab", "pURL"]], privateWindow: .safariTitle)
+    )
+  }
+
+  func testMapsArdia() {
+    // Given: "com.ardia.browser"
+    // When / Then
+    XCTAssertEqual(
+      browserEvents(bundleId: "com.ardia.browser"),
+      BrowserEvents(
+        bundleId: "com.ardia.browser", properties: [["NNin"], ["acTa", "URL "]],
+        privateWindow: .firstAnswer(normal: "false", private: "true"))
     )
   }
 
   func testMapsChrome() {
     XCTAssertEqual(
-      browserEvents(bundleId: "com.google.Chrome"),
-      BrowserEvents(bundleId: "com.google.Chrome", properties: [["mode"], ["acTa", "URL "]])
-    )
+      browserEvents(bundleId: "com.google.Chrome"), chromeEvents("com.google.Chrome"))
   }
 
   func testMapsChromium() {
     XCTAssertEqual(
-      browserEvents(bundleId: "org.chromium.Chromium"),
-      BrowserEvents(
-        bundleId: "org.chromium.Chromium", properties: [["mode"], ["acTa", "URL "]])
-    )
+      browserEvents(bundleId: "org.chromium.Chromium"), chromeEvents("org.chromium.Chromium"))
   }
 
   func testMapsEdge() {
     XCTAssertEqual(
-      browserEvents(bundleId: "com.microsoft.edgemac"),
-      BrowserEvents(
-        bundleId: "com.microsoft.edgemac", properties: [["mode"], ["acTa", "URL "]])
-    )
+      browserEvents(bundleId: "com.microsoft.edgemac"), chromeEvents("com.microsoft.edgemac"))
   }
 
   func testMapsBrave() {
     XCTAssertEqual(
-      browserEvents(bundleId: "com.brave.Browser"),
-      BrowserEvents(bundleId: "com.brave.Browser", properties: [["mode"], ["acTa", "URL "]])
-    )
+      browserEvents(bundleId: "com.brave.Browser"), chromeEvents("com.brave.Browser"))
   }
 
   func testMapsVivaldi() {
     XCTAssertEqual(
-      browserEvents(bundleId: "com.vivaldi.Vivaldi"),
-      BrowserEvents(
-        bundleId: "com.vivaldi.Vivaldi", properties: [["mode"], ["acTa", "URL "]])
-    )
+      browserEvents(bundleId: "com.vivaldi.Vivaldi"), chromeEvents("com.vivaldi.Vivaldi"))
   }
 
   func testMapsOpera() {
     XCTAssertEqual(
-      browserEvents(bundleId: "com.operasoftware.Opera"),
-      BrowserEvents(
-        bundleId: "com.operasoftware.Opera", properties: [["mode"], ["acTa", "URL "]])
-    )
+      browserEvents(bundleId: "com.operasoftware.Opera"), chromeEvents("com.operasoftware.Opera"))
   }
 
-  func testListsSafariAndTheChromeFamily() {
+  func testListsEveryBrowser() {
     // Given: nothing
     // When
     let browsers = supportedBrowsers
@@ -67,6 +69,7 @@ final class BrowserEventsTests: XCTestCase {
       browsers,
       [
         "com.apple.Safari",
+        "com.ardia.browser",
         "com.brave.Browser",
         "com.google.Chrome",
         "com.microsoft.edgemac",

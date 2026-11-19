@@ -40,7 +40,7 @@ final class PermissionsTests: XCTestCase {
     // Then
     XCTAssertEqual(
       json,
-      "{\"accessibility\":\"granted\",\"automation\":{\"com.apple.Safari\":\"notRunning\",\"com.brave.Browser\":\"granted\",\"com.google.Chrome\":\"notAsked\",\"com.microsoft.edgemac\":\"notInstalled\",\"com.operasoftware.Opera\":\"notInstalled\",\"com.vivaldi.Vivaldi\":\"notInstalled\",\"org.chromium.Chromium\":\"notInstalled\"},\"fullDiskAccess\":\"denied\"}"
+      "{\"accessibility\":\"granted\",\"automation\":{\"com.apple.Safari\":\"notRunning\",\"com.ardia.browser\":\"notInstalled\",\"com.brave.Browser\":\"granted\",\"com.google.Chrome\":\"notAsked\",\"com.microsoft.edgemac\":\"notInstalled\",\"com.operasoftware.Opera\":\"notInstalled\",\"com.vivaldi.Vivaldi\":\"notInstalled\",\"org.chromium.Chromium\":\"notInstalled\"},\"fullDiskAccess\":\"denied\"}"
     )
   }
 
@@ -123,7 +123,7 @@ final class PermissionsTests: XCTestCase {
     // Then
     XCTAssertEqual(
       json,
-      "{\"accessibility\":\"granted\",\"automation\":{\"com.apple.Safari\":\"notRunning\",\"com.brave.Browser\":\"granted\",\"com.google.Chrome\":\"noAnswer\",\"com.microsoft.edgemac\":\"notInstalled\",\"com.operasoftware.Opera\":\"notInstalled\",\"com.vivaldi.Vivaldi\":\"notInstalled\",\"org.chromium.Chromium\":\"notInstalled\"},\"fullDiskAccess\":\"denied\"}"
+      "{\"accessibility\":\"granted\",\"automation\":{\"com.apple.Safari\":\"notRunning\",\"com.ardia.browser\":\"notInstalled\",\"com.brave.Browser\":\"granted\",\"com.google.Chrome\":\"noAnswer\",\"com.microsoft.edgemac\":\"notInstalled\",\"com.operasoftware.Opera\":\"notInstalled\",\"com.vivaldi.Vivaldi\":\"notInstalled\",\"org.chromium.Chromium\":\"notInstalled\"},\"fullDiskAccess\":\"denied\"}"
     )
   }
 
