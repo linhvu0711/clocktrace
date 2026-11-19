@@ -10,7 +10,8 @@ public enum Sampler {
     var title = (ax && front != nil) ? r.focusedTitle(front!.pid) : nil
 
     var read: UrlRead
-    if let front, let events = browserEvents(bundleId: front.bundleId ?? "") {
+    let events = front.flatMap { browserEvents(bundleId: $0.bundleId ?? "") }
+    if let events {
       read = urls.read(events, title: title, at: now)
     } else {
       read = .notBrowser
@@ -19,11 +20,12 @@ public enum Sampler {
     // A Private window sends no title and no URL; when the Helper cannot tell,
     // it sends no URL (ADR 0011).
     var isPrivate = false
-    if case .granted(let output) = read, let bundleId = front?.bundleId {
+    if case .granted(let output) = read, let events {
       let window: Window
-      if isChromeFamily(bundleId) {
-        window = chromeWindow(output)
-      } else {
+      switch events.privateWindow {
+      case .firstAnswer(let normal, let privateAnswer):
+        window = flagWindow(output, normal: normal, private: privateAnswer)
+      case .safariTitle:
         window = safariWindow(output, title: title, formats: r.safariPrivateFormats())
       }
       switch window {
@@ -79,21 +81,22 @@ public enum Sampler {
     case unknown
   }
 
-  /// Reads the Chrome-family script output, `<mode>\n<url>`.
-  private static func chromeWindow(_ output: String?) -> Window {
+  /// Reads a `<flag>\n<url>` output, as Chrome's `<mode>` or Ardia's `<incognito>`.
+  private static func flagWindow(
+    _ output: String?, normal: String, private privateAnswer: String
+  ) -> Window {
     guard let output, let newline = output.firstIndex(of: "\n") else {
       return .unknown
     }
-    let mode = output[..<newline]
+    let flag = output[..<newline]
     let rest = String(output[output.index(after: newline)...])
-    switch mode {
-    case "normal":
+    if flag == normal {
       return .normal(rest)
-    case "incognito":
-      return .privateWindow
-    default:
-      return .unknown
     }
+    if flag == privateAnswer {
+      return .privateWindow
+    }
+    return .unknown
   }
 
   /// Safari's scripting has no mode, so its window is private when the

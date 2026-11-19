@@ -14,6 +14,9 @@ sends no URL. Built in #167.
   script also reads `mode of front window`, which is `incognito` for a private
   window in every one of them, Edge included. It runs through the Automation
   Grant, so it needs no Accessibility. If the script fails, no URL is sent.
+- Ardia has no `mode`. Its URL read also reads the window's `incognito`
+  property, which is `true` for a private window and `false` for a normal one.
+  On any other answer, or a failed read, the Helper sends no URL.
 - Safari has no private flag in its scripting dictionary. With Accessibility, a
   private window's title ends with Safari's own `%@, Private Browsing` string
   (`Example Domain, Private Browsing` on Safari 27). The Helper loads that string

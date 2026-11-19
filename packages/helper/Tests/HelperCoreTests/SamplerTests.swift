@@ -9,6 +9,8 @@ final class SamplerTests: XCTestCase {
     name: "TextEdit", bundleId: "com.apple.TextEdit", pid: 2)
   private let brave = FrontApp(
     name: "Brave Browser", bundleId: "com.brave.Browser", pid: 4)
+  private let ardia = FrontApp(
+    name: "Ardia", bundleId: "com.ardia.browser", pid: 5)
   private let finder = FrontApp(
     name: "Finder", bundleId: "com.apple.finder", pid: 1)
   private let loginWindow = FrontApp(
@@ -49,6 +51,66 @@ final class SamplerTests: XCTestCase {
     Line(
       ts: ts0, app: "Brave Browser", bundleId: "com.brave.Browser", grant: "granted",
       title: title, url: url, idleSeconds: 1, missing: missing, isPrivate: isPrivate)
+  }
+
+  private func ardiaLine(
+    grant: String = "granted", title: String?, url: String?, missing: [String] = [],
+    isPrivate: Bool = false
+  ) -> Line {
+    Line(
+      ts: ts0, app: "Ardia", bundleId: "com.ardia.browser", grant: grant,
+      title: title, url: url, idleSeconds: 1, missing: missing, isPrivate: isPrivate)
+  }
+
+  private func ardiaReads(
+    answer: String?,
+    automationStatus: @escaping (String, Bool) -> OSStatus = { _, _ in 0 }
+  ) -> Reads {
+    reads(
+      front: ardia, axTrusted: true, title: "Example Domain",
+      sendEvents: { _ in answer }, automationStatus: automationStatus)
+  }
+
+  func testAnArdiaNormalWindowKeepsTheTitleAndUrl() {
+    // Given: Ardia front, Accessibility on, a normal window
+    let r = ardiaReads(answer: "false\nhttps://example.com/")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result, ardiaLine(title: "Example Domain", url: "https://example.com/"))
+  }
+
+  func testAnArdiaIncognitoWindowHasNoTitleOrUrl() {
+    // Given: Ardia front, Accessibility on, an incognito window
+    let r = ardiaReads(answer: "true\nhttps://example.com/")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, ardiaLine(title: nil, url: nil, isPrivate: true))
+  }
+
+  func testAnArdiaOutputWithoutAFlagHasNoUrl() {
+    // Given: Ardia front, Accessibility on, the read gives a URL with no flag
+    let r = ardiaReads(answer: "https://example.com/")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, ardiaLine(title: "Example Domain", url: nil))
+  }
+
+  func testTheDeniedArdiaLineMissesAutomation() {
+    // Given: Ardia front, Accessibility on, Automation denied
+    let r = ardiaReads(
+      answer: "false\nhttps://example.com/", automationStatus: { _, _ in -1743 })
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(
+      result,
+      ardiaLine(
+        grant: "denied", title: "Example Domain", url: nil,
+        missing: ["automation:com.ardia.browser"]))
   }
 
   func testAChromeIncognitoWindowHasNoTitleOrUrl() {
@@ -517,7 +579,10 @@ final class SamplerTests: XCTestCase {
         missing: []))
     XCTAssertEqual(
       sent,
-      [BrowserEvents(bundleId: "com.apple.Safari", properties: [["cTab", "pURL"]])])
+      [
+        BrowserEvents(
+          bundleId: "com.apple.Safari", properties: [["cTab", "pURL"]], privateWindow: .safariTitle)
+      ])
   }
 
   func testDoesNotRunTheScriptWhenAutomationIsNotGranted() {
