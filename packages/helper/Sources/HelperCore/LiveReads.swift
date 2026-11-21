@@ -80,9 +80,12 @@ func automationStatus(bundleId: String, askUser: Bool) -> OSStatus {
 /// The AppleScript runner is main-thread only and hung off it (ADR 0015).
 func sendEvents(_ events: BrowserEvents) -> String? {
   let target = NSAppleEventDescriptor(bundleIdentifier: events.bundleId)
+  guard let window = windowSpecifier(events.window, target: target) else { return nil }
   var answers: [String] = []
   for properties in events.properties {
-    guard let answer = getFromFrontWindow(properties, target: target) else {
+    guard let specifier = propertySpecifier(properties, of: window),
+      let answer = get(specifier, target: target)
+    else {
       return nil
     }
     answers.append(answer)
@@ -90,10 +93,31 @@ func sendEvents(_ events: BrowserEvents) -> String? {
   return answers.joined(separator: "\n")
 }
 
-private func getFromFrontWindow(
-  _ properties: [String], target: NSAppleEventDescriptor
+/// `window 1`, or for `.frontById` the window whose `id` `window 1` has now.
+private func windowSpecifier(
+  _ window: WindowTarget, target: NSAppleEventDescriptor
+) -> NSAppleEventDescriptor? {
+  guard
+    let front = objectSpecifier(
+      wanting: fourCharCode("cwin"), form: DescType(formAbsolutePosition),
+      data: NSAppleEventDescriptor(int32: 1), in: NSAppleEventDescriptor.null())
+  else { return nil }
+  switch window {
+  case .front:
+    return front
+  case .frontById:
+    guard let idSpecifier = propertySpecifier(["ID  "], of: front),
+      let id = get(idSpecifier, target: target)
+    else { return nil }
+    return objectSpecifier(
+      wanting: fourCharCode("cwin"), form: DescType(formUniqueID),
+      data: NSAppleEventDescriptor(string: id), in: NSAppleEventDescriptor.null())
+  }
+}
+
+private func get(
+  _ specifier: NSAppleEventDescriptor, target: NSAppleEventDescriptor
 ) -> String? {
-  guard let specifier = frontWindowSpecifier(properties) else { return nil }
   let event = NSAppleEventDescriptor(
     eventClass: AEEventClass(kAECoreSuite), eventID: AEEventID(kAEGetData),
     targetDescriptor: target, returnID: AEReturnID(kAutoGenerateReturnID),
@@ -127,11 +151,11 @@ private func getFromFrontWindow(
   return reply.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue
 }
 
-/// `window 1`, then each property of the one before, as `["acTa", "URL "]`.
-private func frontWindowSpecifier(_ properties: [String]) -> NSAppleEventDescriptor? {
-  var specifier = objectSpecifier(
-    wanting: fourCharCode("cwin"), form: DescType(formAbsolutePosition),
-    data: NSAppleEventDescriptor(int32: 1), in: NSAppleEventDescriptor.null())
+/// Each property of the one before, from `window`, as `["acTa", "URL "]`.
+private func propertySpecifier(
+  _ properties: [String], of window: NSAppleEventDescriptor
+) -> NSAppleEventDescriptor? {
+  var specifier: NSAppleEventDescriptor? = window
   for code in properties {
     guard let container = specifier else { return nil }
     specifier = objectSpecifier(

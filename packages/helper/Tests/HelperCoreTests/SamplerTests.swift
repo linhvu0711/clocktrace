@@ -71,14 +71,46 @@ final class SamplerTests: XCTestCase {
       sendEvents: { _ in answer }, automationStatus: automationStatus)
   }
 
-  func testAnArdiaNormalWindowKeepsTheTitleAndUrl() {
-    // Given: Ardia front, Accessibility on, a normal window
-    let r = ardiaReads(answer: "false\nhttps://example.com/")
+  /// Answers each event from `answers`, joined in event order as `LiveReads` joins them.
+  private func ardiaTabReads(answers: [[String]: String]) -> Reads {
+    reads(
+      front: ardia, axTrusted: true, title: "Ardia",
+      sendEvents: { events in
+        events.properties.map { answers[$0] ?? "" }.joined(separator: "\n")
+      })
+  }
+
+  func testAnArdiaWindowTakesItsTitleFromTheActiveTab() {
+    // Given: Ardia front, Accessibility title "Ardia", a normal window on "Example Domain"
+    let r = ardiaTabReads(answers: [
+      ["NNin"]: "false", ["acTa", "URL "]: "https://example.com/",
+      ["acTa", "pnam"]: "Example Domain",
+    ])
     // When
     let result = line(r)
     // Then
     XCTAssertEqual(
       result, ardiaLine(title: "Example Domain", url: "https://example.com/"))
+  }
+
+  func testAnArdiaTabWithAnEmptyTitleHasNoTitle() {
+    // Given: as above, but the tab's title is empty
+    let r = ardiaTabReads(answers: [
+      ["NNin"]: "false", ["acTa", "URL "]: "https://example.com/", ["acTa", "pnam"]: "",
+    ])
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, ardiaLine(title: nil, url: "https://example.com/"))
+  }
+
+  func testAnArdiaOutputWithoutATitleHasNoUrl() {
+    // Given: Ardia front, Accessibility on, the read gives a flag and a URL but no title
+    let r = ardiaReads(answer: "false\nhttps://example.com/")
+    // When
+    let result = line(r)
+    // Then
+    XCTAssertEqual(result, ardiaLine(title: "Example Domain", url: nil))
   }
 
   func testAnArdiaIncognitoWindowHasNoTitleOrUrl() {

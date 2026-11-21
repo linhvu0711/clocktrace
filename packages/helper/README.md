@@ -43,7 +43,7 @@ The binary lands at `.build/arm64-apple-macosx/release/clocktrace-helper`;
 | `ts` | ISO 8601 UTC with milliseconds |
 | `app` | `NSWorkspace` frontmost app name; `null` at the login window |
 | `bundleId` | `NSWorkspace` frontmost bundle id; `null` at the login window |
-| `title` | Accessibility focused-window title; `null` when Accessibility is not granted, the app has no title, or the window is a Private window |
+| `title` | Accessibility focused-window title. Ardia names every window `Ardia`, so for Ardia the Helper reads the active tab's title by Apple Event, which needs Automation but not Accessibility. When that read fails, an Ardia line keeps the Accessibility title. `null` when no title can be read, the app has no title, or the window is a Private window |
 | `url` | Apple Event read for Safari, the Chrome family, and Ardia; `null` for other apps, when the read fails, for a Private window, and for Safari when the Helper cannot tell (Accessibility off or no private text loaded) |
 | `idleSeconds` | `CGEventSource` seconds since last input |
 | `missing` | grants the line needed but did not have: `accessibility`, `automation:<bundleId>` |
