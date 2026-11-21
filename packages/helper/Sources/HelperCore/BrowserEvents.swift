@@ -24,6 +24,15 @@ public enum TitleSource: Equatable {
   case lastAnswer
 }
 
+/// Which window each event reads.
+public enum WindowTarget: Equatable {
+  /// `window 1`, found again by each event.
+  case front
+  /// `window 1`'s `id`, read first, then named by each event, so a window
+  /// switch between two events cannot mix two windows' answers.
+  case frontById
+}
+
 /// The `get` Apple Events that read a browser's front window (ADR 0015).
 /// Each entry of `properties` is one event: the four-letter property codes
 /// from `window 1` down, as `["acTa", "URL "]` for the URL of the active tab.
@@ -32,15 +41,17 @@ public struct BrowserEvents: Equatable {
   public let properties: [[String]]
   public let privateWindow: PrivateWindowCheck
   public let title: TitleSource
+  public let window: WindowTarget
 
   public init(
     bundleId: String, properties: [[String]], privateWindow: PrivateWindowCheck,
-    title: TitleSource = .accessibility
+    title: TitleSource = .accessibility, window: WindowTarget = .front
   ) {
     self.bundleId = bundleId
     self.properties = properties
     self.privateWindow = privateWindow
     self.title = title
+    self.window = window
   }
 }
 
@@ -54,7 +65,8 @@ private let browsers: [String: BrowserEvents] = {
     "com.ardia.browser": BrowserEvents(
       bundleId: "com.ardia.browser",
       properties: [["NNin"], ["acTa", "URL "], ["acTa", "pnam"]],
-      privateWindow: .firstAnswer(normal: "false", private: "true"), title: .lastAnswer),
+      privateWindow: .firstAnswer(normal: "false", private: "true"), title: .lastAnswer,
+      window: .frontById),
   ]
   for bundleId in chromeFamily {
     table[bundleId] = BrowserEvents(

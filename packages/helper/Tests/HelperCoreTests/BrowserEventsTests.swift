@@ -27,7 +27,8 @@ final class BrowserEventsTests: XCTestCase {
       BrowserEvents(
         bundleId: "com.ardia.browser",
         properties: [["NNin"], ["acTa", "URL "], ["acTa", "pnam"]],
-        privateWindow: .firstAnswer(normal: "false", private: "true"), title: .lastAnswer)
+        privateWindow: .firstAnswer(normal: "false", private: "true"), title: .lastAnswer,
+        window: .frontById)
     )
   }
 
