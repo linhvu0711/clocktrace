@@ -25,8 +25,9 @@ final class BrowserEventsTests: XCTestCase {
     XCTAssertEqual(
       browserEvents(bundleId: "com.ardia.browser"),
       BrowserEvents(
-        bundleId: "com.ardia.browser", properties: [["NNin"], ["acTa", "URL "]],
-        privateWindow: .firstAnswer(normal: "false", private: "true"))
+        bundleId: "com.ardia.browser",
+        properties: [["NNin"], ["acTa", "URL "], ["acTa", "pnam"]],
+        privateWindow: .firstAnswer(normal: "false", private: "true"), title: .lastAnswer)
     )
   }
 

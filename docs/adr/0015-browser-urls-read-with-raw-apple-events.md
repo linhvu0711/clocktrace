@@ -18,8 +18,9 @@ thread-safe: "you could, for example, set up a thread to send an Apple event and
 wait for a reply"
 (https://developer.apple.com/documentation/coreservices/1442994-aesendmessage).
 Chromium browsers get two events, `mode` of the front window and `URL` of its
-active tab; Ardia gets `incognito` of the front window and `URL` of its active
-tab; Safari gets one, `URL` of the current tab. Built in #231.
+active tab; Ardia gets `incognito` of the front window and `URL` and `title` of
+its active tab, since its window's Accessibility title is always `Ardia`; Safari
+gets one, `URL` of the current tab. Built in #231.
 
 ## Considered options
 

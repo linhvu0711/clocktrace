@@ -29,6 +29,15 @@ public enum Sampler {
         window = safariWindow(output, title: title, formats: r.safariPrivateFormats())
       }
       switch window {
+      case .normal(let u) where events.title == .lastAnswer:
+        // A URL holds no newline, so the title is all after the first one.
+        if let u, let newline = u.firstIndex(of: "\n") {
+          let pageTitle = String(u[u.index(after: newline)...])
+          title = pageTitle.isEmpty ? nil : pageTitle
+          read = .granted(String(u[..<newline]))
+        } else {
+          read = .granted(nil)
+        }
       case .normal(let u):
         read = .granted(u)
       case .privateWindow:
